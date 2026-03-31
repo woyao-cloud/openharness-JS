@@ -1,3 +1,6 @@
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output, stderr } from "node:process";
+
 import { Command } from "commander";
 import type { BridgeEnvelope, ResponseEnvelope } from "./protocol.js";
 import { sendBridgeRequest, streamBridgeRequest } from "./transport/stdio.js";
@@ -22,26 +25,21 @@ program
 
 program
   .command("chat")
-  .description("Run a single chat turn via the Python bridge")
-  .argument("<prompt>", "Prompt to send to the agent")
+  .description("Run chat via the Python bridge")
+  .argument("[prompt]", "Prompt to send to the agent")
   .option("-m, --model <model>", "Model override")
+  .option("-r, --resume <sessionId>", "Resume a saved session by ID")
+  .option("--session-dir <path>", "Override session directory")
   .option("--permission-mode <mode>", "Permission mode: ask, trust, deny", "deny")
   .option("--trust", "Shortcut for --permission-mode trust")
-  .action(async (prompt: string, options: { model?: string; permissionMode: string; trust?: boolean }) => {
+  .action(async (prompt: string | undefined, options: { model?: string; resume?: string; sessionDir?: string; permissionMode: string; trust?: boolean }) => {
     const permissionMode = options.trust ? "trust" : options.permissionMode;
+    if (prompt) {
+      await runChatTurn(prompt, options.model, permissionMode, options.resume, options.sessionDir);
+      return;
+    }
 
-    await streamBridgeRequest(
-      {
-        id: "chat-1",
-        method: "chat.start",
-        params: {
-          prompt,
-          model: options.model ?? null,
-          permission_mode: permissionMode,
-        },
-      },
-      printStreamEvent,
-    );
+    await runInteractiveChat(options.model, permissionMode, options.resume, options.sessionDir);
   });
 
 const config = program.command("config").description("Read and update configuration");
@@ -202,6 +200,71 @@ program
     printResponse(response);
   });
 
+async function runInteractiveChat(
+  model: string | undefined,
+  permissionMode: string,
+  initialResume: string | undefined,
+  sessionDir: string | undefined,
+): Promise<void> {
+  stderr.write(`OpenHarness TS chat (${permissionMode} mode)\n`);
+  stderr.write("Type 'exit' or press Ctrl+C to quit.\n\n");
+
+  const rl = createInterface({ input, output });
+  let activeResume = initialResume;
+
+  try {
+    while (true) {
+      const prompt = (await rl.question("> ")).trim();
+      if (!prompt) {
+        continue;
+      }
+      if (isExitCommand(prompt)) {
+        break;
+      }
+
+      activeResume = await runChatTurn(prompt, model, permissionMode, activeResume, sessionDir);
+      output.write("\n");
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+async function runChatTurn(
+  prompt: string,
+  model: string | undefined,
+  permissionMode: string,
+  resume: string | undefined,
+  sessionDir: string | undefined,
+): Promise<string | undefined> {
+  let nextSessionId = resume;
+  await streamBridgeRequest(
+    {
+      id: `chat-${Date.now()}`,
+      method: "chat.start",
+      params: {
+        prompt,
+        model: model ?? null,
+        permission_mode: permissionMode,
+        resume: resume ?? null,
+        session_dir: sessionDir ?? null,
+      },
+    },
+    (event) => {
+      const maybeSessionId = printStreamEvent(event);
+      if (maybeSessionId) {
+        nextSessionId = maybeSessionId;
+      }
+    },
+  );
+  return nextSessionId;
+}
+
+function isExitCommand(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  return normalized === "exit" || normalized === "quit" || normalized === "/exit" || normalized === "/quit";
+}
+
 function printResponse(response: ResponseEnvelope): void {
   if (response.event === "error") {
     console.error(`Error [${response.data.code}]: ${response.data.message}`);
@@ -328,40 +391,55 @@ function printResponse(response: ResponseEnvelope): void {
   console.log(JSON.stringify(data, null, 2));
 }
 
-function printStreamEvent(event: BridgeEnvelope): void {
+function printStreamEvent(event: BridgeEnvelope): string | undefined {
   if (event.event === "error") {
     console.error(`Error [${event.data.code}]: ${event.data.message}`);
     process.exitCode = 1;
-    return;
+    return undefined;
   }
 
   const data = event.data ?? {};
 
   switch (event.event) {
     case "session_start":
-      console.error(
-        `OpenHarness ${String(data.provider ?? "")}/${String(data.model ?? "")} (${String(data.permission_mode ?? "")})`,
-      );
-      return;
+      console.error([
+        `OpenHarness ${String(data.provider ?? "")}/${String(data.model ?? "")}`,
+        `(${String(data.permission_mode ?? "")})`,
+        data.resumed === true ? `[resumed ${String(data.session_id ?? "")}]` : `[session ${String(data.session_id ?? "")}]`,
+      ].join(" "));
+      return typeof data.session_id === "string" ? data.session_id : undefined;
     case "text_delta":
       process.stdout.write(String(data.content ?? ""));
-      return;
+      return undefined;
     case "tool_call_start":
       console.error(`\n[tool] ${String(data.tool_name ?? "")}`);
-      return;
+      return undefined;
     case "tool_call_end":
+      if (typeof data.output === "string" && data.output.trim()) {
+        const summary = summarizeToolOutput(data.output, 6);
+        console.error(summary);
+      }
       console.error(data.is_error === true ? "[tool:error]" : "[tool:done]");
-      return;
+      return undefined;
     case "turn_complete":
       console.error(`\n[done] session ${String(data.session_id ?? "")}`);
-      return;
+      return typeof data.session_id === "string" ? data.session_id : undefined;
     default:
       console.log(JSON.stringify(data, null, 2));
+      return undefined;
   }
 }
 
 function formatMaybeCost(value: unknown): string {
   return typeof value === "number" && value > 0 ? `$${value.toFixed(4)}` : "-";
+}
+
+function summarizeToolOutput(output: string, maxLines: number): string {
+  const lines = output.trim().split(/\r?\n/);
+  if (lines.length <= maxLines) {
+    return lines.join("\n");
+  }
+  return `${lines.slice(0, maxLines).join("\n")}\n... (${lines.length} lines total)`;
 }
 
 program.parseAsync(process.argv).catch((error: unknown) => {

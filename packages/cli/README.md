@@ -5,7 +5,8 @@ This package is the TypeScript/Node.js CLI frontend for OpenHarness.
 Current status:
 - working bridge-backed CLI for core commands
 - built on top of the Python harness runtime over stdio
-- single-turn chat support today, with room to grow into a richer UX
+- one-shot and interactive chat support today, with room to grow into a richer UX
+- resume support for saved sessions
 
 The intended architecture is:
 - TypeScript for CLI UX

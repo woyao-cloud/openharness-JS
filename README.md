@@ -166,7 +166,7 @@ Node.js/TypeScript CLI commands currently available through the Python bridge:
 | Command | Description |
 |---|---|
 | `oh-ts version` | Show OpenHarness version |
-| `oh-ts chat <prompt>` | Run a single bridged chat turn |
+| `oh-ts chat [prompt]` | Run a bridged chat turn or start interactive TS chat |
 | `oh-ts config show` | Show config |
 | `oh-ts config set <key> <value>` | Update config |
 | `oh-ts sessions` | List sessions |
@@ -322,10 +322,13 @@ npm.cmd install
 npm.cmd run dev:cli -- version
 npm.cmd run dev:cli -- config show
 npm.cmd run dev:cli -- chat "summarize this repo" --permission-mode deny
+npm.cmd run dev:cli -- chat --permission-mode deny
+npm.cmd run dev:cli -- chat --resume <session-id> --permission-mode deny
 ```
 
 Current boundary:
-- `oh-ts chat` is a working single-turn bridge-backed command
+- `oh-ts chat` supports one-shot and interactive bridge-backed chat
+- `oh-ts chat --resume <session-id>` can continue an existing saved session
 - the Python `oh chat` CLI is still the richer interactive experience today
 
 ## Development

@@ -17,7 +17,7 @@ ASCII_BANNER = r"""
        (( ))       | (_) |  _/| _|| .` | __ |/ _ \|   / .` | _|\__ \__ \
         ))((        \___/|_|  |___|_|\_|_||_/_/ \_\_|_\_|\_|___|___/___/
        ((  ))
-        `--`                Build your own Claude Code with any LLM.
+        `--`                Build your own terminal coding agent with any LLM.
 """.strip("\n")
 
 

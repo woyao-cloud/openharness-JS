@@ -404,12 +404,21 @@ async def _run_chat_turn(req_id: str, params: dict[str, Any]) -> None:
 
     model = params.get("model")
     permission_mode = str(params.get("permission_mode", "deny"))
+    resume = params.get("resume")
+    session_dir = _resolve_path_param(params, "session_dir")
 
     config = AgentConfig.load()
     provider, resolved_model = _build_provider(config, model if isinstance(model, str) else None)
     tools = _build_tools()
     gate = PermissionGate(mode=permission_mode)
-    session = Session(provider=config.provider, model=resolved_model or config.model)
+    if isinstance(resume, str) and resume.strip():
+        try:
+            session = Session.load(resume.strip(), session_dir=session_dir)
+        except FileNotFoundError:
+            _write(_error(req_id, "session_not_found", f"Session '{resume}' was not found."))
+            return
+    else:
+        session = Session(provider=config.provider, model=resolved_model or config.model)
 
     healthy = await provider.health_check()
     if not healthy:
@@ -460,6 +469,8 @@ async def _run_chat_turn(req_id: str, params: dict[str, Any]) -> None:
                 "provider": config.provider,
                 "permission_mode": permission_mode,
                 "tools": tools.names,
+                "session_id": session.id,
+                "resumed": bool(isinstance(resume, str) and resume.strip()),
             },
         }
     )
@@ -496,7 +507,7 @@ async def _run_chat_turn(req_id: str, params: dict[str, Any]) -> None:
                 }
             )
         elif isinstance(event, TurnComplete):
-            session_path = session.save()
+            session_path = session.save(session_dir=session_dir)
             _write(
                 {
                     "id": req_id,
