@@ -9,6 +9,36 @@ from rich.text import Text
 
 console = Console()
 
+ASCII_BANNER = r"""
+        ___
+       /   \
+      (     )        ___  ___  ___ _  _ _  _   _ ___ _  _ ___ ___ ___
+       `~w~`        / _ \| _ \| __| \| | || | /_\ | _ \ \| | __/ __/ __|
+       (( ))       | (_) |  _/| _|| .` | __ |/ _ \|   / .` | _|\__ \__ \
+        ))((        \___/|_|  |___|_|\_|_||_/_/ \_\_|_\_|\_|___|___/___/
+       ((  ))
+        `--`                Build your own Claude Code with any LLM.
+""".strip("\n")
+
+
+def print_startup_banner(version: str, model: str, permission_mode: str, tools: list[str], extras: list[str] | None = None) -> None:
+    """Render the OpenHarness startup banner and session metadata."""
+    console.print(Text(ASCII_BANNER, style="bold cyan"))
+    console.print(
+        Text.assemble(
+            ("OpenHarness ", "bold"),
+            (f"v{version}", "dim"),
+            ("  ", ""),
+            (model, "cyan"),
+            ("  ", ""),
+            (f"({permission_mode} mode)", "dim"),
+        )
+    )
+    console.print(f"[dim]Tools: {', '.join(tools)}[/dim]")
+    if extras:
+        console.print(f"[dim]Loaded: {', '.join(extras)}[/dim]")
+    console.print("[dim]Type 'exit' or Ctrl+C to quit.[/dim]")
+
 
 def print_assistant(content: str) -> None:
     """Print assistant response with markdown rendering."""

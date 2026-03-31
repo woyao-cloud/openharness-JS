@@ -8,6 +8,7 @@ from typing import Any
 
 import typer
 
+from openharness import __version__
 from openharness.agent.loop import AgentLoop
 from openharness.agent.permissions import PermissionGate
 from openharness.core.config import AgentConfig, ProviderConfig
@@ -21,7 +22,6 @@ from openharness.core.events import (
 )
 from openharness.core.session import Session
 from openharness.providers.ollama import OllamaProvider
-from openharness.providers.registry import ProviderRegistry
 from openharness.tools.bash import BashTool
 from openharness.tools.file_read import FileReadTool
 from openharness.tools.registry import ToolRegistry
@@ -182,13 +182,6 @@ async def _run_chat(
         pass
 
     # Print header
-    ui.console.print()
-    ui.console.print(
-        f"[bold]OpenHarness[/bold] [dim]v0.1.0[/dim]  "
-        f"[cyan]{resolved_model or config.model}[/cyan]  "
-        f"[dim]({permission_mode} mode)[/dim]"
-    )
-    ui.console.print(f"[dim]Tools: {', '.join(tools.names)}[/dim]")
     extras = []
     if rules_prompt:
         extras.append("rules")
@@ -196,9 +189,14 @@ async def _run_chat(
         extras.append("memory")
     if hooks and hooks.hook_count > 0:
         extras.append(f"{hooks.hook_count} hooks")
-    if extras:
-        ui.console.print(f"[dim]Loaded: {', '.join(extras)}[/dim]")
-    ui.console.print(f"[dim]Type 'exit' or Ctrl+C to quit.[/dim]")
+    ui.console.print()
+    ui.print_startup_banner(
+        version=__version__,
+        model=resolved_model or config.model,
+        permission_mode=permission_mode,
+        tools=tools.names,
+        extras=extras,
+    )
     ui.console.print()
 
     cost_tracker = CostTracker(budget=config.max_cost_per_session)

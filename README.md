@@ -1,236 +1,366 @@
 # OpenHarness
 
-```
-        ___
-       /   \
-      (     )        ___  ___  ___ _  _ _  _   _ ___ _  _ ___ ___ ___
-       `~w~`        / _ \| _ \| __| \| | || | /_\ | _ \ \| | __/ __/ __|
-       (( ))       | (_) |  _/| _|| .` | __ |/ _ \|   / .` | _|\__ \__ \
-        ))((        \___/|_|  |___|_|\_|_||_/_/ \_\_|_\_|\_|___|___/___/
-       ((  ))
-        `--`                Build your own Claude Code with any LLM.
-```
+**OpenHarness** is an open-source Python agent harness for building a terminal coding assistant with the model provider you choose.
 
-<!-- Badges: PyPI version, Python versions, License, CI status -->
-<!-- ![PyPI](https://img.shields.io/pypi/v/openharness) -->
-<!-- ![Python](https://img.shields.io/pypi/pyversions/openharness) -->
-<!-- ![License](https://img.shields.io/github/license/wangz/openharness) -->
+Build your own terminal coding agent with any LLM.
 
-**OpenHarness** is an open-source Python agent harness framework that lets you build your own Claude Code with any LLM provider -- local or cloud, free or paid, no vendor lock-in.
+It ships with:
+- a CLI chat experience via `oh`
+- tool calling with permission gates
+- local and cloud provider support
+- project rules, skills, memory, and session persistence
 
----
+OpenHarness is currently **alpha** (`0.1.0`). The core loop is in place and usable, but the project is still tightening its CLI surface and documentation.
 
-## Quick Start
+The project is Python-first today, with a working Node.js/TypeScript CLI frontend built on top of the Python core over stdio.
+
+## Why This Project
+
+If you want a terminal coding-agent workflow with:
+- local models through Ollama
+- OpenAI, Anthropic, OpenRouter, or OpenAI-compatible APIs
+- a Python codebase you can modify
+- a lightweight agent harness instead of a large framework
+
+that is the space OpenHarness is aiming for.
+
+## What Works Today
+
+Implemented in this repo today:
+- `oh chat` interactive agent loop
+- `oh-ts` TypeScript CLI for core bridge-backed workflows
+- providers for Ollama, OpenAI, Anthropic, OpenRouter, and OpenAI-compatible backends
+- built-in tools for reading files, editing files, writing files, shell commands, glob, grep, and web fetch
+- permission modes: `ask`, `trust`, `deny`
+- project rules from `.oh/RULES.md` and `.oh/rules/*.md`
+- built-in and local markdown skills
+- session persistence and cost tracking
+- project auto-detection for language/framework/test command hints
+
+## Installation
+
+Base install:
 
 ```bash
-# 1. Install
 pip install openharness
-
-# 2. Initialize your project (creates .oh/ directory with config)
-oh init
-
-# 3. Start chatting with any model
-oh chat --model ollama/llama3
 ```
 
-That's it. Point it at Ollama running locally for a fully offline coding agent, or use OpenAI/Anthropic/OpenRouter for cloud models.
-
----
-
-## Why OpenHarness?
-
-|                        | OpenHarness          | Claude Code         | LangChain            | CrewAI               |
-|------------------------|----------------------|---------------------|----------------------|----------------------|
-| Any LLM provider       | Yes (5+ providers)  | Anthropic only      | Yes                  | Yes                  |
-| CLI coding agent       | Built-in (`oh chat`)| Built-in            | Build-your-own       | No                   |
-| Tool permission gates  | Yes (risk-based)    | Yes                 | No                   | No                   |
-| Local/offline models   | Ollama native       | No                  | Manual setup         | Manual setup         |
-| Cost tracking          | Built-in            | Partial             | No                   | No                   |
-| Session persistence    | Built-in            | Yes                 | Manual               | No                   |
-| Rules, skills, hooks   | Yes                 | Yes                 | No                   | No                   |
-| License                | MIT                 | Proprietary         | MIT                  | MIT                  |
-| Language               | Python              | TypeScript          | Python               | Python               |
-
----
-
-## Features
-
-### LLM Providers
-- **Ollama** -- Local models (Llama 3, DeepSeek Coder, Mistral, Phi, Qwen)
-- **OpenAI** -- GPT-4o, GPT-4o-mini, o3, o3-mini
-- **Anthropic** -- Claude Sonnet, Claude Opus, Claude Haiku
-- **OpenRouter** -- 300+ models via a single API key
-- **OpenAI-Compatible** -- Any provider with an OpenAI-compatible API (DeepSeek, Groq, Together, LM Studio, etc.)
-
-### Tools (with Permission Gates)
-| Tool       | Risk   | Description                                    |
-|------------|--------|------------------------------------------------|
-| FileRead   | low    | Read file contents with optional line ranges   |
-| FileEdit   | medium | Search-and-replace edits in existing files     |
-| FileWrite  | medium | Create or overwrite files                      |
-| Bash       | high   | Execute shell commands                         |
-| Glob       | low    | Find files by pattern                          |
-| Grep       | low    | Search file contents with regex                |
-| WebFetch   | medium | Fetch content from URLs                        |
-
-Every tool has a risk level. In the default `ask` permission mode, medium and high risk tools require your approval before execution.
-
-### Agent Engine
-- **Agent loop** with LLM-to-tool orchestration, streaming, and error recovery
-- **Smart router** for automatic model selection based on task complexity
-- **Sub-agents** for isolated parallel task execution
-- **MCP client** to connect to external MCP tool servers
-- **Context manager** for smart context window management
-
-### Harness Layer
-- **Rules** -- Project-specific instructions via `.oh/rules/` and `.oh/RULES.md`
-- **Skills** -- Reusable packaged workflows (commit, TDD, debug, review)
-- **Hooks** -- Lifecycle automation (before/after tool calls)
-- **Memory** -- Persistent knowledge across sessions
-- **Cost tracking** -- Per-model token and cost tracking with budget enforcement
-- **Session persistence** -- Save and resume any conversation
-
----
-
-## Architecture
-
-Four-layer design, each layer independently usable:
-
-```
-Layer 4: CLI Shell (oh)
-    |-- oh chat, oh config, oh cost, oh models, oh sessions, oh tools, oh rules
-    '-- Uses: rich terminal UI, streaming output, interactive prompts
-
-Layer 3: Agent Engine (openharness.agent)
-    |-- AgentLoop: LLM <-> Tool orchestration cycle
-    |-- PermissionGate: risk-based tool approval
-    |-- ContextManager: smart context window management
-    |-- SubAgent: isolated parallel workers
-    '-- Router: smart model selection
-
-Layer 2: Providers + Tools (openharness.providers, openharness.tools)
-    |-- Providers: Ollama, OpenAI, Anthropic, OpenRouter, OpenAI-compatible
-    |-- Tools: FileRead, FileEdit, FileWrite, Bash, Glob, Grep, WebFetch
-    '-- MCP: connect to external MCP servers
-
-Layer 1: Core (openharness.core)
-    |-- Types: Message, ToolSpec, ToolResult, ModelInfo
-    |-- Config: AgentConfig, ProviderConfig
-    |-- Session: conversation persistence + history
-    '-- Events: streaming event types
-```
-
----
-
-## CLI Commands
-
-| Command          | Description                                      |
-|------------------|--------------------------------------------------|
-| `oh chat`        | Start an interactive coding agent session        |
-| `oh init`        | Initialize a project (creates `.oh/` directory)  |
-| `oh config`      | View and modify configuration                    |
-| `oh config set`  | Set a configuration value                        |
-| `oh models`      | List available models across all providers       |
-| `oh tools`       | List available tools and their risk levels       |
-| `oh cost`        | Show token usage and cost summary                |
-| `oh sessions`    | List and manage saved sessions                   |
-| `oh rules`       | View and manage project rules                    |
-| `oh skills`      | List and run packaged skills                     |
-| `oh doctor`      | Check system health (providers, tools, config)   |
-
----
-
-## Configuration
-
-### Global config
+If you want cloud providers, install the optional extras you need:
 
 ```bash
-# Set your default provider and model
-oh config set provider openai
-oh config set model gpt-4o
-
-# Set API keys
-oh config set openai.api_key sk-...
-oh config set openrouter.api_key sk-or-...
-
-# Set permission mode (ask, auto, trust, deny)
-oh config set permission_mode ask
-
-# Set a session budget ceiling
-oh config set max_cost_per_session 1.00
+pip install "openharness[openai]"
+pip install "openharness[anthropic]"
+pip install "openharness[all]"
 ```
 
-### Project-level config
-
-```bash
-oh init    # Creates .oh/ in your project root
-```
-
-This creates:
-```
-.oh/
-  config.yaml      # Project-specific settings
-  rules/           # Rule files loaded into system prompt
-  RULES.md         # Quick project rules (always loaded)
-  memory/          # Persistent knowledge store
-  sessions/        # Saved conversations
-```
-
-### Project rules
-
-Write instructions in `.oh/RULES.md` that are loaded into every session:
-
-```markdown
-# Project Rules
-
-- Use Python 3.12 features
-- Always write tests before implementation
-- Use absolute imports only
-- Format with ruff, lint with ruff
-```
-
----
-
-## Built-in Skills
-
-| Skill    | Description                                        |
-|----------|----------------------------------------------------|
-| `commit` | Stage, diff, and create a well-formatted git commit|
-| `tdd`    | Test-driven development workflow                   |
-| `debug`  | Systematic debugging with hypothesis testing       |
-| `review` | Code review with structured feedback               |
-
-```bash
-# Run a skill directly
-oh skills run commit
-oh skills run tdd
-```
-
----
-
-## Contributing
-
-Contributions are welcome. To get started:
+Development install:
 
 ```bash
 git clone https://github.com/wangz/openharness.git
 cd openharness
 pip install -e ".[dev]"
+```
+
+TypeScript CLI workspace:
+
+```bash
+npm.cmd install
+npm.cmd run build:cli
+```
+
+## Quick Start
+
+### 1. Initialize a project
+
+```bash
+oh init
+```
+
+This creates `.oh/RULES.md` and `.oh/skills/` in the current project, and also creates `~/.oh/config.yaml` if it does not exist yet.
+
+### 2. Choose a provider
+
+For local use with Ollama:
+
+```bash
+oh config set provider ollama
+oh config set model llama3
+```
+
+For OpenAI:
+
+```bash
+oh config set provider openai
+oh config set model gpt-4o-mini
+oh config set providers.openai.api_key sk-...
+```
+
+For Anthropic:
+
+```bash
+oh config set provider anthropic
+oh config set model claude-3-5-sonnet-latest
+oh config set providers.anthropic.api_key sk-ant-...
+```
+
+For OpenRouter:
+
+```bash
+oh config set provider openrouter
+oh config set model openai/gpt-4o-mini
+oh config set providers.openrouter.api_key sk-or-...
+```
+
+For an OpenAI-compatible endpoint:
+
+```bash
+oh config set provider deepseek
+oh config set model deepseek-chat
+oh config set providers.deepseek.base_url https://api.deepseek.com
+oh config set providers.deepseek.api_key <your-key>
+```
+
+### 3. Start chatting
+
+```bash
+oh chat
+```
+
+Or override the model directly for one session:
+
+```bash
+oh chat --model ollama/llama3
+oh chat --model openai/gpt-4o-mini
+```
+
+TypeScript CLI:
+
+```bash
+npm.cmd run dev:cli -- version
+npm.cmd run dev:cli -- chat "summarize this repo" --permission-mode deny
+```
+
+## CLI Commands
+
+Current commands implemented in `0.1.0`:
+
+| Command | Description |
+|---|---|
+| `oh chat` | Start an interactive coding-agent session |
+| `oh init` | Initialize `.oh/` for the current project |
+| `oh config show` | Show current configuration |
+| `oh config set <key> <value>` | Update configuration |
+| `oh models` | List available models and pricing hints |
+| `oh tools` | List available tools and risk levels |
+| `oh rules` | Show discovered rules files |
+| `oh rules --init` | Create `.oh/RULES.md` |
+| `oh skills` | List built-in and local skills |
+| `oh memory` | View stored memories |
+| `oh memory --search <term>` | Search memories |
+| `oh cost` | Show cost summary |
+| `oh sessions` | List saved sessions |
+| `oh version` | Print the installed version |
+
+Node.js/TypeScript CLI commands currently available through the Python bridge:
+
+| Command | Description |
+|---|---|
+| `oh-ts version` | Show OpenHarness version |
+| `oh-ts chat <prompt>` | Run a single bridged chat turn |
+| `oh-ts config show` | Show config |
+| `oh-ts config set <key> <value>` | Update config |
+| `oh-ts sessions` | List sessions |
+| `oh-ts cost` | Show cost summary |
+| `oh-ts tools` | List tools |
+| `oh-ts models` | List models |
+| `oh-ts rules` | List rules |
+| `oh-ts skills` | List skills |
+| `oh-ts memory` | List/search memories |
+| `oh-ts init` | Initialize project files |
+
+### Useful chat flags
+
+```bash
+oh chat --resume <session-id>
+oh chat --trust
+oh chat --deny
+```
+
+Permission behavior:
+- `ask`: prompt before non-trivial tool execution
+- `trust`: auto-approve all tool calls
+- `deny`: allow only low-risk read-only actions
+
+## Built-In Tools
+
+| Tool | Risk | Purpose |
+|---|---|---|
+| `Read` | low | Read file contents |
+| `Edit` | medium | Apply targeted edits to existing files |
+| `Write` | medium | Create or overwrite files |
+| `Bash` | high | Run shell commands in the working directory |
+| `Glob` | low | Find files by pattern |
+| `Grep` | low | Search file contents |
+| `WebFetch` | medium | Fetch remote URL content |
+
+In `ask` mode, low-risk read-only tools are auto-approved, while riskier actions require confirmation.
+
+## Configuration
+
+Global config lives at:
+
+```text
+~/.oh/config.yaml
+```
+
+You can inspect it with:
+
+```bash
+oh config show
+```
+
+Common settings:
+
+```bash
+oh config set provider ollama
+oh config set model llama3
+oh config set permission_mode ask
+oh config set max_cost_per_session 1.00
+```
+
+Provider-specific keys use the `providers.<name>.<field>` format:
+
+```bash
+oh config set providers.openai.api_key sk-...
+oh config set providers.openai.base_url https://api.openai.com/v1
+oh config set providers.openrouter.api_key sk-or-...
+```
+
+## Project Layout
+
+After `oh init`, a project typically uses:
+
+```text
+.oh/
+  RULES.md
+  skills/
+```
+
+Additional directories may be used by the harness at runtime, especially under `~/.oh/`, including session, memory, and cost data.
+
+## Rules
+
+Rules are loaded in this order:
+1. `~/.oh/global-rules/*.md`
+2. `.oh/RULES.md`
+3. `.oh/rules/*.md`
+
+Example `.oh/RULES.md`:
+
+```md
+# Project Rules
+
+- Run tests after code changes
+- Use type hints in Python code
+- Prefer small, reviewable patches
+```
+
+## Skills
+
+Skills are markdown files with YAML frontmatter. OpenHarness loads them from:
+- built-in skills in `data/skills/`
+- global skills in `~/.oh/skills/`
+- project skills in `.oh/skills/`
+
+Built-in skills currently included:
+- `commit`
+- `debug`
+- `review`
+- `tdd`
+
+List them with:
+
+```bash
+oh skills
+```
+
+## Architecture
+
+OpenHarness is organized into four main layers:
+
+```text
+CLI (`oh`)
+  Interactive terminal experience and commands
+
+Agent engine (`openharness.agent`)
+  Chat loop, tool orchestration, permission checks, routing, sub-agents
+
+Providers and tools (`openharness.providers`, `openharness.tools`)
+  LLM backends plus executable tool implementations
+
+Core and harness utilities (`openharness.core`, `openharness.harness`)
+  Config, sessions, events, rules, memory, hooks, onboarding, cost tracking
+```
+
+This makes it possible to use pieces of the project separately if you want to build your own interface or workflow on top.
+
+## TypeScript CLI Direction
+
+OpenHarness includes a working Node.js/TypeScript CLI under `packages/cli/`.
+
+Current intent:
+- Python stays the core harness runtime
+- TypeScript becomes a first-class CLI frontend
+- the two communicate over a small stdio bridge
+
+See `docs/2026-04-01-typescript-cli-plan.md` for the rollout plan.
+
+Current local workflow:
+
+```bash
+npm.cmd install
+npm.cmd run dev:cli -- version
+npm.cmd run dev:cli -- config show
+npm.cmd run dev:cli -- chat "summarize this repo" --permission-mode deny
+```
+
+Current boundary:
+- `oh-ts chat` is a working single-turn bridge-backed command
+- the Python `oh chat` CLI is still the richer interactive experience today
+
+## Development
+
+Run tests:
+
+```bash
 pytest
 ```
 
-Please open an issue before submitting large changes so we can discuss the approach.
+Project layout:
 
----
+```text
+oh/              CLI entrypoints
+openharness/     core framework code
+data/            built-in prompts, model data, and skills
+tests/           test suite
+docs/            design notes and specs
+```
+
+## Contributing
+
+Contributions are welcome. A good way to start is:
+
+1. Open an issue or discussion for larger changes.
+2. Install the project in editable mode.
+3. Run `pytest` before sending a PR.
+4. Keep README and command docs aligned with the implemented CLI.
 
 ## License
 
-MIT -- see [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).
 
----
+## Inspiration
 
-## Inspired By
-
-OpenHarness's architecture was studied from the patterns revealed in Claude Code's source (v2.1.88, March 2026). The goal is to provide the same agent harness capabilities as an open-source Python framework that works with any LLM, not just Anthropic's models.
+OpenHarness explores terminal-agent workflows as an open-source Python project that works with many model providers.
 
 This project is not affiliated with Anthropic.

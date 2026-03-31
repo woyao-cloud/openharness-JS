@@ -1,0 +1,12 @@
+{
+  "name": "openharness-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/cli"
+  ],
+  "scripts": {
+    "build:cli": "npm run build --workspace @openharness/cli",
+    "check:cli": "npm run check --workspace @openharness/cli",
+    "dev:cli": "npm run dev --workspace @openharness/cli"
+  }
+}
