@@ -2,7 +2,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 
 import { Command } from "commander";
-import type { BridgeEnvelope, ResponseEnvelope } from "./protocol.js";
+import type { BridgeEnvelope, InputEnvelope, ResponseEnvelope } from "./protocol.js";
 import { sendBridgeRequest, streamBridgeRequest } from "./transport/stdio.js";
 
 const program = new Command();
@@ -32,7 +32,10 @@ program
   .option("--session-dir <path>", "Override session directory")
   .option("--permission-mode <mode>", "Permission mode: ask, trust, deny", "deny")
   .option("--trust", "Shortcut for --permission-mode trust")
-  .action(async (prompt: string | undefined, options: { model?: string; resume?: string; sessionDir?: string; permissionMode: string; trust?: boolean }) => {
+  .action(async (
+    prompt: string | undefined,
+    options: { model?: string; resume?: string; sessionDir?: string; permissionMode: string; trust?: boolean },
+  ) => {
     const permissionMode = options.trust ? "trust" : options.permissionMode;
     if (prompt) {
       await runChatTurn(prompt, options.model, permissionMode, options.resume, options.sessionDir);
@@ -222,7 +225,17 @@ async function runInteractiveChat(
         break;
       }
 
-      activeResume = await runChatTurn(prompt, model, permissionMode, activeResume, sessionDir);
+      activeResume = await runChatTurn(
+        prompt,
+        model,
+        permissionMode,
+        activeResume,
+        sessionDir,
+        async (message) => {
+          const answer = (await rl.question(`${message} [y/n]: `)).trim().toLowerCase();
+          return answer === "y" || answer === "yes";
+        },
+      );
       output.write("\n");
     }
   } finally {
@@ -236,6 +249,7 @@ async function runChatTurn(
   permissionMode: string,
   resume: string | undefined,
   sessionDir: string | undefined,
+  askPermission?: (message: string) => Promise<boolean>,
 ): Promise<string | undefined> {
   let nextSessionId = resume;
   await streamBridgeRequest(
@@ -250,14 +264,26 @@ async function runChatTurn(
         session_dir: sessionDir ?? null,
       },
     },
-    (event) => {
-      const maybeSessionId = printStreamEvent(event);
-      if (maybeSessionId) {
-        nextSessionId = maybeSessionId;
+    async (event) => {
+      const result = await printStreamEvent(event, askPermission);
+      if (typeof result === "string") {
+        nextSessionId = result;
+        return undefined;
       }
+      return result;
     },
   );
   return nextSessionId;
+}
+
+async function askPermissionOneshot(message: string): Promise<boolean> {
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question(`${message} [y/n]: `)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
 }
 
 function isExitCommand(prompt: string): boolean {
@@ -307,27 +333,12 @@ function printResponse(response: ResponseEnvelope): void {
   }
 
   if (Array.isArray(data.models)) {
-    for (const model of data.models as Array<Record<string, unknown>>) {
-      const context = model.context_window == null ? "-" : String(model.context_window);
-      console.log(
-        `${String(model.id ?? "")}\t${String(model.provider ?? "")}\tctx=${context}\ttools=${String(Boolean(model.supports_tools))}`,
-      );
-    }
+    prettyPrintModels(data.models as Array<Record<string, unknown>>);
     return;
   }
 
   if (Array.isArray(data.files) && typeof data.prompt_length === "number") {
-    if (typeof data.created_path === "string" && data.created_path) {
-      console.log(`Created ${data.created_path}`);
-    }
-    if (data.files.length === 0) {
-      console.log("No rules loaded.");
-      return;
-    }
-    console.log(`Rules (${data.files.length}), prompt length ${data.prompt_length}`);
-    for (const file of data.files as Array<string>) {
-      console.log(file);
-    }
+    prettyPrintRules(data as Record<string, unknown>);
     return;
   }
 
@@ -343,13 +354,7 @@ function printResponse(response: ResponseEnvelope): void {
   }
 
   if (typeof data.count === "number" && Array.isArray(data.memories)) {
-    if (data.count === 0) {
-      console.log("No memories found.");
-      return;
-    }
-    for (const memory of data.memories as Array<Record<string, unknown>>) {
-      console.log(`${String(memory.id ?? "")}\t${String(memory.type ?? "")}\t${String(memory.title ?? "")}\t${String(memory.description ?? "")}`);
-    }
+    prettyPrintMemories(data as Record<string, unknown>);
     return;
   }
 
@@ -384,14 +389,17 @@ function printResponse(response: ResponseEnvelope): void {
   }
 
   if (typeof data.path === "string" && "provider" in data && "model" in data) {
-    console.log(JSON.stringify(data, null, 2));
+    prettyPrintConfig(data as Record<string, unknown>);
     return;
   }
 
   console.log(JSON.stringify(data, null, 2));
 }
 
-function printStreamEvent(event: BridgeEnvelope): string | undefined {
+async function printStreamEvent(
+  event: BridgeEnvelope,
+  askPermission?: (message: string) => Promise<boolean>,
+): Promise<string | InputEnvelope | undefined> {
   if (event.event === "error") {
     console.error(`Error [${event.data.code}]: ${event.data.message}`);
     process.exitCode = 1;
@@ -416,11 +424,22 @@ function printStreamEvent(event: BridgeEnvelope): string | undefined {
       return undefined;
     case "tool_call_end":
       if (typeof data.output === "string" && data.output.trim()) {
-        const summary = summarizeToolOutput(data.output, 6);
-        console.error(summary);
+        console.error(summarizeToolOutput(data.output, 6));
       }
       console.error(data.is_error === true ? "[tool:error]" : "[tool:done]");
       return undefined;
+    case "permission_request": {
+      const description = String(data.description ?? "");
+      const toolName = String(data.tool_name ?? "");
+      const handler = askPermission ?? askPermissionOneshot;
+      const allowed = await handler(`${toolName}: ${description}`);
+      return {
+        method: "permission.response",
+        params: {
+          allow: allowed,
+        },
+      };
+    }
     case "turn_complete":
       console.error(`\n[done] session ${String(data.session_id ?? "")}`);
       return typeof data.session_id === "string" ? data.session_id : undefined;
@@ -430,16 +449,75 @@ function printStreamEvent(event: BridgeEnvelope): string | undefined {
   }
 }
 
-function formatMaybeCost(value: unknown): string {
-  return typeof value === "number" && value > 0 ? `$${value.toFixed(4)}` : "-";
+function prettyPrintConfig(data: Record<string, unknown>): void {
+  console.log(`Config: ${String(data.path ?? "")}`);
+  console.log(`provider: ${String(data.provider ?? "")}`);
+  console.log(`model: ${String(data.model ?? "")}`);
+  console.log(`permission_mode: ${String(data.permission_mode ?? "")}`);
+  console.log(`max_cost_per_session: ${String(data.max_cost_per_session ?? 0)}`);
+  const providers = data.providers as Record<string, Record<string, unknown>> | undefined;
+  if (providers && Object.keys(providers).length > 0) {
+    console.log("\nproviders:");
+    for (const [name, provider] of Object.entries(providers)) {
+      const apiKey = typeof provider.api_key === "string" && provider.api_key
+        ? `***${provider.api_key.slice(-4)}`
+        : "(not set)";
+      console.log(
+        `  ${name}: api_key=${apiKey} base_url=${String(provider.base_url ?? "")} default_model=${String(provider.default_model ?? "")}`,
+      );
+    }
+  }
 }
 
-function summarizeToolOutput(output: string, maxLines: number): string {
-  const lines = output.trim().split(/\r?\n/);
+function prettyPrintModels(models: Array<Record<string, unknown>>): void {
+  for (const model of models) {
+    const context = model.context_window == null ? "-" : String(model.context_window);
+    const price = model.input_cost_per_mtok == null
+      ? "-"
+      : `$${String(model.input_cost_per_mtok)}/$${String(model.output_cost_per_mtok)} per 1M`;
+    console.log(
+      `${String(model.id ?? "")}\t${String(model.provider ?? "")}\tctx=${context}\ttools=${String(Boolean(model.supports_tools))}\t${price}`,
+    );
+  }
+}
+
+function prettyPrintRules(data: Record<string, unknown>): void {
+  if (typeof data.created_path === "string" && data.created_path) {
+    console.log(`Created ${data.created_path}`);
+  }
+  const files = data.files as Array<string>;
+  if (files.length === 0) {
+    console.log("No rules loaded.");
+    return;
+  }
+  console.log(`Rules (${files.length}), prompt length ${String(data.prompt_length ?? 0)}`);
+  for (const file of files) {
+    console.log(file);
+  }
+}
+
+function prettyPrintMemories(data: Record<string, unknown>): void {
+  if (data.count === 0) {
+    console.log("No memories found.");
+    return;
+  }
+  for (const memory of data.memories as Array<Record<string, unknown>>) {
+    console.log(
+      `${String(memory.id ?? "")}\t${String(memory.type ?? "")}\t${String(memory.title ?? "")}\t${String(memory.description ?? "")}`,
+    );
+  }
+}
+
+function summarizeToolOutput(outputText: string, maxLines: number): string {
+  const lines = outputText.trim().split(/\r?\n/);
   if (lines.length <= maxLines) {
     return lines.join("\n");
   }
   return `${lines.slice(0, maxLines).join("\n")}\n... (${lines.length} lines total)`;
+}
+
+function formatMaybeCost(value: unknown): string {
+  return typeof value === "number" && value > 0 ? `$${value.toFixed(4)}` : "-";
 }
 
 program.parseAsync(process.argv).catch((error: unknown) => {

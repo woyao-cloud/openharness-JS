@@ -1,12 +1,25 @@
 import { spawn } from "node:child_process";
-import type { BridgeEnvelope, RequestEnvelope, ResponseEnvelope } from "../protocol.js";
+import type { BridgeEnvelope, InputEnvelope, RequestEnvelope, ResponseEnvelope } from "../protocol.js";
+
+type SpawnOptions = {
+  command?: string;
+  args?: string[];
+};
+
+const DEFAULT_COMMAND = "py";
+const DEFAULT_ARGS = ["-3", "-m", "oh.bridge"];
+
+function spawnBridge(options?: SpawnOptions) {
+  return spawn(options?.command ?? DEFAULT_COMMAND, options?.args ?? DEFAULT_ARGS, {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+}
 
 export async function sendBridgeRequest(
   request: RequestEnvelope,
+  options?: SpawnOptions,
 ): Promise<ResponseEnvelope> {
-  const child = spawn("py", ["-3", "-m", "oh.bridge"], {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const child = spawnBridge(options);
 
   let stdout = "";
   let stderr = "";
@@ -47,17 +60,24 @@ export async function sendBridgeRequest(
 
 export async function streamBridgeRequest(
   request: RequestEnvelope,
-  onEvent: (event: BridgeEnvelope) => void,
+  onEvent: (event: BridgeEnvelope) => void | InputEnvelope | Promise<void | InputEnvelope>,
+  options?: SpawnOptions,
 ): Promise<void> {
-  const child = spawn("py", ["-3", "-m", "oh.bridge"], {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const child = spawnBridge(options);
 
   let stdout = "";
   let stderr = "";
+  let processing = Promise.resolve();
 
   child.stdin.write(`${JSON.stringify(request)}\n`);
-  child.stdin.end();
+
+  const processLine = async (line: string): Promise<void> => {
+    const event = JSON.parse(line) as BridgeEnvelope;
+    const response = await onEvent(event);
+    if (response) {
+      child.stdin.write(`${JSON.stringify(response)}\n`);
+    }
+  };
 
   child.stdout.on("data", (chunk) => {
     stdout += chunk.toString();
@@ -70,7 +90,7 @@ export async function streamBridgeRequest(
       if (!trimmed) {
         continue;
       }
-      onEvent(JSON.parse(trimmed) as BridgeEnvelope);
+      processing = processing.then(() => processLine(trimmed));
     }
   });
 
@@ -79,9 +99,15 @@ export async function streamBridgeRequest(
   });
 
   await new Promise<void>((resolve, reject) => {
-    child.on("exit", (code) => {
-      if (stdout.trim()) {
-        onEvent(JSON.parse(stdout.trim()) as BridgeEnvelope);
+    child.on("exit", async (code) => {
+      try {
+        if (stdout.trim()) {
+          await processLine(stdout.trim());
+        }
+        await processing;
+      } catch (error) {
+        reject(error);
+        return;
       }
 
       if (code === 0) {

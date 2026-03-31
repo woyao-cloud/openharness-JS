@@ -10,6 +10,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+import asyncio
 
 from openharness import __version__
 from openharness.agent.loop import AgentLoop
@@ -29,6 +30,19 @@ from oh.cli.main import _guess_provider
 def _write(payload: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload) + "\n")
     sys.stdout.flush()
+
+
+async def _read_json_line() -> dict[str, Any] | None:
+    line = await asyncio.to_thread(sys.stdin.readline)
+    if not line:
+        return None
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return None
 
 
 def _result(req_id: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -410,7 +424,33 @@ async def _run_chat_turn(req_id: str, params: dict[str, Any]) -> None:
     config = AgentConfig.load()
     provider, resolved_model = _build_provider(config, model if isinstance(model, str) else None)
     tools = _build_tools()
-    gate = PermissionGate(mode=permission_mode)
+
+    async def _ask_permission(tool_name: str, description: str, arguments: dict[str, Any]) -> bool:
+        _write(
+            {
+                "id": req_id,
+                "event": "permission_request",
+                "data": {
+                    "tool_name": tool_name,
+                    "description": description,
+                    "arguments": arguments,
+                },
+            }
+        )
+
+        while True:
+            response = await _read_json_line()
+            if not response:
+                return False
+            if response.get("method") != "permission.response":
+                continue
+            allow = response.get("params", {}).get("allow", False)
+            return bool(allow)
+
+    gate = PermissionGate(
+        mode=permission_mode,
+        ask_user=_ask_permission if permission_mode == "ask" else None,
+    )
     if isinstance(resume, str) and resume.strip():
         try:
             session = Session.load(resume.strip(), session_dir=session_dir)
@@ -543,10 +583,8 @@ def main() -> None:
             continue
 
         if request.get("method") == "chat.start":
-            import asyncio
-
             asyncio.run(_run_chat_turn(str(request.get("id", "unknown")), request.get("params", {})))
-            continue
+            break
 
         _write(_handle(request))
 

@@ -4,6 +4,11 @@ export type RequestEnvelope = {
   params?: Record<string, unknown>;
 };
 
+export type InputEnvelope = {
+  method: string;
+  params?: Record<string, unknown>;
+};
+
 export type ResultEnvelope = {
   id: string;
   event: "result";
@@ -27,6 +32,7 @@ export type StreamEnvelope = {
     | "text_delta"
     | "tool_call_start"
     | "tool_call_end"
+    | "permission_request"
     | "turn_complete";
   data?: Record<string, unknown>;
 };

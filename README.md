@@ -324,11 +324,13 @@ npm.cmd run dev:cli -- config show
 npm.cmd run dev:cli -- chat "summarize this repo" --permission-mode deny
 npm.cmd run dev:cli -- chat --permission-mode deny
 npm.cmd run dev:cli -- chat --resume <session-id> --permission-mode deny
+npm.cmd run dev:cli -- chat --permission-mode ask
 ```
 
 Current boundary:
 - `oh-ts chat` supports one-shot and interactive bridge-backed chat
 - `oh-ts chat --resume <session-id>` can continue an existing saved session
+- `oh-ts chat --permission-mode ask` now prompts for approval on tool use
 - the Python `oh chat` CLI is still the richer interactive experience today
 
 ## Development
