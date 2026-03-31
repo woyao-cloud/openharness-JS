@@ -1,0 +1,74 @@
+{
+  "gpt-4o": {
+    "provider": "openai",
+    "context_window": 128000,
+    "supports_tools": true,
+    "supports_vision": true,
+    "input_cost_per_mtok": 2.50,
+    "output_cost_per_mtok": 10.00
+  },
+  "gpt-4o-mini": {
+    "provider": "openai",
+    "context_window": 128000,
+    "supports_tools": true,
+    "supports_vision": true,
+    "input_cost_per_mtok": 0.15,
+    "output_cost_per_mtok": 0.60
+  },
+  "o3-mini": {
+    "provider": "openai",
+    "context_window": 200000,
+    "supports_tools": true,
+    "supports_vision": false,
+    "input_cost_per_mtok": 1.10,
+    "output_cost_per_mtok": 4.40
+  },
+  "claude-sonnet-4-6": {
+    "provider": "anthropic",
+    "context_window": 200000,
+    "supports_tools": true,
+    "supports_vision": true,
+    "input_cost_per_mtok": 3.00,
+    "output_cost_per_mtok": 15.00
+  },
+  "claude-haiku-4-5": {
+    "provider": "anthropic",
+    "context_window": 200000,
+    "supports_tools": true,
+    "supports_vision": true,
+    "input_cost_per_mtok": 0.80,
+    "output_cost_per_mtok": 4.00
+  },
+  "claude-opus-4-6": {
+    "provider": "anthropic",
+    "context_window": 200000,
+    "supports_tools": true,
+    "supports_vision": true,
+    "input_cost_per_mtok": 15.00,
+    "output_cost_per_mtok": 75.00
+  },
+  "deepseek-chat": {
+    "provider": "deepseek",
+    "context_window": 64000,
+    "supports_tools": true,
+    "supports_vision": false,
+    "input_cost_per_mtok": 0.14,
+    "output_cost_per_mtok": 0.28
+  },
+  "deepseek-coder": {
+    "provider": "deepseek",
+    "context_window": 64000,
+    "supports_tools": true,
+    "supports_vision": false,
+    "input_cost_per_mtok": 0.14,
+    "output_cost_per_mtok": 0.28
+  },
+  "qwen-turbo": {
+    "provider": "qwen",
+    "context_window": 128000,
+    "supports_tools": true,
+    "supports_vision": false,
+    "input_cost_per_mtok": 0.20,
+    "output_cost_per_mtok": 0.60
+  }
+}
