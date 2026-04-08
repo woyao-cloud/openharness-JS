@@ -243,14 +243,60 @@ export class TerminalRenderer {
   searchNext(): void {
     if (this.state.searchMatchCount > 0) {
       this.state.searchCurrentMatch = (this.state.searchCurrentMatch + 1) % this.state.searchMatchCount;
+      this.scrollToSearchMatch();
       this.scheduleRender();
     }
   }
   searchPrev(): void {
     if (this.state.searchMatchCount > 0) {
       this.state.searchCurrentMatch = (this.state.searchCurrentMatch - 1 + this.state.searchMatchCount) % this.state.searchMatchCount;
+      this.scrollToSearchMatch();
       this.scheduleRender();
     }
+  }
+  private scrollToSearchMatch(): void {
+    // Estimate which row the current match is on and scroll to it
+    const lq = this.state.searchQuery.toLowerCase();
+    const w = process.stdout.columns ?? 80;
+    let matchIdx = 0;
+    let rowEstimate = 0;
+    for (const msg of this.state.messages) {
+      const content = msg.content;
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const lineRows = Math.max(1, Math.ceil((line.length || 1) / (w - 2)));
+        // Count matches in this line
+        const ll = line.toLowerCase();
+        let idx = 0;
+        while ((idx = ll.indexOf(lq, idx)) !== -1) {
+          if (matchIdx === this.state.searchCurrentMatch) {
+            // Found it — scroll so this row is visible
+            const h = process.stdout.rows ?? 24;
+            const targetScroll = Math.max(0, rowEstimate - Math.floor(h / 3));
+            // manualScroll is offset from bottom: convert
+            const totalRows = this.estimateTotalRows();
+            this.state.manualScroll = Math.max(0, totalRows - targetScroll - h + 15);
+            return;
+          }
+          matchIdx++;
+          idx += lq.length;
+        }
+        rowEstimate += lineRows;
+      }
+      rowEstimate++; // gap between messages
+    }
+  }
+  private estimateTotalRows(): number {
+    const w = process.stdout.columns ?? 80;
+    let total = 0;
+    for (const msg of this.state.messages) {
+      const lines = msg.content.split('\n');
+      for (const line of lines) {
+        total += Math.max(1, Math.ceil((line.length || 1) / (w - 2)));
+      }
+      total++;
+    }
+    return total;
   }
   isSearchMode(): boolean { return this.state.searchMode; }
   getSearchQuery(): string { return this.state.searchQuery; }

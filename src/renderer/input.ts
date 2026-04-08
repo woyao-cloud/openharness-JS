@@ -64,6 +64,10 @@ function parseKey(data: string, offset: number): { event: KeyEvent; consumed: nu
     // SGR mouse events: ESC [ < button ; col ; row M/m
     if (seq.startsWith('\x1b[<')) {
       const endIdx = seq.search(/[Mm]/);
+      if (endIdx === -1) {
+        // Partial sequence — consume entire fragment to avoid junk
+        return { event: key('', 'mouse', seq), consumed: seq.length };
+      }
       if (endIdx > 3) {
         const params = seq.slice(3, endIdx).split(';');
         const button = parseInt(params[0] ?? '0', 10);

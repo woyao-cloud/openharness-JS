@@ -59,6 +59,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   }
 
   const cost = new CostTracker();
+  let cachedConfig = readOhConfig();
   let messages: Message[] = config.resumeSessionId ? session.messages : (config.initialMessages ?? []);
 
   // Show banner on fresh sessions (set after renderer.start())
@@ -140,9 +141,8 @@ export async function startREPL(config: REPLConfig): Promise<void> {
     }
 
     // Use template if configured, otherwise default format
-    const savedCfg = readOhConfig();
-    if (savedCfg?.statusLineFormat) {
-      const line = savedCfg.statusLineFormat
+    if (cachedConfig?.statusLineFormat) {
+      const line = cachedConfig.statusLineFormat
         .replace('{model}', currentModel || '')
         .replace('{tokens}', tokensStr)
         .replace('{cost}', costStr)
@@ -197,9 +197,9 @@ export async function startREPL(config: REPLConfig): Promise<void> {
     if (renderer.isSearchMode()) {
       if (key.name === 'escape') {
         renderer.exitSearchMode();
-      } else if (key.name === 'return') {
+      } else if (key.name === 'return' || key.name === 'down') {
         renderer.searchNext();
-      } else if (key.shift && key.name === 'return') {
+      } else if (key.name === 'up') {
         renderer.searchPrev();
       } else if (key.name === 'backspace') {
         const q = renderer.getSearchQuery();
@@ -374,9 +374,10 @@ export async function startREPL(config: REPLConfig): Promise<void> {
       resetDiffStyleCache();
       // Persist theme to config
       try {
-        const cfg = readOhConfig() ?? { provider: config.provider.name, model: currentModel, permissionMode: config.permissionMode };
+        const cfg = cachedConfig ?? { provider: config.provider.name, model: currentModel, permissionMode: config.permissionMode };
         cfg.theme = themeName;
         writeOhConfig(cfg);
+        cachedConfig = cfg;
       } catch { /* ignore */ }
       messages = [...messages, createInfoMessage(`Theme switched to ${themeName}`)];
       syncRenderer();
@@ -404,7 +405,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   async function runQuery(prompt: string) {
     loading = true;
     renderer.setLoading(true);
-    renderer.setThinkingStartedAt(Date.now());
+    // Don't set thinkingStartedAt here — only on first thinking_delta event
     renderer.setError(null);
     renderer.clearToolCalls();
 
@@ -454,6 +455,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
             break;
 
           case 'thinking_delta':
+            if (!renderer.getThinkingStartedAt()) renderer.setThinkingStartedAt(Date.now());
             renderer.setThinkingText(event.content);
             break;
 

@@ -184,6 +184,19 @@ export function rasterize(
     }
   }
 
+  // Include non-message content in totalRows for accurate scroll indicator
+  if (state.thinkingText) {
+    totalRows += state.thinkingExpanded ? Math.min(state.thinkingText.split('\n').length, 10) : 1;
+  }
+  if (!state.loading && state.lastThinkingSummary) totalRows += 1;
+  if (state.loading && !state.streamingText && !state.thinkingText) totalRows += 1; // spinner
+  for (const [, tc] of state.toolCalls) {
+    totalRows += 1; // tool header line
+    if (tc.status === 'running' && tc.liveOutput) totalRows += Math.min(tc.liveOutput.length, 5);
+    if (tc.output && tc.status !== 'running') totalRows += Math.min(tc.output.split('\n').length, 3);
+  }
+  if (state.contextWarning) totalRows += 1;
+
   // If content exceeds area, scroll: offset so latest content is visible at bottom
   // manualScroll > 0 means user scrolled up by that many rows
   const autoOffset = totalRows > msgAreaHeight ? totalRows - msgAreaHeight : 0;
@@ -587,7 +600,7 @@ export function rasterize(
       : state.searchQuery ? ' No matches' : '';
     grid.writeText(inputRow, inputStart + state.searchQuery.length, matchInfo, S_DIM);
     // Hints
-    grid.writeText(inputRow + 1, 0, 'Enter/n next | N prev | Esc close', S_DIM);
+    grid.writeText(inputRow + 1, 0, 'Enter/↓ next | ↑ prev | Esc close', S_DIM);
   } else {
     const vimIndicator = state.vimMode ? (state.vimMode === 'normal' ? '[N] ' : '[I] ') : '';
     const prompt = vimIndicator + '❯ ';
