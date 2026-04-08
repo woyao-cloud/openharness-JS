@@ -51,7 +51,7 @@ Most AI coding agents are locked to one provider or cost $20+/month. OpenHarness
 | Free local models | Ollama native | No | Yes | Yes |
 | Tools | 18 with permission gates | 40+ | File-focused | 20+ |
 | Git integration | Auto-commit + /undo | Yes | Deep git | Basic |
-| Slash commands | 16 built-in | 80+ | Some | Some |
+| Slash commands | 19 built-in | 80+ | Some | Some |
 | Headless/CI mode | `oh run --json` | Yes | Yes | Yes |
 | Terminal UI | Custom cell-level renderer + React/Ink | React + Ink | Basic | BubbleTea |
 | Language | TypeScript | TypeScript | Python | Go |
@@ -70,37 +70,54 @@ OpenHarness features a custom cell-level diffing renderer built for performance 
 | `↑` / `↓` | Navigate input history |
 | `Ctrl+C` | Cancel current request / exit |
 | `Ctrl+A` / `Ctrl+E` | Jump to start / end of input |
+| `Ctrl+F` | Search through conversation (Enter to cycle matches, Esc to close) |
+| `Ctrl+O` | Toggle thinking block expansion |
+| `Ctrl+K` | Toggle code block expansion in messages |
 | `Page Up` / `Page Down` | Scroll message history (10 rows) |
 | `Shift+↑` / `Shift+↓` | Scroll message history (3 rows) |
-| `Tab` | Cycle through tool call outputs (expand/collapse) |
-| `Ctrl+K` | Toggle code block expansion in messages |
+| `Mouse scroll` | Scroll message history (3 rows per tick) |
+| `Tab` | Autocomplete slash commands / cycle tool call outputs |
 | `/vim` | Toggle Vim mode (normal/insert) |
 
 ### Features
 
 - **Markdown rendering** — headings, code blocks, bold, italic, lists, tables, blockquotes, links
-- **Syntax highlighting** — keywords, strings, comments, numbers, types (JS/TS/Python/Rust/Go)
+- **Syntax highlighting** — keywords, strings, comments, numbers, types (JS/TS/Python/Rust/Go and 20+ languages)
 - **Collapsible code blocks** — blocks over 8 lines auto-collapse; `Ctrl+K` to expand all
+- **Collapsible thinking** — thinking blocks collapse to a one-line summary after completion; `Ctrl+O` to expand
 - **Shimmer spinner** — animated "Thinking" indicator with color transitions (magenta → yellow at 30s → red at 60s)
-- **Tool call display** — args preview, live streaming output, expand/collapse with `Tab`
-- **Permission prompts** — bordered box with risk coloring, `[D]iff` toggle for write/edit tools
-- **Inline diff view** — green/red diff in permission prompts for file changes
-- **Status line** — persistent model name, token count, and cost
+- **Tool call display** — args preview, live streaming output, result summaries (line counts, elapsed time), expand/collapse with `Tab`
+- **Permission prompts** — bordered box with risk coloring, bold colored **Y**es/**N**o/**D**iff keys, syntax-highlighted inline diffs
+- **Search mode** — `Ctrl+F` to search conversation with live match count and navigation
+- **Status line** — model name, token count, cost, context usage bar (customizable via config)
 - **Context warning** — yellow alert when context window exceeds 75%
-- **Scrollback** — Page Up/Down or Shift+arrows to scroll through history
+- **Scroll indicator** — footer shows `↑ N more above` / `↓ N more below` when content overflows
+- **Scrollback** — Page Up/Down, Shift+arrows, or mouse scroll wheel to navigate history
+- **Mouse support** — scroll wheel for messages, auto-enabled via SGR mouse tracking
+- **Autocomplete** — slash commands with descriptions shown in popup; Tab to cycle
 - **Session browser** — `/browse` to interactively browse and resume past sessions
-- **Companion mascot** — animated Cybergotchi in the footer
+- **Alternate screen buffer** — preserves terminal scrollback; clean restore on exit
+- **Companion mascot** — animated Cybergotchi in the footer (toggle with `/companion off|on`)
 
 ### Themes
 
 ```bash
 oh --light                    # light theme for bright terminals
+/theme light                  # switch mid-session (saved automatically)
+/theme dark                   # switch back
 ```
 
-Set permanently in `.oh/config.yaml`:
+Theme preference is saved to `.oh/config.yaml` and persists across sessions.
+
+### Custom Status Line
+
+Customize the status bar format in `.oh/config.yaml`:
+
 ```yaml
-theme: 'light'
+statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 ```
+
+Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XXXX), `{ctx}` (context usage bar). Empty sections are automatically collapsed.
 
 ## Tools (18)
 
@@ -128,30 +145,56 @@ theme: 'light'
 
 Low-risk read-only tools auto-approve. Medium and high risk tools require confirmation in `ask` mode. Use `--trust` to skip all prompts.
 
-## Slash Commands (18)
+## Slash Commands (19)
 
-Type these during a chat session:
+Type these during a chat session. Aliases: `/q` exit, `/h` help, `/c` commit, `/m` model, `/s` status.
 
+**Session:**
 | Command | Description |
 |---------|-------------|
-| `/help` | Show all available commands |
 | `/clear` | Clear conversation history |
-| `/cost` | Show session cost and token usage |
-| `/status` | Show model, mode, git branch, MCP servers |
+| `/compact` | Compress conversation to free context |
+| `/export` | Export conversation to markdown |
+| `/history [n]` | List recent sessions; `/history search <term>` to search |
+| `/browse` | Interactive session browser with preview |
+| `/resume <id>` | Resume a saved session |
+| `/fork` | Fork current session |
+
+**Git:**
+| Command | Description |
+|---------|-------------|
 | `/diff` | Show uncommitted git changes |
 | `/undo` | Undo last AI commit |
 | `/commit [msg]` | Create a git commit |
 | `/log` | Show recent git commits |
-| `/history [n]` | List recent sessions; `/history search <term>` to search |
-| `/browse` | Interactive session browser with preview |
+
+**Info:**
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands (categorized) |
+| `/cost` | Show session cost and token usage |
+| `/status` | Show model, mode, git branch, MCP servers |
+| `/config` | Show configuration |
 | `/files` | List files in context |
 | `/model <name>` | Switch model mid-session |
-| `/compact` | Compress conversation to free context (smart: truncates old tool results, drops oldest messages, removes orphaned tool results, targets 60% of model context window) |
-| `/export` | Export conversation to markdown |
-| `/plan` | Enter plan mode |
+| `/memory` | View and search memories |
+
+**Settings:**
+| Command | Description |
+|---------|-------------|
+| `/theme dark\|light` | Switch theme (saved to config) |
+| `/vim` | Toggle Vim mode |
+| `/companion off\|on` | Toggle companion visibility |
+
+**AI:**
+| Command | Description |
+|---------|-------------|
+| `/plan <task>` | Enter plan mode |
 | `/review` | Review recent code changes |
-| `/config` | Show configuration |
-| `/memory` | View memories |
+
+**Pet:**
+| Command | Description |
+|---------|-------------|
 | `/cybergotchi` | Feed, pet, rest, status, rename, or reset your companion |
 
 ## Permission Modes
