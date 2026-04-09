@@ -166,7 +166,8 @@ export function rasterize(
 
   // Render messages top-down (scroll up when content exceeds area)
   const prefixLen = 2;
-  const textWidth = w - prefixLen;
+  const contentWidth = w - 1; // reserve rightmost column for scrollbar
+  const textWidth = contentWidth - prefixLen;
 
   // Pre-compute total height to handle scrolling
   let totalRows = 0;
@@ -179,7 +180,7 @@ export function rasterize(
   for (const item of allContent) {
     if (item.role === 'user' && totalRows > 0) totalRows++;
     if (item.role === 'assistant' || item.role === 'streaming') {
-      totalRows += measureMarkdown(item.content, w);
+      totalRows += measureMarkdown(item.content, contentWidth);
     } else {
       const lines = item.content.split('\n');
       for (const line of lines) {
@@ -209,6 +210,16 @@ export function rasterize(
   // manualScroll > 0 means user scrolled up by that many rows
   const autoOffset = totalRows > msgAreaHeight ? totalRows - msgAreaHeight : 0;
   const scrollOffset = Math.max(0, autoOffset - state.manualScroll);
+
+  // Scrollbar geometry (rightmost column of message area)
+  const hasScrollbar = totalRows > msgAreaHeight;
+  let thumbStart = 0;
+  let thumbSize = msgAreaHeight;
+  if (hasScrollbar) {
+    thumbSize = Math.max(1, Math.round((msgAreaHeight / totalRows) * msgAreaHeight));
+    thumbStart = Math.round((scrollOffset / Math.max(1, totalRows)) * (msgAreaHeight - thumbSize));
+  }
+
   let r = 0;
   let virtualR = 0; // tracks position before scroll clipping
   let contentIdx = 0;
@@ -253,7 +264,7 @@ export function rasterize(
     // Compute how many rows this content will take
     let itemRows: number;
     if (item.role === 'assistant' || item.role === 'streaming') {
-      itemRows = measureMarkdown(item.content, w);
+      itemRows = measureMarkdown(item.content, contentWidth);
     } else {
       const lines = item.content.split('\n');
       itemRows = 0;
@@ -275,9 +286,9 @@ export function rasterize(
     // Write content — use markdown renderer for assistant messages
     let rows: number;
     if (item.role === 'assistant' || item.role === 'streaming') {
-      rows = renderMarkdown(grid, r, prefixLen, item.content, w, state.codeBlocksExpanded, msgAreaHeight);
+      rows = renderMarkdown(grid, r, prefixLen, item.content, contentWidth, state.codeBlocksExpanded, msgAreaHeight);
     } else {
-      rows = grid.writeWrapped(r, prefixLen, item.content, item.style, w, msgAreaHeight);
+      rows = grid.writeWrapped(r, prefixLen, item.content, item.style, contentWidth, msgAreaHeight);
     }
     r += rows;
     virtualR += itemRows;
@@ -462,12 +473,26 @@ export function rasterize(
     }
   }
 
+  // ── Scrollbar (right edge of message area) ──
+  if (hasScrollbar) {
+    const S_TRACK: Style = { fg: null, bg: null, bold: false, dim: true, underline: false };
+    const S_THUMB: Style = { fg: null, bg: null, bold: false, dim: false, underline: false };
+    for (let sr = 0; sr < msgAreaHeight; sr++) {
+      const isThumb = sr >= thumbStart && sr < thumbStart + thumbSize;
+      grid.setCell(sr, w - 1, isThumb ? '█' : '░', isThumb ? S_THUMB : S_TRACK);
+    }
+  }
+
   // ── Footer — place right after content, or at bottom if content fills the screen ──
   const footerStart = Math.min(r, msgAreaHeight);
 
   // Border line with scroll indicator
   for (let c = 0; c < w; c++) {
     grid.setCell(footerStart, c, '─', S_BORDER);
+  }
+  // Connect scrollbar to footer border
+  if (hasScrollbar) {
+    grid.setCell(footerStart, w - 1, '┤', S_BORDER);
   }
   if (state.manualScroll > 0 && totalRows > msgAreaHeight) {
     // User scrolled up — show how many lines are hidden below

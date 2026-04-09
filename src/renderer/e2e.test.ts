@@ -398,6 +398,44 @@ describe('E2E: REPL state machine', () => {
     assert.ok(foundVersion, 'Should still show version info on small terminal');
   });
 
+  // ── Scrollbar ──
+
+  it('renders scrollbar when content overflows', () => {
+    const messages = Array.from({ length: 50 }, (_, i) => ({
+      role: 'user' as const,
+      content: `Message ${i}`,
+      uuid: `u${i}`,
+      timestamp: Date.now(),
+    }));
+    const state = makeState({ messages });
+    const grid = new CellGrid(80, 24);
+    rasterize(state, grid);
+    // Check rightmost column for scrollbar characters
+    let foundThumb = false;
+    let foundTrack = false;
+    for (let r = 0; r < 20; r++) {
+      const char = grid.cells[r]![79]!.char;
+      if (char === '█') foundThumb = true;
+      if (char === '░') foundTrack = true;
+    }
+    assert.ok(foundThumb, 'Should render scrollbar thumb █');
+    assert.ok(foundTrack, 'Should render scrollbar track ░');
+  });
+
+  it('no scrollbar when content fits', () => {
+    const state = makeState({
+      messages: [{ role: 'user', content: 'short', uuid: 'u1', timestamp: Date.now() }],
+    });
+    const grid = new CellGrid(80, 24);
+    rasterize(state, grid);
+    let foundScrollbar = false;
+    for (let r = 0; r < 20; r++) {
+      const char = grid.cells[r]![79]!.char;
+      if (char === '█' || char === '░') foundScrollbar = true;
+    }
+    assert.ok(!foundScrollbar, 'Should not render scrollbar when content fits');
+  });
+
   it('hides banner completely on very small terminal', () => {
     const bannerLines = ['  ___', 'OpenHarness v1.0.0', '  ~/project'];
     const state = makeState({ bannerLines });
