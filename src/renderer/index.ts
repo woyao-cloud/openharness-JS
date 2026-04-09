@@ -303,7 +303,10 @@ export class TerminalRenderer {
   setTokenCount(count: number): void { this.state.tokenCount = count; this.scheduleRender(); }
 
   scrollUp(rows: number): void {
-    this.state.manualScroll += rows;
+    // Cap manualScroll to prevent scrolling past the top
+    const h = process.stdout.rows ?? 24;
+    const maxScroll = Math.max(0, this.estimateTotalRows() - Math.floor(h / 3));
+    this.state.manualScroll = Math.min(this.state.manualScroll + rows, maxScroll);
     this.scheduleRender();
   }
   scrollDown(rows: number): void {

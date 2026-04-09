@@ -194,10 +194,14 @@ export function rasterize(
   }
   if (!state.loading && state.lastThinkingSummary) totalRows += 1;
   if (state.loading && !state.streamingText && !state.thinkingText) totalRows += 1; // spinner
-  for (const [, tc] of state.toolCalls) {
+  for (const [callId, tc] of state.toolCalls) {
     totalRows += 1; // tool header line
+    if (tc.isAgent && tc.agentDescription) totalRows += 1; // agent description line
     if (tc.status === 'running' && tc.liveOutput) totalRows += Math.min(tc.liveOutput.length, 5);
-    if (tc.output && tc.status !== 'running') totalRows += Math.min(tc.output.split('\n').length, 3);
+    // Collapsed tools show 0 output lines; expanded show up to 20
+    if (tc.output && tc.status !== 'running' && state.expandedToolCalls.has(callId)) {
+      totalRows += Math.min(tc.output.split('\n').length, 20);
+    }
   }
   if (state.contextWarning) totalRows += 1;
 
