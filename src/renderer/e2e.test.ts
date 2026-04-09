@@ -385,7 +385,7 @@ describe('E2E: REPL state machine', () => {
     // Art lines are indices 0-2, info lines are 3-4. Compact should only show last 2.
     const bannerLines = ['ART_LINE_1', 'ART_LINE_2', 'ART_LINE_3', 'OpenHarness v1.0.0', '  ~/project (main)'];
     const state = makeState({ bannerLines });
-    const grid = new CellGrid(80, 16); // small terminal → compact mode (msgAreaHeight < 15)
+    const grid = new CellGrid(80, 35); // h >= 30 so banner shows, h < 40 so compact mode
     rasterize(state, grid);
     let foundArt = false;
     let foundVersion = false;
@@ -516,8 +516,17 @@ describe('E2E: REPL state machine', () => {
     const state = makeState({ inputText: 'abc\ndef', inputCursor: 4 });
     const grid = new CellGrid(80, 24);
     const cursor = rasterize(state, grid);
-    // Cursor should be on second line (inputRow + 1), col 2 (continuation indent)
-    assert.strictEqual(cursor.cursorCol, 2, 'Cursor col should be at continuation indent start');
+    // Cursor should be on second line, col = promptWidth (2 for default mode)
+    assert.strictEqual(cursor.cursorCol, 2, 'Cursor col should be at prompt width');
+  });
+
+  it('positions cursor correctly in multi-line input with vim mode', () => {
+    // With vim insert mode, prompt is "[I] ❯ " = 6 chars
+    const state = makeState({ inputText: 'abc\ndef', inputCursor: 4, vimMode: 'insert' });
+    const grid = new CellGrid(80, 24);
+    const cursor = rasterize(state, grid);
+    // Cursor should be at promptWidth = 6 (vim indicator + prompt)
+    assert.strictEqual(cursor.cursorCol, 6, 'Cursor col should match vim prompt width');
   });
 
   it('scrollback navigation changes visible content', () => {

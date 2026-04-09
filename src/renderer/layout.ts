@@ -210,11 +210,11 @@ export function rasterize(
   let contentIdx = 0;
 
   // ── Banner (ASCII art at top) ──
-  if (state.bannerLines && msgAreaHeight >= 8) {
+  if (state.bannerLines && h >= 30) {
     const S_BANNER = s('cyan');
     const S_BANNER_DIM = s(null, false, true);
     // On small terminals, show only the last 2 lines (version + cwd info)
-    const compact = msgAreaHeight < 15;
+    const compact = h < 40;
     const startLine = compact ? Math.max(0, state.bannerLines.length - 2) : 0;
     for (let i = startLine; i < state.bannerLines.length; i++) {
       if (virtualR >= scrollOffset && r < msgAreaHeight) {
@@ -480,8 +480,9 @@ export function rasterize(
 
   let nextRow = footerStart + 1;
 
-  // Permission prompt box (if active, skip if terminal too narrow)
-  if (state.permissionBox && w >= 20) {
+  // Permission prompt box (if active, skip if terminal too small)
+  // Ensure at least 6 rows available for the box (tool + desc + keys + borders)
+  if (state.permissionBox && w >= 20 && (h - nextRow) >= 6) {
     const { toolName, description, riskLevel } = state.permissionBox;
     const riskColor = riskLevel === 'high' ? 'red' : riskLevel === 'medium' ? 'yellow' : 'green';
     const riskStyle: Style = { fg: riskColor, bg: null, bold: true, dim: false, underline: false };
@@ -508,11 +509,12 @@ export function rasterize(
     grid.writeText(nextRow, boxWidth, '│', riskDim);
     nextRow++;
 
-    // Inline diff (when toggled)
-    if (state.permissionDiffVisible && state.permissionDiffInfo) {
+    // Inline diff (when toggled, capped to available space)
+    if (state.permissionDiffVisible && state.permissionDiffInfo && nextRow + 3 < h) {
       grid.writeText(nextRow, 1, '│', riskDim);
       nextRow++;
-      const diffRows = renderDiff(grid, nextRow, 3, state.permissionDiffInfo, boxWidth - 2, 15);
+      const availDiffRows = Math.min(maxDiffHeight, h - nextRow - 3); // reserve 3 for keys + border + input
+      const diffRows = renderDiff(grid, nextRow, 3, state.permissionDiffInfo, boxWidth - 2, availDiffRows);
       // Draw left border for diff rows
       for (let dr = 0; dr < diffRows; dr++) {
         if (nextRow + dr < grid.height) {
@@ -649,11 +651,14 @@ export function rasterize(
   if (state.companionLines && w >= 50) {
     const compWidth = Math.max(...state.companionLines.map(l => l.length), 0);
     const compStartCol = Math.max(0, w - compWidth - 1);
-    const inputEndCol = promptWidth + state.inputText.split('\n')[0]!.length;
+    const inputEndCol = promptWidth + (state.inputText.split('\n')[0]?.length ?? 0);
+    // Only render if companion has horizontal clearance from input
     if (compStartCol > inputEndCol + 3) {
       const compStyle: Style = { fg: state.companionColor || 'cyan', bg: null, bold: false, dim: false, underline: false };
       for (let i = 0; i < state.companionLines.length; i++) {
         const compRow = footerStart + i;
+        // Skip rows that would overlap with input/status area
+        if (compRow >= inputRow) break;
         if (compRow >= h) break;
         grid.writeText(compRow, compStartCol, state.companionLines[i]!, compStyle);
       }
