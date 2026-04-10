@@ -214,7 +214,17 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   }
 
   // Update renderer state
+  /** Sync local aliases back to the centralized store */
+  function syncStore() {
+    store.setState({
+      messages, loading, currentModel, inputText, inputCursor,
+      inputHistory, historyIndex, vimMode, fastMode,
+      acSuggestions, acDescriptions, acIndex, acTokenStart, acIsPath,
+    });
+  }
+
   function syncRenderer() {
+    syncStore();
     renderer.setMessages(messages);
     renderer.setLoading(loading);
     const hints = `exit to quit${loading ? ' | Ctrl+C stop | Ctrl+O thinking' : ' | Tab expand tools | Ctrl+O transcript'}${companionConfig?.soul?.name ? ` | @${companionConfig.soul.name}` : ''}`;
@@ -506,6 +516,13 @@ export async function startREPL(config: REPLConfig): Promise<void> {
     renderer.setInputText(inputText);
     renderer.setInputCursor(inputCursor);
     updateAutocomplete();
+
+    // Sync local aliases back to store after each keypress
+    store.setState({
+      messages, loading, currentModel, inputText, inputCursor,
+      inputHistory, historyIndex, vimMode, fastMode,
+      acSuggestions, acDescriptions, acIndex, acTokenStart, acIsPath,
+    });
   });
 
   function navigateHistory(dir: number) {

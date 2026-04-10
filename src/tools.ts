@@ -36,6 +36,17 @@ import { ToolSearchTool } from "./tools/ToolSearchTool/index.js";
 import { SendMessageTool } from "./tools/SendMessageTool/index.js";
 // Scheduled tasks
 import { CronCreateTool, CronDeleteTool, CronListTool } from "./tools/CronTool/index.js";
+// Worktree management
+import { EnterWorktreeTool } from "./tools/EnterWorktreeTool/index.js";
+import { ExitWorktreeTool } from "./tools/ExitWorktreeTool/index.js";
+// Process management
+import { KillProcessTool } from "./tools/KillProcessTool/index.js";
+// Remote triggers
+import { RemoteTriggerTool } from "./tools/RemoteTriggerTool/index.js";
+// Memory
+import { MemoryTool } from "./tools/MemoryTool/index.js";
+// Multi-file edits
+import { MultiEditTool } from "./tools/MultiEditTool/index.js";
 
 /**
  * Returns all registered tools.
@@ -81,5 +92,16 @@ export function getAllTools(): Tools {
     CronCreateTool,
     CronDeleteTool,
     CronListTool,
+    // Worktree management
+    EnterWorktreeTool,
+    ExitWorktreeTool,
+    // Process management
+    KillProcessTool,
+    // Remote triggers
+    RemoteTriggerTool,
+    // Memory management
+    MemoryTool,
+    // Multi-file edits
+    MultiEditTool,
   ];
 }
