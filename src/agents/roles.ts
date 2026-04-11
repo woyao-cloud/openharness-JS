@@ -31,7 +31,7 @@ const roles: AgentRole[] = [
 - Verify that changes match the stated intent
 
 Be specific: cite file paths, line numbers, and code snippets. Prioritize issues by severity (critical > major > minor). Don't mention things that look fine — focus on problems.`,
-    suggestedTools: ['FileRead', 'Glob', 'Grep', 'LS'],
+    suggestedTools: ['Read', 'Glob', 'Grep', 'LS'],
   },
   {
     id: 'test-writer',
@@ -46,7 +46,7 @@ Be specific: cite file paths, line numbers, and code snippets. Prioritize issues
 - Include both positive and negative test cases
 
 Read existing tests first to match the style, then write new tests.`,
-    suggestedTools: ['FileRead', 'FileWrite', 'Glob', 'Grep', 'Bash'],
+    suggestedTools: ['Read', 'Write', 'Glob', 'Grep', 'Bash'],
   },
   {
     id: 'docs-writer',
@@ -61,7 +61,7 @@ Read existing tests first to match the style, then write new tests.`,
 - Keep documentation in sync with the actual code
 
 Write for the target audience (developers using this project). Be practical, not verbose.`,
-    suggestedTools: ['FileRead', 'FileWrite', 'FileEdit', 'Glob', 'Grep'],
+    suggestedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep'],
   },
   {
     id: 'debugger',
@@ -76,7 +76,7 @@ Write for the target audience (developers using this project). Be practical, not
 - Propose a minimal fix that addresses the root cause, not the symptom
 
 Follow systematic debugging: read errors → reproduce → check changes → trace data → form hypothesis → test minimally.`,
-    suggestedTools: ['FileRead', 'Glob', 'Grep', 'Bash', 'LS'],
+    suggestedTools: ['Read', 'Glob', 'Grep', 'Bash', 'LS'],
   },
   {
     id: 'refactorer',
@@ -91,7 +91,7 @@ Follow systematic debugging: read errors → reproduce → check changes → tra
 - Ensure all existing tests still pass after refactoring
 
 Do NOT add new features or change behavior. The refactored code must be functionally identical. Run tests after each change.`,
-    suggestedTools: ['FileRead', 'FileWrite', 'FileEdit', 'Glob', 'Grep', 'Bash'],
+    suggestedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
   },
   {
     id: 'security-auditor',
@@ -108,7 +108,21 @@ Do NOT add new features or change behavior. The refactored code must be function
 - Check dependency versions for known CVEs
 
 Report findings with severity (Critical/High/Medium/Low), affected file:line, and recommended fix.`,
-    suggestedTools: ['FileRead', 'Glob', 'Grep', 'Bash'],
+    suggestedTools: ['Read', 'Glob', 'Grep', 'Bash'],
+  },
+  {
+    id: 'evaluator',
+    name: 'Evaluator',
+    description: 'Evaluates code quality, correctness, and test results (read-only)',
+    systemPromptSupplement: `You are an evaluator agent. Your job is to:
+- Review code changes for correctness and quality
+- Run existing tests and report results
+- Check for regressions against the stated requirements
+- Verify that changes match the stated intent
+- Provide a pass/fail assessment with specific findings
+
+You CANNOT modify files. Only read, search, and run test/lint commands to evaluate.`,
+    suggestedTools: ['Read', 'Glob', 'Grep', 'LS', 'Bash', 'Diagnostics'],
   },
 ];
 

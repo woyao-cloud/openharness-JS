@@ -5,11 +5,12 @@ import { getRole, listRoles, getRoleIds } from './roles.js';
 describe('agent roles', () => {
   it('lists all roles', () => {
     const roles = listRoles();
-    assert.ok(roles.length >= 6);
+    assert.ok(roles.length >= 7);
     assert.ok(roles.find(r => r.id === 'code-reviewer'));
     assert.ok(roles.find(r => r.id === 'test-writer'));
     assert.ok(roles.find(r => r.id === 'debugger'));
     assert.ok(roles.find(r => r.id === 'security-auditor'));
+    assert.ok(roles.find(r => r.id === 'evaluator'));
   });
 
   it('gets role by ID', () => {
@@ -17,7 +18,7 @@ describe('agent roles', () => {
     assert.ok(role);
     assert.strictEqual(role.name, 'Code Reviewer');
     assert.ok(role.systemPromptSupplement.length > 50);
-    assert.ok(role.suggestedTools!.includes('FileRead'));
+    assert.ok(role.suggestedTools!.includes('Read'));
   });
 
   it('returns undefined for unknown role', () => {

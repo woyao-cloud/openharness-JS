@@ -34,6 +34,12 @@ export type ToolPermissionRule = {
   pattern?: string;   // regex pattern to match against tool input (e.g. Bash command content)
 };
 
+export type VerificationRuleConfig = {
+  extensions: string[];
+  lint?: string;
+  timeout?: number;
+};
+
 export type OhConfig = {
   provider: string;
   model: string;
@@ -45,6 +51,16 @@ export type OhConfig = {
   hooks?: HooksConfig;
   toolPermissions?: ToolPermissionRule[];
   statusLineFormat?: string; // Template: {model} {tokens} {cost} {ctx}
+  /** Verification loops — auto-run lint/typecheck after file edits */
+  verification?: {
+    enabled?: boolean;          // default true (auto-detect)
+    mode?: 'warn' | 'block';   // default 'warn'
+    rules?: VerificationRuleConfig[];
+  };
+  /** Memory consolidation settings */
+  memory?: {
+    consolidateOnExit?: boolean;  // default true
+  };
 };
 
 function yamlScalar(value: string): string {

@@ -94,7 +94,7 @@ export async function executeSingleTool(
   try {
     const toolAbort = AbortSignal.timeout(TOOL_TIMEOUT_MS);
     const contextWithTimeout = { ...context, abortSignal: context.abortSignal ?? toolAbort };
-    const result = await Promise.race([
+    let result = await Promise.race([
       tool.call(parsed.data, contextWithTimeout),
       new Promise<never>((_, reject) => {
         toolAbort.addEventListener("abort", () => reject(new Error(`Tool '${tool.name}' timed out after ${TOOL_TIMEOUT_MS / 1000}s`)));
@@ -108,11 +108,36 @@ export async function executeSingleTool(
       toolOutput: result.output.slice(0, 1000),
     });
 
-    // Strip ANSI and cap output
-    let output = result.output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+    // Verification loop: auto-run lint/typecheck after file-modifying tools
+    let verificationSuffix = '';
+    if (!result.isError && ['Edit', 'Write', 'MultiEdit'].includes(tool.name)) {
+      try {
+        const { runVerificationForFiles, getVerificationConfig, extractFilePaths } = await import('../harness/verification.js');
+        const vConfig = getVerificationConfig();
+        if (vConfig?.enabled) {
+          const filePaths = extractFilePaths(tool.name, parsed.data as Record<string, unknown>);
+          if (filePaths.length > 0) {
+            const vResult = await runVerificationForFiles(filePaths, vConfig);
+            if (vResult.ran) {
+              if (!vResult.passed) {
+                verificationSuffix = `\n\n[Verification FAILED]\n${vResult.summary}`;
+                if (vConfig.mode === 'block') {
+                  result = { output: result.output, isError: true };
+                }
+              } else {
+                verificationSuffix = '\n\n[Verification passed]';
+              }
+            }
+          }
+        }
+      } catch { /* verification should never break tool execution */ }
+    }
+
+    // Strip ANSI and cap output, then append verification suffix
+    let output = result.output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "") + verificationSuffix;
     if (output.length > MAX_TOOL_RESULT_CHARS) {
       output = output.slice(0, MAX_TOOL_RESULT_CHARS)
-        + `\n\n[TRUNCATED: output was ${result.output.length.toLocaleString()} chars, showing first ${MAX_TOOL_RESULT_CHARS.toLocaleString()}]`;
+        + `\n\n[TRUNCATED: output was ${output.length.toLocaleString()} chars, showing first ${MAX_TOOL_RESULT_CHARS.toLocaleString()}]`;
     }
     return { output, isError: result.isError };
   } catch (err) {

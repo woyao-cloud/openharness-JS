@@ -16,6 +16,7 @@ export type AgentTask = {
   prompt: string;
   description?: string;
   blockedBy?: string[];  // task IDs that must complete before this one starts
+  allowedTools?: string[]; // restrict this task's agent to specific tools
 };
 
 export type AgentTaskResult = {
@@ -145,9 +146,18 @@ export class AgentDispatcher {
     try {
       const { query } = await import('../query.js');
 
+      // Filter tools if task specifies allowed tools
+      let taskTools = this.tools;
+      if (task.allowedTools && task.allowedTools.length > 0) {
+        const allowSet = new Set(task.allowedTools.map(n => n.toLowerCase()));
+        allowSet.add('askuser');
+        const filtered = this.tools.filter(t => allowSet.has(t.name.toLowerCase()));
+        if (filtered.length > 0) taskTools = filtered;
+      }
+
       const config = {
         provider: this.provider,
-        tools: this.tools,
+        tools: taskTools,
         systemPrompt: this.systemPrompt,
         permissionMode: this.permissionMode,
         model: this.model,

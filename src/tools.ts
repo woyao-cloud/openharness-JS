@@ -1,10 +1,15 @@
 /**
  * Tool registry — aggregates all available tools.
+ *
+ * Tools are split into core (always fully loaded) and extended (deferred).
+ * Deferred tools contribute only a one-liner to the system prompt until
+ * activated via ToolSearch or first invocation.
  */
 
 import type { Tools } from "./Tool.js";
+import { DeferredTool } from "./DeferredTool.js";
 
-// Core tools
+// Core tools — always fully loaded with complete prompts
 import { BashTool } from "./tools/BashTool/index.js";
 import { FileReadTool } from "./tools/FileReadTool/index.js";
 import { FileWriteTool } from "./tools/FileWriteTool/index.js";
@@ -12,48 +17,45 @@ import { FileEditTool } from "./tools/FileEditTool/index.js";
 import { GlobTool } from "./tools/GlobTool/index.js";
 import { GrepTool } from "./tools/GrepTool/index.js";
 import { LSTool } from "./tools/LSTool/index.js";
-import { WebFetchTool } from "./tools/WebFetchTool/index.js";
-
-// Advanced tools
-import { WebSearchTool } from "./tools/WebSearchTool/index.js";
+import { AskUserTool } from "./tools/AskUserTool/index.js";
+import { AgentTool } from "./tools/AgentTool/index.js";
 import { TaskCreateTool } from "./tools/TaskCreateTool/index.js";
 import { TaskUpdateTool } from "./tools/TaskUpdateTool/index.js";
 import { TaskListTool } from "./tools/TaskListTool/index.js";
+import { EnterPlanModeTool } from "./tools/EnterPlanModeTool/index.js";
+import { ExitPlanModeTool } from "./tools/ExitPlanModeTool/index.js";
+import { ToolSearchTool } from "./tools/ToolSearchTool/index.js";
+import { MemoryTool } from "./tools/MemoryTool/index.js";
+import { ImageReadTool } from "./tools/ImageReadTool/index.js";
+
+// Extended tools — deferred loading (minimal prompt until first use)
+import { WebFetchTool } from "./tools/WebFetchTool/index.js";
+import { WebSearchTool } from "./tools/WebSearchTool/index.js";
 import { TaskGetTool } from "./tools/TaskGetTool/index.js";
 import { TaskStopTool } from "./tools/TaskStopTool/index.js";
 import { TaskOutputTool } from "./tools/TaskOutputTool/index.js";
-import { AskUserTool } from "./tools/AskUserTool/index.js";
 import { SkillTool } from "./tools/SkillTool/index.js";
-import { AgentTool } from "./tools/AgentTool/index.js";
-import { EnterPlanModeTool } from "./tools/EnterPlanModeTool/index.js";
-import { ExitPlanModeTool } from "./tools/ExitPlanModeTool/index.js";
 import { NotebookEditTool } from "./tools/NotebookEditTool/index.js";
-import { ImageReadTool } from "./tools/ImageReadTool/index.js";
 import { DiagnosticsTool } from "./tools/DiagnosticsTool/index.js";
 import { ParallelAgentTool } from "./tools/ParallelAgentTool/index.js";
-import { ToolSearchTool } from "./tools/ToolSearchTool/index.js";
-// Agent messaging
 import { SendMessageTool } from "./tools/SendMessageTool/index.js";
-// Scheduled tasks
 import { CronCreateTool, CronDeleteTool, CronListTool } from "./tools/CronTool/index.js";
-// Worktree management
 import { EnterWorktreeTool } from "./tools/EnterWorktreeTool/index.js";
 import { ExitWorktreeTool } from "./tools/ExitWorktreeTool/index.js";
-// Process management
 import { KillProcessTool } from "./tools/KillProcessTool/index.js";
-// Remote triggers
 import { RemoteTriggerTool } from "./tools/RemoteTriggerTool/index.js";
-// Memory
-import { MemoryTool } from "./tools/MemoryTool/index.js";
-// Multi-file edits
 import { MultiEditTool } from "./tools/MultiEditTool/index.js";
 
 /**
  * Returns all registered tools.
+ *
+ * Core tools (~17) are fully loaded with complete prompts.
+ * Extended tools (~18) are deferred — they show a one-liner in the system
+ * prompt and resolve full schema on first use or via ToolSearch.
  */
 export function getAllTools(): Tools {
-  return [
-    // Core (always available)
+  const core: Tools = [
+    // File operations
     BashTool,
     FileReadTool,
     ImageReadTool,
@@ -62,46 +64,45 @@ export function getAllTools(): Tools {
     GlobTool,
     GrepTool,
     LSTool,
-    WebFetchTool,
-    WebSearchTool,
+    // Agent interaction
+    AskUserTool,
+    AgentTool,
     // Task management
     TaskCreateTool,
     TaskUpdateTool,
     TaskListTool,
-    TaskGetTool,
-    TaskStopTool,
-    TaskOutputTool,
-    // Agent interaction
-    AskUserTool,
-    SkillTool,
-    AgentTool,
     // Planning
     EnterPlanModeTool,
     ExitPlanModeTool,
-    // Notebooks
-    NotebookEditTool,
-    // Code Intelligence
-    DiagnosticsTool,
-    // Parallel Agents
-    ParallelAgentTool,
     // Tool Discovery
     ToolSearchTool,
-    // Agent messaging
+    // Memory management
+    MemoryTool,
+  ];
+
+  const extended: Tools = [
+    WebFetchTool,
+    WebSearchTool,
+    TaskGetTool,
+    TaskStopTool,
+    TaskOutputTool,
+    SkillTool,
+    NotebookEditTool,
+    DiagnosticsTool,
+    ParallelAgentTool,
     SendMessageTool,
-    // Scheduled tasks
     CronCreateTool,
     CronDeleteTool,
     CronListTool,
-    // Worktree management
     EnterWorktreeTool,
     ExitWorktreeTool,
-    // Process management
     KillProcessTool,
-    // Remote triggers
     RemoteTriggerTool,
-    // Memory management
-    MemoryTool,
-    // Multi-file edits
     MultiEditTool,
+  ];
+
+  return [
+    ...core,
+    ...extended.map(t => new DeferredTool(t)),
   ];
 }

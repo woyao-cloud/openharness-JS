@@ -10,6 +10,7 @@
 
 import type { ToolContext } from "../Tool.js";
 import { toolToAPIFormat } from "../Tool.js";
+import { DeferredTool } from "../DeferredTool.js";
 import type { StreamEvent } from "../types/events.js";
 import type { ToolCall } from "../types/message.js";
 import { createAssistantMessage, createUserMessage } from "../types/message.js";
@@ -51,9 +52,18 @@ export async function* query(
   const toolsSupported = !modelInfo || modelInfo.supportsTools;
   const apiTools = toolsSupported ? config.tools.map(toolToAPIFormat) : undefined;
 
-  const toolPrompts = toolsSupported
+  let toolPrompts = toolsSupported
     ? config.tools.map((t) => t.prompt()).join("\n\n")
     : "";
+
+  // Hint about deferred tools available via ToolSearch
+  if (toolsSupported) {
+    const deferredCount = config.tools.filter(t => t instanceof DeferredTool && !t.activated).length;
+    if (deferredCount > 0) {
+      toolPrompts += `\n\n[${deferredCount} additional tools available — use ToolSearch to discover them]`;
+    }
+  }
+
   const fullSystemPrompt = toolPrompts
     ? config.systemPrompt + "\n\n# Available Tools\n\n" + toolPrompts
     : config.systemPrompt;

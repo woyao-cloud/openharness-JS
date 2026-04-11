@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Tool, ToolResult, ToolContext } from "../../Tool.js";
 import { DeferredMcpTool } from "../../mcp/DeferredMcpTool.js";
+import { DeferredTool } from "../../DeferredTool.js";
 
 const inputSchema = z.object({
   query: z.string().describe("Tool name or keyword to search for"),
@@ -43,6 +44,11 @@ export const ToolSearchTool: Tool<typeof inputSchema> = {
         } else {
           results.push(`${tool.name}: ${tool.description} (schema unavailable)`);
         }
+      } else if (tool instanceof DeferredTool) {
+        // Activate deferred built-in tool and return full prompt
+        tool.activate();
+        const inner = tool.getInner();
+        results.push(`${inner.name}: ${inner.prompt()}`);
       } else {
         results.push(`${tool.name}: ${tool.prompt().slice(0, 200)}`);
       }

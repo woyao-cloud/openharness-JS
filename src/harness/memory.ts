@@ -8,8 +8,8 @@
  * without user intervention.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, unlinkSync } from 'node:fs';
+import { join, basename, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import type { Message } from '../types/message.js';
 import type { Provider } from '../providers/base.js';
@@ -195,6 +195,64 @@ export function loadActiveMemories(): MemoryEntry[] {
   const { active } = decayAndPrune(all);
   // Sort by relevance (highest first), then by access count
   return active.sort((a, b) => (b.relevance ?? 0.5) - (a.relevance ?? 0.5) || (b.accessCount ?? 0) - (a.accessCount ?? 0));
+}
+
+// ── Dream Consolidation ──
+// Background memory pruning and relevance persistence on session end.
+
+/** Delete memory files that have been pruned (relevance < 0.1) */
+export function deletePrunedMemories(pruned: MemoryEntry[]): number {
+  // Guard: only delete files within known memory directories
+  const allowedDirs = [PROJECT_MEMORY_DIR, GLOBAL_MEMORY_DIR].map(d => resolve(d));
+  let count = 0;
+  for (const m of pruned) {
+    const resolved = resolve(m.filePath);
+    if (!allowedDirs.some(d => resolved.startsWith(d + sep))) continue;
+    try { unlinkSync(m.filePath); count++; } catch { /* ignore */ }
+  }
+  return count;
+}
+
+/** Write back decayed relevance score to file frontmatter */
+function persistDecayedRelevance(entry: MemoryEntry): void {
+  try {
+    let raw = readFileSync(entry.filePath, 'utf-8');
+    if (raw.match(/^relevance:/m)) {
+      raw = raw.replace(/^relevance:\s*[0-9.]+$/m, `relevance: ${(entry.relevance ?? 0.5).toFixed(2)}`);
+      writeFileSync(entry.filePath, raw);
+    }
+  } catch { /* ignore */ }
+}
+
+export type ConsolidationResult = {
+  total: number;
+  pruned: number;
+  decayed: number;
+};
+
+/**
+ * Run full memory consolidation: apply decay, delete pruned files,
+ * persist updated relevance scores. Designed to run on session end.
+ */
+export function consolidateMemories(): ConsolidationResult {
+  const all = loadMemories();
+  if (all.length === 0) return { total: 0, pruned: 0, decayed: 0 };
+
+  const { active, pruned } = decayAndPrune(all);
+
+  // Delete pruned memory files
+  const prunedCount = deletePrunedMemories(pruned);
+
+  // Persist updated relevance scores for decayed memories
+  let decayedCount = 0;
+  for (const m of active) {
+    if ((m.relevance ?? 0.5) < 0.5) {
+      persistDecayedRelevance(m);
+      decayedCount++;
+    }
+  }
+
+  return { total: all.length, pruned: prunedCount, decayed: decayedCount };
 }
 
 /**

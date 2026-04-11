@@ -544,6 +544,20 @@ export async function startREPL(config: REPLConfig): Promise<void> {
 
     // Exit
     if (input === 'exit' || input === 'quit' || input === '/exit' || input === '/quit' || input === '/q') {
+      // Dream consolidation: prune stale memories before exit
+      try {
+        const { consolidateMemories } = await import('./harness/memory.js');
+        const { readOhConfig } = await import('./harness/config.js');
+        const ohCfg = readOhConfig();
+        if (ohCfg?.memory?.consolidateOnExit !== false) {
+          consolidateMemories();
+        }
+      } catch { /* ignore */ }
+      // Emit sessionEnd hook
+      try {
+        const { emitHookAsync } = await import('./harness/hooks.js');
+        await emitHookAsync('sessionEnd', {});
+      } catch { /* ignore */ }
       cleanup();
       process.exit(0);
     }

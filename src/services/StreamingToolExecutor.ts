@@ -122,6 +122,33 @@ export class StreamingToolExecutor {
     };
     try {
       tracked.result = await tool.call(parsed.data, callContext);
+
+      // Verification loop: auto-run lint/typecheck after file-modifying tools
+      if (tracked.result && !tracked.result.isError && ['Edit', 'Write', 'MultiEdit'].includes(tool.name)) {
+        try {
+          const { runVerificationForFiles, getVerificationConfig, extractFilePaths } = await import('../harness/verification.js');
+          const vConfig = getVerificationConfig();
+          if (vConfig?.enabled) {
+            const filePaths = extractFilePaths(tool.name, tracked.toolCall.arguments as Record<string, unknown>);
+            if (filePaths.length > 0) {
+              const vResult = await runVerificationForFiles(filePaths, vConfig);
+              if (vResult.ran) {
+                if (!vResult.passed) {
+                  tracked.result = {
+                    output: tracked.result.output + `\n\n[Verification FAILED]\n${vResult.summary}`,
+                    isError: vConfig.mode === 'block',
+                  };
+                } else {
+                  tracked.result = {
+                    output: tracked.result.output + '\n\n[Verification passed]',
+                    isError: false,
+                  };
+                }
+              }
+            }
+          }
+        } catch { /* verification should never break tool execution */ }
+      }
     } catch (err) {
       tracked.result = {
         output: `Error: ${err instanceof Error ? err.message : String(err)}`,

@@ -9,6 +9,7 @@ const inputSchema = z.object({
   run_in_background: z.boolean().optional(),
   model: z.string().optional(),
   subagent_type: z.string().optional(),
+  allowed_tools: z.array(z.string()).optional(),
 });
 
 export const AgentTool: Tool<typeof inputSchema> = {
@@ -49,6 +50,7 @@ export const AgentTool: Tool<typeof inputSchema> = {
 
     // Subagent type modifies the system prompt — check built-in types first, then agent roles
     let systemPrompt = context.systemPrompt ?? "You are a sub-agent. Complete the delegated task concisely.";
+    let role: import("../../agents/roles.js").AgentRole | undefined;
     if (input.subagent_type) {
       const builtinHints: Record<string, string> = {
         explore: "You are an exploration agent. Search the codebase to answer questions. Use only read-only tools (Read, Grep, Glob, LS). Do not modify any files.",
@@ -58,13 +60,23 @@ export const AgentTool: Tool<typeof inputSchema> = {
       if (hint) {
         systemPrompt = hint + "\n\n" + systemPrompt;
       } else {
-        // Check agent roles (code-reviewer, test-writer, debugger, etc.)
+        // Check agent roles (code-reviewer, test-writer, debugger, evaluator, etc.)
         const { getRole } = await import("../../agents/roles.js");
-        const role = getRole(input.subagent_type.toLowerCase());
+        role = getRole(input.subagent_type.toLowerCase());
         if (role) {
           systemPrompt = role.systemPromptSupplement + "\n\n" + systemPrompt;
         }
       }
+    }
+
+    // Tool filtering: restrict sub-agent to allowed tools (explicit or role-based)
+    let agentTools = context.tools;
+    const allowList = input.allowed_tools ?? (role?.suggestedTools?.length ? role.suggestedTools : null);
+    if (allowList) {
+      const allowSet = new Set(allowList.map(n => n.toLowerCase()));
+      allowSet.add('askuser'); // Always allow user communication
+      const filtered = context.tools.filter(t => allowSet.has(t.name.toLowerCase()));
+      if (filtered.length > 0) agentTools = filtered; // Fallback to all tools if filter produces empty set
     }
 
     // Model override for sub-agent
@@ -72,7 +84,7 @@ export const AgentTool: Tool<typeof inputSchema> = {
 
     const config = {
       provider: context.provider,
-      tools: context.tools,
+      tools: agentTools,
       systemPrompt,
       permissionMode: context.permissionMode ?? "trust",
       model: agentModel,
@@ -182,6 +194,7 @@ export const AgentTool: Tool<typeof inputSchema> = {
 - isolated (boolean, optional): Whether to use git worktree isolation (default: true if in a git repo).
 - run_in_background (boolean, optional): Run the agent in the background. Returns immediately; you will be notified when it completes.
 - model (string, optional): Override the model for this sub-agent (e.g., use a faster model for exploration).
-- subagent_type (string, optional): Specialize the agent behavior. Types: "Explore" (read-only codebase search), "Plan" (design implementation plans), "code-reviewer" (review code for issues).`;
+- subagent_type (string, optional): Specialize the agent behavior. Types: "Explore" (read-only codebase search), "Plan" (design implementation plans), "code-reviewer" (review code), "test-writer", "debugger", "refactorer", "security-auditor", "evaluator" (read-only evaluation with test running).
+- allowed_tools (string[], optional): Restrict the sub-agent to only these tools by name. If omitted and a role has suggested tools, those are used.`;
   },
 };
