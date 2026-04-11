@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.0 (2026-04-11)
+
+### openHarness reaches v1.0
+
+Open-source terminal coding agent — works with any LLM.
+
+**35 tools, 10 agent roles, 633 tests, 34 slash commands.**
+
+### Highlights since 0.11.1
+- **Verification Loops**: Auto-run lint/typecheck after every file edit. Auto-detects TypeScript, ESLint, Python/ruff, Go, Rust. Configurable via `.oh/config.yaml`.
+- **Agent Role System**: 10 specialized roles with tool-level isolation (code-reviewer, evaluator, planner, architect, migrator, etc.). Explicit `allowed_tools` parameter for custom filtering.
+- **Progressive Tool Expansion**: 18 of 35 tools deferred (lazy-loaded), reducing system prompt by ~46%. Tools resolve on first use or via ToolSearch.
+- **Cron Executor**: Background scheduler runs due tasks every 60s. Results persisted to `~/.oh/crons/history/`.
+- **Hibernate-and-Wake**: Sessions save context on exit, inject wake-up summary on resume with directory change detection.
+- **Global Config**: `~/.oh/config.yaml` as fallback defaults for all projects. 3-layer merge: global → project → local.
+- **MCP Server Registry**: Curated catalog of 15 MCP servers. `/mcp-registry` for browsing and generating install configs.
+- **Dream Consolidation**: Memory pruning on session exit with temporal decay (0.1/30 days). Defense-in-depth file deletion guard.
+- **60fps Renderer**: Batched rendering at ~16ms intervals instead of per-token, reducing CPU during fast streaming.
+- **Smart Init Wizard**: Auto-detects provider from env vars, MCP server selection step.
+- **Plugin System**: Skills + plugins documented. `/plugins` command for discovery.
+- **E2E Tests**: 9 integration tests covering the full agent loop cycle.
+- **Enhanced `/doctor`**: Memory stats, cron count, verification config, Node.js version check.
+
+### Fixed
+- Agent role `suggestedTools` used wrong names (FileRead→Read, FileWrite→Write, FileEdit→Edit)
+- Verification shell-escapes file paths (command injection prevention)
+- Memory deletion guarded by directory boundary check
+- MultiEdit verification checks all modified files
+- Windows timeout detection in verification
+- npm package slimmed from 2.1MB to 818KB
+
 ## 0.12.1 (2026-04-11)
 
 ### Added
