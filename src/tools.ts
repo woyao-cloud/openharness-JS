@@ -46,6 +46,8 @@ import { KillProcessTool } from "./tools/KillProcessTool/index.js";
 import { RemoteTriggerTool } from "./tools/RemoteTriggerTool/index.js";
 import { MultiEditTool } from "./tools/MultiEditTool/index.js";
 import { PipelineTool } from "./tools/PipelineTool/index.js";
+import { PowerShellTool } from "./tools/PowerShellTool/index.js";
+import { MonitorTool } from "./tools/MonitorTool/index.js";
 
 /**
  * Returns all registered tools.
@@ -102,6 +104,8 @@ export function getAllTools(): Tools {
     KillProcessTool,
     RemoteTriggerTool,
     MultiEditTool,
+    PowerShellTool,
+    MonitorTool,
   ];
 
   return [

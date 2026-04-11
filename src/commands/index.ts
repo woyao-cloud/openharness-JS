@@ -146,15 +146,58 @@ register("undo", "Undo last AI commit", () => {
   };
 });
 
-register("rewind", "Restore files from last checkpoint (undo last AI edit)", () => {
-  const { rewindLastCheckpoint, checkpointCount } = require("../harness/checkpoints.js");
-  const cp = rewindLastCheckpoint();
-  if (!cp) {
+register("rewind", "Restore files from checkpoint (interactive picker or last)", (args) => {
+  const { rewindLastCheckpoint, listCheckpoints, checkpointCount } = require("../harness/checkpoints.js");
+
+  const checkpoints = listCheckpoints();
+  if (checkpoints.length === 0) {
     return { output: "No checkpoints available. Checkpoints are created before file modifications.", handled: true };
   }
-  const remaining = checkpointCount();
+
+  const idx = args.trim();
+
+  // /rewind (no args) — show checkpoint list
+  if (!idx) {
+    const lines = [`Checkpoints (${checkpoints.length}):\n`];
+    for (let i = checkpoints.length - 1; i >= 0; i--) {
+      const cp = checkpoints[i]!;
+      const age = Math.round((Date.now() - cp.timestamp) / 60_000);
+      lines.push(`  ${i + 1}. [${age}m ago] ${cp.description}`);
+      lines.push(`     Files: ${cp.files.join(', ')}`);
+    }
+    lines.push('');
+    lines.push('Usage: /rewind <number> to restore a specific checkpoint');
+    lines.push('       /rewind last    to restore the most recent');
+    return { output: lines.join('\n'), handled: true };
+  }
+
+  // /rewind last — restore most recent
+  if (idx === 'last') {
+    const cp = rewindLastCheckpoint();
+    if (!cp) return { output: "No checkpoints.", handled: true };
+    return {
+      output: `Rewound: ${cp.description}\nRestored ${cp.files.length} file(s): ${cp.files.join(", ")}\n${checkpointCount()} checkpoint(s) remaining.`,
+      handled: true,
+    };
+  }
+
+  // /rewind <n> — restore specific checkpoint
+  const num = parseInt(idx, 10);
+  if (isNaN(num) || num < 1 || num > checkpoints.length) {
+    return { output: `Invalid checkpoint number. Use 1-${checkpoints.length}.`, handled: true };
+  }
+
+  // Rewind to specific checkpoint (restore all from that point)
+  let restored = 0;
+  while (checkpointCount() >= num) {
+    const cp = rewindLastCheckpoint();
+    if (!cp) break;
+    restored++;
+    if (checkpointCount() < num) break;
+  }
+
   return {
-    output: `Rewound: ${cp.description}\nRestored ${cp.files.length} file(s): ${cp.files.join(", ")}\n${remaining} checkpoint(s) remaining.`,
+    output: `Rewound ${restored} checkpoint(s) to point #${num}.\n${checkpointCount()} checkpoint(s) remaining.`,
     handled: true,
   };
 });

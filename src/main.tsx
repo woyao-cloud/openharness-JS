@@ -259,6 +259,7 @@ program
   .option("--fork <id>", "Fork (branch) from an existing session")
   .option("--light", "Use light theme")
   .option("--output-format <format>", "Output format for -p mode (text, json, stream-json)", "text")
+  .option("--json-schema <schema>", "Constrain output to match a JSON schema (headless mode)")
   .action(async (opts) => {
     // Load saved config as defaults (env vars + CLI flags override)
     const savedConfig = readOhConfig();
