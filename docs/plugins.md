@@ -79,3 +79,57 @@ openHarness auto-discovers plugins from `node_modules/` on startup.
 /plugins              # list installed plugins and skills
 /plugins search       # show npm search instructions
 ```
+
+## Marketplace
+
+Marketplaces are curated plugin catalogs. Add the official marketplace:
+
+```
+/plugins marketplace add zhijiewong/openharness
+```
+
+Then browse and install:
+
+```
+/plugins search database        # search by keyword
+/plugins search all             # browse everything
+/plugins install git-workflows  # install a plugin
+/plugins uninstall git-workflows
+```
+
+### Available Plugins (Official)
+
+| Plugin | Description |
+|--------|-------------|
+| `code-quality` | Linting, complexity analysis, dead code detection |
+| `git-workflows` | Conventional commits, changelog, release management |
+| `test-coverage` | Coverage analysis, untested code detection |
+| `api-client` | REST/GraphQL request builder, mock server |
+| `docker-tools` | Docker build, run, compose automation |
+| `database-tools` | Schema inspection, migration generation |
+| `docs-generator` | Auto-generate API docs and JSDoc from code |
+| `performance` | Profiling, bundle analysis, memory leaks |
+| `security-scan` | Dependency audit, secret detection, SAST |
+| `monorepo` | Workspace management, dependency graphs |
+
+### Creating a Marketplace
+
+Create a `marketplace.json` in any GitHub repo:
+
+```json
+{
+  "name": "my-marketplace",
+  "version": 1,
+  "plugins": [
+    {
+      "name": "my-plugin",
+      "description": "What it does",
+      "version": "1.0.0",
+      "source": { "type": "github", "repo": "owner/repo" },
+      "keywords": ["keyword1", "keyword2"]
+    }
+  ]
+}
+```
+
+Users add it with `/plugins marketplace add owner/repo`.

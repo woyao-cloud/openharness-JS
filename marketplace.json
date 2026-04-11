@@ -1,0 +1,87 @@
+{
+  "name": "openharness-official",
+  "version": 1,
+  "description": "Official openHarness plugin marketplace — curated tools, workflows, and integrations",
+  "plugins": [
+    {
+      "name": "code-quality",
+      "description": "Automated code quality checks — linting, complexity analysis, dead code detection",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-code-quality" },
+      "keywords": ["lint", "quality", "complexity", "dead-code"]
+    },
+    {
+      "name": "git-workflows",
+      "description": "Git automation — conventional commits, changelog generation, release management",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-git-workflows" },
+      "keywords": ["git", "commits", "changelog", "release", "semver"]
+    },
+    {
+      "name": "test-coverage",
+      "description": "Test coverage analysis — find untested code, suggest test cases, track coverage trends",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-test-coverage" },
+      "keywords": ["testing", "coverage", "unit-test", "integration-test"]
+    },
+    {
+      "name": "api-client",
+      "description": "REST/GraphQL API tools — request builder, response validation, mock server",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-api-client" },
+      "keywords": ["api", "rest", "graphql", "http", "mock"]
+    },
+    {
+      "name": "docker-tools",
+      "description": "Docker automation — build, run, compose, inspect containers and images",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-docker" },
+      "keywords": ["docker", "containers", "devops", "compose"]
+    },
+    {
+      "name": "database-tools",
+      "description": "Database operations — schema inspection, migration generation, query building",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-database" },
+      "keywords": ["database", "sql", "migration", "schema", "postgres", "sqlite"]
+    },
+    {
+      "name": "docs-generator",
+      "description": "Auto-generate API docs, README sections, and JSDoc/TSDoc from code",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-docs-generator" },
+      "keywords": ["documentation", "jsdoc", "readme", "api-docs"]
+    },
+    {
+      "name": "performance",
+      "description": "Performance profiling — find slow functions, bundle size analysis, memory leaks",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-performance" },
+      "keywords": ["performance", "profiling", "bundle", "memory"]
+    },
+    {
+      "name": "security-scan",
+      "description": "Security scanning — dependency audit, secret detection, SAST analysis",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-security" },
+      "keywords": ["security", "audit", "secrets", "vulnerabilities", "cve"]
+    },
+    {
+      "name": "monorepo",
+      "description": "Monorepo tools — workspace management, dependency graphs, affected package detection",
+      "version": "1.0.0",
+      "author": "openharness",
+      "source": { "type": "github", "repo": "zhijiewong/oh-plugin-monorepo" },
+      "keywords": ["monorepo", "workspace", "turborepo", "nx", "lerna"]
+    }
+  ]
+}
