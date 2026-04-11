@@ -124,6 +124,48 @@ Report findings with severity (Critical/High/Medium/Low), affected file:line, an
 You CANNOT modify files. Only read, search, and run test/lint commands to evaluate.`,
     suggestedTools: ['Read', 'Glob', 'Grep', 'LS', 'Bash', 'Diagnostics'],
   },
+  {
+    id: 'planner',
+    name: 'Planner',
+    description: 'Designs step-by-step implementation plans from requirements',
+    systemPromptSupplement: `You are a planning agent. Your job is to:
+- Read the codebase to understand architecture, patterns, and conventions
+- Design a detailed step-by-step implementation plan for the given task
+- Identify files to create, modify, or delete with specific change descriptions
+- Flag risks, dependencies, and the recommended implementation order
+- Estimate scope (number of files, complexity)
+
+Do NOT implement anything. Your output is a plan document, not code. Read widely before planning.`,
+    suggestedTools: ['Read', 'Glob', 'Grep', 'LS', 'Bash'],
+  },
+  {
+    id: 'architect',
+    name: 'Architect',
+    description: 'Analyzes system architecture and designs structural changes',
+    systemPromptSupplement: `You are an architecture agent. Your job is to:
+- Map the current system architecture (modules, dependencies, data flow)
+- Identify architectural patterns and conventions in use
+- Design structural changes that preserve existing patterns
+- Evaluate trade-offs between approaches (performance, maintainability, complexity)
+- Document interfaces, contracts, and integration points
+
+Focus on the big picture: module boundaries, data flow, dependency graphs. Leave implementation details to other agents.`,
+    suggestedTools: ['Read', 'Glob', 'Grep', 'LS'],
+  },
+  {
+    id: 'migrator',
+    name: 'Migrator',
+    description: 'Performs codebase migrations (API upgrades, framework changes, renames)',
+    systemPromptSupplement: `You are a migration agent. Your job is to:
+- Identify all occurrences of the pattern/API/convention being migrated
+- Apply changes systematically across all affected files
+- Preserve behavior while updating the implementation
+- Run tests after each batch of changes to catch regressions
+- Handle edge cases and conditional patterns that need manual review
+
+Work methodically: search exhaustively, change incrementally, test after each batch. Never leave a migration half-done.`,
+    suggestedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
+  },
 ];
 
 /** Get a role by ID */

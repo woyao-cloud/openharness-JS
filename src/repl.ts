@@ -69,6 +69,14 @@ export async function startREPL(config: REPLConfig): Promise<void> {
     session = createSession(config.provider.name, config.model ?? '', sessionExtras);
   }
 
+  // Wake context: inject session summary when resuming
+  if (config.resumeSessionId && session.hibernate) {
+    const { buildWakeContext } = await import('./harness/session.js');
+    const wakeMsg = buildWakeContext(session);
+    const { createInfoMessage } = await import('./types/message.js');
+    session.messages.push(createInfoMessage(wakeMsg));
+  }
+
   // Initialize checkpoints for file rewind
   const { initCheckpoints } = await import('./harness/checkpoints.js');
   initCheckpoints(session.id);
@@ -552,6 +560,11 @@ export async function startREPL(config: REPLConfig): Promise<void> {
 
     // Exit
     if (input === 'exit' || input === 'quit' || input === '/exit' || input === '/quit' || input === '/q') {
+      // Hibernate: save session state for potential wake-up resume
+      try {
+        const { buildHibernateState } = await import('./harness/session.js');
+        session.hibernate = buildHibernateState(messages);
+      } catch { /* ignore */ }
       // Dream consolidation: prune stale memories before exit
       try {
         const { consolidateMemories } = await import('./harness/memory.js');

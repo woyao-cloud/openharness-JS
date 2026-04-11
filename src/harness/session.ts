@@ -21,6 +21,14 @@ export type Session = {
   gitBranch?: string;
   workingDir?: string;
   tools?: string[];
+  /** Hibernate state — saved on exit for wake reconstruction */
+  hibernate?: {
+    summary?: string;           // LLM-generated summary of session state
+    lastUserMessage?: string;   // Last thing the user said
+    pendingTask?: string;       // What was being worked on
+    totalInputTokens?: number;
+    totalOutputTokens?: number;
+  };
 };
 
 export function createSession(provider: string, model: string, extras?: { gitBranch?: string; workingDir?: string; tools?: string[] }): Session {
@@ -95,6 +103,68 @@ export function listSessions(dir?: string): Array<{
 export function getLastSessionId(dir?: string): string | null {
   const sessions = listSessions(dir);
   return sessions.length > 0 ? sessions[0]!.id : null;
+}
+
+/**
+ * Build hibernate state from the current session.
+ * Captures the last user message, recent assistant activity,
+ * and a brief summary for context reconstruction on wake.
+ */
+export function buildHibernateState(messages: Message[]): Session['hibernate'] {
+  if (messages.length === 0) return undefined;
+
+  // Find last user message
+  const lastUser = [...messages].reverse().find(m => m.role === 'user');
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+
+  // Build a brief summary from the last few exchanges
+  const recentMsgs = messages.slice(-6);
+  const summaryParts: string[] = [];
+  for (const m of recentMsgs) {
+    if (m.role === 'user') {
+      summaryParts.push(`User: ${m.content.slice(0, 100)}`);
+    } else if (m.role === 'assistant' && m.content) {
+      summaryParts.push(`Assistant: ${m.content.slice(0, 100)}`);
+    }
+  }
+
+  return {
+    lastUserMessage: lastUser?.content.slice(0, 200),
+    pendingTask: lastAssistant?.content.slice(0, 200),
+    summary: summaryParts.join('\n'),
+  };
+}
+
+/**
+ * Generate a wake-up context message for a resumed session.
+ * Tells the LLM what happened in the previous session.
+ */
+export function buildWakeContext(session: Session): string {
+  const parts: string[] = ['[Session Resumed]'];
+
+  if (session.workingDir) {
+    parts.push(`Previous working directory: ${session.workingDir}`);
+    if (session.workingDir !== process.cwd()) {
+      parts.push(`WARNING: Working directory changed! Was: ${session.workingDir}, Now: ${process.cwd()}`);
+    }
+  }
+
+  if (session.gitBranch) {
+    parts.push(`Previous git branch: ${session.gitBranch}`);
+  }
+
+  if (session.hibernate?.summary) {
+    parts.push(`\nPrevious session context:\n${session.hibernate.summary}`);
+  }
+
+  if (session.hibernate?.lastUserMessage) {
+    parts.push(`\nLast user request: ${session.hibernate.lastUserMessage}`);
+  }
+
+  parts.push(`\nSession has ${session.messages.length} messages and cost $${session.totalCost.toFixed(4)} so far.`);
+  parts.push('Continue where you left off. If the user\'s last request was incomplete, acknowledge that and ask how to proceed.');
+
+  return parts.join('\n');
 }
 
 /** Maximum number of sessions to keep on disk. */

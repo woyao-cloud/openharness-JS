@@ -5,12 +5,15 @@ import { getRole, listRoles, getRoleIds } from './roles.js';
 describe('agent roles', () => {
   it('lists all roles', () => {
     const roles = listRoles();
-    assert.ok(roles.length >= 7);
+    assert.ok(roles.length >= 10);
     assert.ok(roles.find(r => r.id === 'code-reviewer'));
     assert.ok(roles.find(r => r.id === 'test-writer'));
     assert.ok(roles.find(r => r.id === 'debugger'));
     assert.ok(roles.find(r => r.id === 'security-auditor'));
     assert.ok(roles.find(r => r.id === 'evaluator'));
+    assert.ok(roles.find(r => r.id === 'planner'));
+    assert.ok(roles.find(r => r.id === 'architect'));
+    assert.ok(roles.find(r => r.id === 'migrator'));
   });
 
   it('gets role by ID', () => {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.1 (2026-04-11)
+
+### Added
+- **Hibernate-and-Wake**: Sessions save context summary on exit; resumed sessions get wake-up context with previous state, working directory change warnings, and continuation guidance
+- **3 New Agent Roles**: `planner` (implementation plans), `architect` (system design), `migrator` (codebase migrations) — 10 roles total
+- **MCP Server Registry**: Curated catalog of 15 MCP servers with `/mcp-registry` command for browsing, searching, and generating install configs
+- **Global Config Hierarchy**: `~/.oh/config.yaml` as fallback defaults for all projects; config loads global → project → local
+
+### Fixed
+- npm package size reduced from 2.1MB to 818KB (excluded test files and source maps)
+
 ## 0.12.0 (2026-04-11)
 
 ### Added

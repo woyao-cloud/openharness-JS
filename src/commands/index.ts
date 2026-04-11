@@ -68,7 +68,7 @@ register("help", "Show available commands", () => {
   const categories: Record<string, string[]> = {
     'Session': ['clear', 'compact', 'export', 'history', 'browse', 'resume', 'fork', 'pin', 'unpin'],
     'Git': ['diff', 'undo', 'rewind', 'commit', 'log'],
-    'Info': ['help', 'cost', 'status', 'config', 'files', 'model', 'memory', 'doctor', 'context', 'mcp'],
+    'Info': ['help', 'cost', 'status', 'config', 'files', 'model', 'memory', 'doctor', 'context', 'mcp', 'mcp-registry'],
     'Settings': ['theme', 'vim', 'companion', 'fast', 'keys'],
     'AI': ['plan', 'review', 'roles'],
     'Pet': ['cybergotchi'],
@@ -590,13 +590,47 @@ register("context", "Show context window usage breakdown", (_args, ctx) => {
 register("mcp", "Show MCP server status", () => {
   const mcp = connectedMcpServers();
   if (mcp.length === 0) {
-    return { output: "No MCP servers connected.\nConfigure in .oh/config.yaml under mcpServers.", handled: true };
+    return { output: "No MCP servers connected.\nConfigure in .oh/config.yaml under mcpServers.\nRun /mcp-registry to browse available servers.", handled: true };
   }
   const lines = [`MCP Servers (${mcp.length} connected):\n`];
   for (const name of mcp) {
     lines.push(`  ✓ ${name}`);
   }
+  lines.push("\nRun /mcp-registry to browse and add more servers.");
   return { output: lines.join("\n"), handled: true };
+});
+
+register("mcp-registry", "Browse and add MCP servers from the curated registry", (args) => {
+  const { searchRegistry, formatRegistry, generateConfigBlock, MCP_REGISTRY } = require('../mcp/registry.js');
+  const query = args.trim();
+
+  if (!query) {
+    // Show full registry
+    const output = `MCP Server Registry (${MCP_REGISTRY.length} servers)\n${'─'.repeat(50)}\n\n${formatRegistry()}\n\nUsage:\n  /mcp-registry <name>    Show install config for a server\n  /mcp-registry <keyword> Search by name, description, or category`;
+    return { output, handled: true };
+  }
+
+  // Search or show specific server
+  const results = searchRegistry(query);
+  if (results.length === 0) {
+    return { output: `No MCP servers found matching "${query}".`, handled: true };
+  }
+
+  if (results.length === 1) {
+    // Show install instructions
+    const entry = results[0]!;
+    const config = generateConfigBlock(entry);
+    const envNote = entry.envVars?.length
+      ? `\n\nRequired environment variables:\n${entry.envVars.map((v: string) => `  - ${v}`).join('\n')}`
+      : '';
+    return {
+      output: `${entry.name} — ${entry.description}\nPackage: ${entry.package}\nRisk: ${entry.riskLevel ?? 'medium'}${envNote}\n\nAdd to .oh/config.yaml under mcpServers:\n\n${config}`,
+      handled: true,
+    };
+  }
+
+  // Multiple results
+  return { output: `Found ${results.length} servers:\n\n${formatRegistry(results)}`, handled: true };
 });
 
 function setPinned(args: string, ctx: CommandContext, pinned: boolean): CommandResult {

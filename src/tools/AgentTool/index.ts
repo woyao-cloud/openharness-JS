@@ -194,7 +194,7 @@ export const AgentTool: Tool<typeof inputSchema> = {
 - isolated (boolean, optional): Whether to use git worktree isolation (default: true if in a git repo).
 - run_in_background (boolean, optional): Run the agent in the background. Returns immediately; you will be notified when it completes.
 - model (string, optional): Override the model for this sub-agent (e.g., use a faster model for exploration).
-- subagent_type (string, optional): Specialize the agent behavior. Types: "Explore" (read-only codebase search), "Plan" (design implementation plans), "code-reviewer" (review code), "test-writer", "debugger", "refactorer", "security-auditor", "evaluator" (read-only evaluation with test running).
+- subagent_type (string, optional): Specialize the agent behavior. Types: "Explore" (read-only codebase search), "Plan" (design implementation plans), "code-reviewer", "test-writer", "debugger", "refactorer", "security-auditor", "evaluator" (read-only evaluation), "planner" (implementation plans), "architect" (system design), "migrator" (codebase migrations).
 - allowed_tools (string[], optional): Restrict the sub-agent to only these tools by name. If omitted and a role has suggested tools, those are used.`;
   },
 };

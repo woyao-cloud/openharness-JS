@@ -366,6 +366,16 @@ mcpServers:
 
 MCP tools appear alongside built-in tools. `/status` shows connected servers.
 
+**MCP Server Registry** — browse and install from a curated catalog:
+
+```
+/mcp-registry              # browse all available servers
+/mcp-registry github       # show install config for a specific server
+/mcp-registry database     # search by category
+```
+
+Categories: filesystem, git, database, api, search, productivity, dev-tools, ai.
+
 ## Git Integration
 
 OpenHarness auto-commits AI edits in git repos:
@@ -460,6 +470,9 @@ Dispatch specialized sub-agents for focused tasks:
 | `refactorer` | Simplify code without changing behavior | All file tools + Bash |
 | `security-auditor` | OWASP, injection, secrets, CVE scanning | Read-only + Bash |
 | `evaluator` | Evaluate code quality and run tests (read-only) | Read-only + Bash + Diagnostics |
+| `planner` | Design step-by-step implementation plans | Read-only + Bash |
+| `architect` | Analyze architecture and design structural changes | Read-only |
+| `migrator` | Systematic codebase migrations and upgrades | All file tools + Bash |
 
 Each role restricts the sub-agent to only its suggested tools. You can also pass `allowed_tools` explicitly:
 
