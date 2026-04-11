@@ -234,8 +234,10 @@ export async function runVerification(
     // Exit code 0 = passed
     return { ran: true, passed: true, summary: '' };
   } catch (err: any) {
-    // Non-zero exit = verification issues found
-    if (err.killed) {
+    // Timeout detection — check killed flag, signal, or error code
+    const isTimeout = err.killed || err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT'
+      || (err.status === null && err.signal);
+    if (isTimeout) {
       return { ran: true, passed: false, summary: `Verification timed out after ${timeout / 1000}s` };
     }
 

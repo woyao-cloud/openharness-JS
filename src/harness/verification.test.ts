@@ -126,10 +126,11 @@ describe('verification loops', () => {
     });
 
     it('handles timeout gracefully', async () => {
+      // Use node -e for cross-platform long-running command
       const config = {
         enabled: true,
         mode: 'warn' as const,
-        rules: [{ extensions: ['.ts'], lint: 'sleep 30', timeout: 100 }],
+        rules: [{ extensions: ['.ts'], lint: 'node -e "setTimeout(()=>{},30000)"', timeout: 100 }],
       };
       const result = await runVerification('/tmp/test.ts', config);
       assert.equal(result.ran, true);
