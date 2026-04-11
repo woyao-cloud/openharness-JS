@@ -45,6 +45,7 @@ import { ExitWorktreeTool } from "./tools/ExitWorktreeTool/index.js";
 import { KillProcessTool } from "./tools/KillProcessTool/index.js";
 import { RemoteTriggerTool } from "./tools/RemoteTriggerTool/index.js";
 import { MultiEditTool } from "./tools/MultiEditTool/index.js";
+import { PipelineTool } from "./tools/PipelineTool/index.js";
 
 /**
  * Returns all registered tools.
@@ -76,6 +77,8 @@ export function getAllTools(): Tools {
     ExitPlanModeTool,
     // Tool Discovery
     ToolSearchTool,
+    // Pipelines
+    PipelineTool,
     // Memory management
     MemoryTool,
   ];

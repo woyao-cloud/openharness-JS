@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 (2026-04-11)
+
+### Added
+- **Tool Pipelines**: Declarative multi-step workflows via Pipeline tool. Steps execute in dependency order with $ref variable substitution. 11 tests.
+- **Documentation Site**: GitHub Pages docs at docs/ — getting started, configuration reference, tools, agent roles, pipelines, MCP servers, remote API, architecture, plugins
+
 ## 1.1.0 (2026-04-11)
 
 ### Added
