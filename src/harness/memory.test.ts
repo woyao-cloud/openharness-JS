@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { makeTmpDir, writeFile } from "../test-helpers.js";
-import { loadMemories, saveMemory, memoriesToPrompt } from "./memory.js";
+import { loadMemories, saveMemory, memoriesToPrompt, touchMemory, boostRelevance } from "./memory.js";
 
 function withTmpCwd(fn: (dir: string) => void) {
   const dir = makeTmpDir();
@@ -66,5 +66,55 @@ test("saved memory has correct name/type/description in file content", () => {
     assert.ok(raw.includes("type: debugging"));
     assert.ok(raw.includes("description: Fix null ref"));
     assert.ok(raw.includes("Check for null before access"));
+  });
+});
+
+test("touchMemory updates lastAccessed and accessCount", () => {
+  withTmpCwd(() => {
+    const filePath = saveMemory("touch-test", "convention", "test", "content");
+    const raw1 = readFileSync(filePath, "utf-8");
+    assert.ok(raw1.includes("accessCount: 0"));
+
+    const entry = {
+      name: "touch-test", type: "convention" as const, description: "test",
+      content: "content", filePath, accessCount: 0, lastAccessed: Date.now() - 10000,
+    };
+    touchMemory(entry);
+
+    const raw2 = readFileSync(filePath, "utf-8");
+    assert.ok(raw2.includes("accessCount: 1"));
+    assert.ok(entry.accessCount === 1);
+  });
+});
+
+test("boostRelevance increases score and caps at 1.0", () => {
+  withTmpCwd(() => {
+    const filePath = saveMemory("boost-test", "convention", "test", "content");
+    const entry = {
+      name: "boost-test", type: "convention" as const, description: "test",
+      content: "content", filePath, relevance: 0.5,
+    };
+
+    boostRelevance(entry, 0.3);
+    assert.equal(entry.relevance, 0.8);
+
+    // Verify written to file
+    const raw = readFileSync(filePath, "utf-8");
+    assert.ok(raw.includes("relevance: 0.80"));
+
+    // Cap at 1.0
+    boostRelevance(entry, 0.5);
+    assert.equal(entry.relevance, 1.0);
+  });
+});
+
+test("saved memory has relevance and timestamps in frontmatter", () => {
+  withTmpCwd(() => {
+    const filePath = saveMemory("meta-test", "preference", "test", "content");
+    const raw = readFileSync(filePath, "utf-8");
+    assert.ok(raw.includes("relevance: 0.5"));
+    assert.ok(raw.match(/createdAt: \d+/));
+    assert.ok(raw.match(/lastAccessed: \d+/));
+    assert.ok(raw.includes("accessCount: 0"));
   });
 });
