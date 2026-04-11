@@ -722,54 +722,102 @@ function setPinned(args: string, ctx: CommandContext, pinned: boolean): CommandR
 register("pin", "Pin a message (survives /compact)", (args, ctx) => setPinned(args, ctx, true));
 register("unpin", "Unpin a message", (args, ctx) => setPinned(args, ctx, false));
 
-register("plugins", "List installed plugins and discover new ones", (args) => {
+register("plugins", "Manage plugins: list, search, install, uninstall, marketplace", (args) => {
   const { discoverPlugins, discoverSkills } = require('../harness/plugins.js');
+  const {
+    searchMarketplace, installPlugin, uninstallPlugin,
+    getInstalledPlugins, listMarketplaces, addMarketplace, removeMarketplace,
+    formatMarketplaceSearch, formatInstalledPlugins,
+  } = require('../harness/marketplace.js');
 
-  const query = args.trim();
+  const parts = args.trim().split(/\s+/);
+  const subcommand = parts[0] ?? '';
+  const rest = parts.slice(1).join(' ');
 
-  if (query === 'search' || query.startsWith('search ')) {
-    // npm registry search
-    const keyword = query.replace(/^search\s*/, '').trim() || 'openharness-plugin';
-    return {
-      output: `To discover plugins, search npm:\n\n  npm search openharness-plugin${keyword !== 'openharness-plugin' ? ' ' + keyword : ''}\n\nInstall with:\n  npm install <package-name>\n\nPlugins are auto-discovered from node_modules/ if they contain openharness-plugin.json.`,
-      handled: true,
-    };
+  // /plugins marketplace add <source>
+  if (subcommand === 'marketplace') {
+    const action = parts[1];
+    const source = parts.slice(2).join(' ');
+    if (action === 'add' && source) {
+      const mp = addMarketplace(source);
+      if (mp) return { output: `Added marketplace "${mp.name}" (${mp.plugins.length} plugins)`, handled: true };
+      return { output: `Failed to add marketplace from "${source}"`, handled: true };
+    }
+    if (action === 'remove' && source) {
+      return { output: removeMarketplace(source) ? `Removed marketplace "${source}"` : `Marketplace "${source}" not found`, handled: true };
+    }
+    // List marketplaces
+    const mps = listMarketplaces();
+    if (mps.length === 0) {
+      return { output: 'No marketplaces configured.\n\nAdd one:\n  /plugins marketplace add owner/repo\n  /plugins marketplace add https://example.com/plugins', handled: true };
+    }
+    const lines = [`Marketplaces (${mps.length}):\n`];
+    for (const mp of mps) {
+      lines.push(`  ${mp.name} — ${mp.plugins.length} plugins`);
+    }
+    return { output: lines.join('\n'), handled: true };
   }
 
-  // List installed
+  // /plugins search <query>
+  if (subcommand === 'search') {
+    const query = rest || 'all';
+    const results = searchMarketplace(query === 'all' ? '' : query);
+    return { output: formatMarketplaceSearch(results), handled: true };
+  }
+
+  // /plugins install <name>
+  if (subcommand === 'install' && rest) {
+    const [name, marketplace] = rest.split('@');
+    const result = installPlugin(name!, marketplace);
+    if (result) {
+      return { output: `Installed ${result.name}@${result.version} from ${result.marketplace}\nCached at: ${result.cachePath}`, handled: true };
+    }
+    return { output: `Failed to install "${rest}". Is it listed in a marketplace?\nRun /plugins search ${name} to check.`, handled: true };
+  }
+
+  // /plugins uninstall <name>
+  if (subcommand === 'uninstall' && rest) {
+    return { output: uninstallPlugin(rest) ? `Uninstalled "${rest}"` : `Plugin "${rest}" not found`, handled: true };
+  }
+
+  // /plugins (no args) — show everything
   const plugins = discoverPlugins();
   const skills = discoverSkills();
-
+  const marketplacePlugins = getInstalledPlugins();
   const lines: string[] = [];
 
+  if (marketplacePlugins.length > 0) {
+    lines.push(formatInstalledPlugins(marketplacePlugins));
+    lines.push('');
+  }
+
   if (plugins.length > 0) {
-    lines.push(`Installed Plugins (${plugins.length}):`);
+    lines.push(`Local Plugins (${plugins.length}):`);
     for (const p of plugins) {
       lines.push(`  ${p.name}@${p.version} — ${p.description || 'no description'}`);
-      if (p.skills?.length) lines.push(`    Skills: ${p.skills.length}`);
-      if (p.mcpServers?.length) lines.push(`    MCP servers: ${p.mcpServers.map((s: any) => s.name).join(', ')}`);
     }
     lines.push('');
   }
 
   if (skills.length > 0) {
-    lines.push(`Available Skills (${skills.length}):`);
-    const bySource: Record<string, typeof skills> = {};
+    lines.push(`Skills (${skills.length}):`);
     for (const s of skills) {
-      (bySource[s.source] ??= []).push(s);
+      lines.push(`  ${s.source}:${s.name} — ${s.description || ''}`);
     }
-    for (const [source, sourceSkills] of Object.entries(bySource)) {
-      lines.push(`  ${source}:`);
-      for (const s of sourceSkills) {
-        lines.push(`    ${s.name} — ${s.description}${s.trigger ? ` (trigger: "${s.trigger}")` : ''}`);
-      }
-    }
-  } else if (plugins.length === 0) {
-    lines.push('No plugins or skills installed.');
     lines.push('');
-    lines.push('Create skills in .oh/skills/ or ~/.oh/skills/');
-    lines.push('Run /plugins search to find npm packages.');
   }
+
+  if (lines.length === 0) {
+    lines.push('No plugins or skills installed.');
+  }
+
+  lines.push('');
+  lines.push('Commands:');
+  lines.push('  /plugins search <query>          Search marketplaces');
+  lines.push('  /plugins install <name>          Install from marketplace');
+  lines.push('  /plugins uninstall <name>        Remove a plugin');
+  lines.push('  /plugins marketplace add <src>   Add a marketplace');
+  lines.push('  /plugins marketplace             List marketplaces');
 
   return { output: lines.join('\n'), handled: true };
 });

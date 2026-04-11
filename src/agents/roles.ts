@@ -168,17 +168,86 @@ Work methodically: search exhaustively, change incrementally, test after each ba
   },
 ];
 
-/** Get a role by ID */
-export function getRole(id: string): AgentRole | undefined {
-  return roles.find(r => r.id === id);
+// ── Markdown Agent Discovery ──
+
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join, basename } from 'node:path';
+import { homedir } from 'node:os';
+
+const PROJECT_AGENTS_DIR = join('.oh', 'agents');
+const GLOBAL_AGENTS_DIR = join(homedir(), '.oh', 'agents');
+
+/**
+ * Parse a markdown agent file into an AgentRole.
+ *
+ * Format:
+ * ---
+ * name: My Agent
+ * description: What it does
+ * tools: [Read, Grep, Bash]
+ * ---
+ *
+ * System prompt content...
+ */
+function parseAgentMarkdown(raw: string, filePath: string): AgentRole | null {
+  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return null;
+
+  const fm = fmMatch[1]!;
+  const nameMatch = fm.match(/^name:\s*(.+)$/m);
+  const descMatch = fm.match(/^description:\s*(.+)$/m);
+  const toolsMatch = fm.match(/^tools:\s*\[(.+)\]$/m);
+
+  const fmEnd = raw.indexOf('---', raw.indexOf('---') + 3);
+  const content = fmEnd > 0 ? raw.slice(fmEnd + 3).trim() : '';
+
+  const id = basename(filePath, '.md').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  return {
+    id,
+    name: nameMatch?.[1]?.trim() ?? id,
+    description: descMatch?.[1]?.trim() ?? '',
+    systemPromptSupplement: content,
+    suggestedTools: toolsMatch
+      ? toolsMatch[1]!.split(',').map(t => t.trim())
+      : undefined,
+  };
 }
 
-/** List all available roles */
+/** Load agent roles from a directory of .md files */
+function loadAgentsFromDir(dir: string): AgentRole[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter(f => f.endsWith('.md'))
+    .map(f => {
+      try {
+        const raw = readFileSync(join(dir, f), 'utf-8');
+        return parseAgentMarkdown(raw, f);
+      } catch { return null; }
+    })
+    .filter((r): r is AgentRole => r !== null);
+}
+
+/** Discover markdown agent roles from .oh/agents/ and ~/.oh/agents/ */
+export function discoverMarkdownAgents(): AgentRole[] {
+  return [
+    ...loadAgentsFromDir(PROJECT_AGENTS_DIR),
+    ...loadAgentsFromDir(GLOBAL_AGENTS_DIR),
+  ];
+}
+
+/** Get a role by ID (checks built-in first, then markdown agents) */
+export function getRole(id: string): AgentRole | undefined {
+  return roles.find(r => r.id === id)
+    ?? discoverMarkdownAgents().find(r => r.id === id);
+}
+
+/** List all available roles (built-in + markdown) */
 export function listRoles(): AgentRole[] {
-  return [...roles];
+  return [...roles, ...discoverMarkdownAgents()];
 }
 
 /** Get role IDs */
 export function getRoleIds(): string[] {
-  return roles.map(r => r.id);
+  return listRoles().map(r => r.id);
 }

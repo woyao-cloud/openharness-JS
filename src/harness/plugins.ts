@@ -103,11 +103,26 @@ function loadSkillsFromDir(dir: string, source: SkillMetadata['source']): SkillM
     .filter((s): s is SkillMetadata => s !== null);
 }
 
-/** Discover all available skills from project + global dirs */
+/** Discover all available skills from project + global dirs + installed plugins */
 export function discoverSkills(): SkillMetadata[] {
   const skills: SkillMetadata[] = [];
   skills.push(...loadSkillsFromDir(PROJECT_SKILLS_DIR, 'project'));
   skills.push(...loadSkillsFromDir(GLOBAL_SKILLS_DIR, 'global'));
+
+  // Load skills from installed marketplace plugins (namespaced as plugin-name:skill-name)
+  try {
+    const { getInstalledPlugins } = require('./marketplace.js') as typeof import('./marketplace.js');
+    for (const plugin of getInstalledPlugins()) {
+      const pluginSkillsDir = join(plugin.cachePath, 'skills');
+      const pluginSkills = loadSkillsFromDir(pluginSkillsDir, 'plugin');
+      // Namespace: prefix skill name with plugin name
+      for (const skill of pluginSkills) {
+        skill.name = `${plugin.name}:${skill.name}`;
+      }
+      skills.push(...pluginSkills);
+    }
+  } catch { /* marketplace module may not be loaded yet */ }
+
   return skills;
 }
 
