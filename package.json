@@ -1,13 +1,17 @@
 {
   "name": "@zhijiewang/openharness",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "Open-source terminal coding agent. Works with any LLM.",
   "type": "module",
   "bin": {
     "openharness": "./dist/main.js",
     "oh": "./dist/main.js"
   },
-  "main": "./dist/main.js",
+  "main": "./dist/sdk/index.js",
+  "exports": {
+    ".": "./dist/sdk/index.js",
+    "./cli": "./dist/main.js"
+  },
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",

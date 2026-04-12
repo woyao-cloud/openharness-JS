@@ -189,7 +189,16 @@ export const AgentTool: Tool<typeof inputSchema> = {
     }
 
     emitHook("subagentStop", { agentId });
-    return { output: finalText || "(sub-agent completed with no text output)", isError: false };
+
+    // Context folding: collapse long sub-agent output to summary
+    let output = finalText || "(sub-agent completed with no text output)";
+    if (output.length > 2000) {
+      const { ContextManager } = await import("../../query/context-manager.js");
+      const cm = new ContextManager();
+      output = cm.foldSubagentResult(agentId, output);
+    }
+
+    return { output, isError: false };
   },
 
   prompt() {

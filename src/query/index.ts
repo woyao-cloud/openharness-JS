@@ -11,6 +11,7 @@
 import type { ToolContext } from "../Tool.js";
 import { toolToAPIFormat } from "../Tool.js";
 import { DeferredTool } from "../DeferredTool.js";
+import { ContextManager } from "./context-manager.js";
 import type { StreamEvent } from "../types/events.js";
 import type { ToolCall } from "../types/message.js";
 import { createAssistantMessage, createUserMessage } from "../types/message.js";
@@ -46,6 +47,7 @@ export async function* query(
     askUserQuestion: config.askUserQuestion,
   };
   const estimateTokens = makeTokenEstimator(config.provider);
+  const contextManager = new ContextManager(undefined, config.model);
 
   // Check provider capabilities
   const modelInfo = config.provider.getModelInfo?.(config.model ?? '');
@@ -238,7 +240,9 @@ export async function* query(
 
     for (const { toolCall: tc, result } of completedResults) {
       yield { type: "tool_call_end", callId: tc.id, output: result.output, isError: result.isError };
-      state.messages.push(createToolResultMessage({ callId: tc.id, output: result.output, isError: result.isError }));
+      // Apply context budget to tool output
+      const budgetedOutput = contextManager.enforceToolBudget(tc.toolName, result.output);
+      state.messages.push(createToolResultMessage({ callId: tc.id, output: budgetedOutput, isError: result.isError }));
     }
 
     // Execute remaining tools not started during streaming

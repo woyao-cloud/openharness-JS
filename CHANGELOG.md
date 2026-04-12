@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0 (2026-04-12) — Beyond Parity
+
+### Added
+- **Active Context Management**: Per-tool token budgets, sub-agent output folding, proactive compression. Prevents context overflow before it happens.
+- **GAN-Style Evaluator Loop**: Generator→Evaluator adversarial refinement with weighted rubrics (correctness, completeness, quality, safety). `--evaluate` flag for headless mode.
+- **Session Traces & Observability**: Structured spans for every turn, tool call, and compression. JSONL persistence, OpenTelemetry export format, `/trace` command.
+- **Agent SDK (Library Mode)**: `createAgent()` programmatic API. `import { createAgent } from '@zhijiewang/openharness'` for CI/CD bots, PR review automation, GitHub Actions.
+- **Meta-Harness Self-Optimization**: `oh optimize` command — agent modifies its own config, benchmarks after each change, keeps improvements. Based on AutoAgent research (#1 on SpreadsheetBench).
+
+### Changed
+- Package exports: `"."` now points to SDK (`dist/sdk/index.js`), CLI at `"./cli"`
+- Sub-agent output automatically folded when >2KB (context folding)
+- Tool output enforced against per-tool token budgets
+
 ## 1.4.0 (2026-04-11) — Full Claude Code Parity
 
 ### Added
