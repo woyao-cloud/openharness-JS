@@ -260,6 +260,8 @@ program
   .option("--light", "Use light theme")
   .option("--output-format <format>", "Output format for -p mode (text, json, stream-json)", "text")
   .option("--json-schema <schema>", "Constrain output to match a JSON schema (headless mode)")
+  .option("--input-format <format>", "Input format: text (default) or stream-json (NDJSON on stdin)")
+  .option("--replay-user-messages", "Re-emit user messages on stdout (requires stream-json output)")
   .action(async (opts) => {
     // Load saved config as defaults (env vars + CLI flags override)
     const savedConfig = readOhConfig();

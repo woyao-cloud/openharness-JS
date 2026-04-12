@@ -79,10 +79,20 @@ export type OhConfig = {
     balanced?: string;    // balanced model for general use (e.g., "gpt-4o-mini")
     powerful?: string;    // strongest model for final output (e.g., "claude-sonnet-4-6")
   };
+  /** Effort level for LLM reasoning depth */
+  effortLevel?: 'low' | 'medium' | 'high' | 'max';
   /** Opt-in telemetry (default: off) */
   telemetry?: {
     enabled?: boolean;     // default false
     endpoint?: string;     // where to POST events (optional)
+  };
+  /** Sandbox — filesystem and network restrictions */
+  sandbox?: {
+    enabled?: boolean;
+    allowedPaths?: string[];
+    allowedDomains?: string[];
+    blockNetwork?: boolean;
+    blockedCommands?: string[];
   };
   /** Remote server security settings */
   remote?: {

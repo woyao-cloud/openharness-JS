@@ -45,19 +45,19 @@ test('/context shows context window breakdown', () => {
   const result = processSlashCommand('/context', makeCtx({ messages: msgs }));
   assert.ok(result);
   assert.equal(result.handled, true);
-  assert.ok(result.output.includes('Context window'));
+  assert.ok(result.output.includes('Context Window'));
   assert.ok(result.output.includes('tokens'));
-  assert.ok(result.output.includes('#  1'));
-  assert.ok(result.output.includes('#  2'));
-  assert.ok(result.output.includes('#  3'));
+  assert.ok(result.output.includes('User messages'));
+  assert.ok(result.output.includes('Assistant'));
+  assert.ok(result.output.includes('Free'));
 });
 
 test('/context with empty messages', () => {
   const result = processSlashCommand('/context', makeCtx());
   assert.ok(result);
   assert.equal(result.handled, true);
-  assert.ok(result.output.includes('Context window'));
-  assert.ok(result.output.includes('0%'));
+  assert.ok(result.output.includes('Context Window'));
+  assert.ok(result.output.includes('Messages: 0'));
 });
 
 // ── /mcp ──

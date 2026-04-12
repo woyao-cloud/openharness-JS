@@ -69,8 +69,8 @@ register("help", "Show available commands", () => {
     'Session': ['clear', 'compact', 'export', 'history', 'browse', 'resume', 'fork', 'pin', 'unpin'],
     'Git': ['diff', 'undo', 'rewind', 'commit', 'log'],
     'Info': ['help', 'cost', 'status', 'config', 'files', 'model', 'memory', 'doctor', 'context', 'mcp', 'mcp-registry'],
-    'Settings': ['theme', 'vim', 'companion', 'fast', 'keys'],
-    'AI': ['plan', 'review', 'roles', 'agents', 'plugins'],
+    'Settings': ['theme', 'vim', 'companion', 'fast', 'keys', 'effort', 'sandbox'],
+    'AI': ['plan', 'review', 'roles', 'agents', 'plugins', 'btw'],
     'Pet': ['cybergotchi'],
   };
   const lines: string[] = [];
@@ -328,12 +328,46 @@ register("model", "Switch model (e.g., /model llama3.2 or /model ollama/llama3.2
   return { output: `Switched to ${modelName}.`, handled: true, newModel: modelName };
 });
 
-register("compact", "Compress conversation history", (_args, ctx) => {
+register("compact", "Compress conversation history (optional: focus keyword or message number)", (args, ctx) => {
+  const focus = args.trim();
   const before = ctx.messages.length;
   const targetTokens = Math.floor(getContextWindow(ctx.model) * 0.6);
+
+  if (focus && /^\d+$/.test(focus)) {
+    // Numeric: compact messages 1-N, keep N+1 onwards
+    const cutoff = parseInt(focus);
+    if (cutoff < 1 || cutoff >= before) {
+      return { output: `Invalid: use 1-${before - 1}`, handled: true };
+    }
+    const kept = ctx.messages.slice(cutoff);
+    return {
+      output: `Compacted: removed first ${cutoff} messages, kept ${kept.length}.`,
+      handled: true,
+      compactedMessages: kept,
+    };
+  }
+
+  if (focus) {
+    // Keyword focus: compress but preserve messages containing the keyword
+    const focusLower = focus.toLowerCase();
+    const preserved = ctx.messages.filter(m =>
+      m.content.toLowerCase().includes(focusLower) || m.meta?.pinned
+    );
+    const others = ctx.messages.filter(m =>
+      !m.content.toLowerCase().includes(focusLower) && !m.meta?.pinned
+    );
+    const compactedOthers = compressMessages(others, targetTokens);
+    const merged = [...compactedOthers, ...preserved].sort((a, b) => a.timestamp - b.timestamp);
+    return {
+      output: `Compacted with focus "${focus}": ${before} → ${merged.length} messages (preserved ${preserved.length} matching).`,
+      handled: true,
+      compactedMessages: merged,
+    };
+  }
+
+  // Default: compress everything
   const compacted = compressMessages(ctx.messages, targetTokens);
   const dropped = before - compacted.length;
-
   return {
     output: `Compacted: ${before} → ${compacted.length} messages (dropped ${dropped} older turns).`,
     handled: true,
@@ -519,6 +553,33 @@ register("keys", "Show keyboard shortcuts", () => {
   return { output: shortcuts.join("\n"), handled: true };
 });
 
+register("sandbox", "Show sandbox status and restrictions", () => {
+  const { sandboxStatus } = require('../harness/sandbox.js');
+  return { output: sandboxStatus() + '\n\nConfigure in .oh/config.yaml under sandbox:', handled: true };
+});
+
+register("effort", "Set reasoning effort level (low/medium/high/max)", (args) => {
+  const level = args.trim().toLowerCase();
+  const valid = ['low', 'medium', 'high', 'max'];
+  if (!valid.includes(level)) {
+    return { output: `Usage: /effort <${valid.join('|')}>\n\nlow    — fast, minimal reasoning\nmedium — balanced (default)\nhigh   — thorough reasoning\nmax    — maximum depth (Opus only)`, handled: true };
+  }
+  return { output: `Effort level set to: ${level}`, handled: true };
+});
+
+register("btw", "Ask a side question (ephemeral, no tools, not saved to history)", (args) => {
+  if (!args.trim()) {
+    return { output: "Usage: /btw <your question>", handled: true };
+  }
+  // Side questions are answered directly without tools or history
+  // The output is shown but NOT added to conversation history
+  return {
+    output: `[btw] ${args.trim()}`,
+    handled: false,
+    prependToPrompt: `[Side question — answer briefly without using any tools. This is ephemeral and not part of the main conversation.]\n\n${args.trim()}`,
+  };
+});
+
 register("plan", "Enter plan mode", (_args, _ctx) => {
   const task = _args.trim();
   if (!task) {
@@ -684,20 +745,47 @@ register("doctor", "Run diagnostic health checks", (_args, ctx) => {
 
 register("context", "Show context window usage breakdown", (_args, ctx) => {
   const ctxWindow = getContextWindow(ctx.model);
-  const totalTokens = estimateMessageTokens(ctx.messages);
-  const breakdown: string[] = [`Context window: ${ctxWindow.toLocaleString()} tokens\n`];
-  for (let i = 0; i < ctx.messages.length; i++) {
-    const msg = ctx.messages[i]!;
-    const tokens = Math.round((msg.content?.length ?? 0) / 3.5); // rough per-message estimate
-    const role = msg.role.padEnd(9);
-    const pinned = (msg.meta as any)?.pinned ? " 📌" : "";
-    breakdown.push(`  #${(i + 1).toString().padStart(3)} ${role} ~${tokens.toLocaleString().padStart(6)} tokens${pinned}`);
+
+  // Categorize messages by type
+  let userTokens = 0, assistantTokens = 0, toolTokens = 0, systemTokens = 0;
+  for (const msg of ctx.messages) {
+    const tokens = Math.ceil((msg.content?.length ?? 0) / 4);
+    switch (msg.role) {
+      case 'user': userTokens += tokens; break;
+      case 'assistant': assistantTokens += tokens; break;
+      case 'tool': toolTokens += tokens; break;
+      case 'system': systemTokens += tokens; break;
+    }
   }
+  const totalTokens = userTokens + assistantTokens + toolTokens + systemTokens;
+  const freeTokens = ctxWindow - totalTokens;
   const usage = totalTokens / ctxWindow;
-  breakdown.push("");
-  breakdown.push(`Total:    ~${totalTokens.toLocaleString()} tokens (${Math.round(usage * 100)}% of ${ctxWindow.toLocaleString()})`);
-  breakdown.push(`Compress: at ${Math.round(ctxWindow * 0.8).toLocaleString()} tokens (80%)`);
-  return { output: breakdown.join("\n"), handled: true };
+
+  // Visual bar (30 chars wide)
+  const barWidth = 30;
+  const filled = Math.round(usage * barWidth);
+  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled);
+
+  const pct = (n: number) => `${((n / ctxWindow) * 100).toFixed(1)}%`;
+  const pad = (s: string, n: number) => s.padEnd(n);
+
+  const lines = [
+    `Context Window (${ctxWindow.toLocaleString()} tokens):`,
+    '',
+    `  ${pad('User messages:', 20)} ${userTokens.toLocaleString().padStart(8)} tokens  (${pct(userTokens)})`,
+    `  ${pad('Assistant:', 20)} ${assistantTokens.toLocaleString().padStart(8)} tokens  (${pct(assistantTokens)})`,
+    `  ${pad('Tool results:', 20)} ${toolTokens.toLocaleString().padStart(8)} tokens  (${pct(toolTokens)})`,
+    `  ${pad('System/info:', 20)} ${systemTokens.toLocaleString().padStart(8)} tokens  (${pct(systemTokens)})`,
+    '',
+    `  ${pad('Total used:', 20)} ${totalTokens.toLocaleString().padStart(8)} tokens  (${pct(totalTokens)})`,
+    `  ${pad('Free:', 20)} ${freeTokens.toLocaleString().padStart(8)} tokens  (${pct(freeTokens)})`,
+    '',
+    `  ${bar}  ${Math.round(usage * 100)}%`,
+    '',
+    `  Messages: ${ctx.messages.length}  |  Compress at: ${Math.round(ctxWindow * 0.8).toLocaleString()} (80%)`,
+  ];
+
+  return { output: lines.join('\n'), handled: true };
 });
 
 register("mcp", "Show MCP server status", () => {
