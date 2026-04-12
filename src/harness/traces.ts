@@ -35,6 +35,8 @@ export type TraceEvent = {
 
 // ── Tracer ──
 
+const MAX_IN_MEMORY_SPANS = 1000;
+
 export class SessionTracer {
   private sessionId: string;
   private spans: TraceSpan[] = [];
@@ -71,6 +73,10 @@ export class SessionTracer {
     };
 
     this.spans.push(span);
+    // Cap in-memory spans (durable source is on disk)
+    if (this.spans.length > MAX_IN_MEMORY_SPANS) {
+      this.spans = this.spans.slice(-MAX_IN_MEMORY_SPANS);
+    }
     this.persistSpan(span);
     return span;
   }

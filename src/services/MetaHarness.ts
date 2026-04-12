@@ -214,9 +214,14 @@ Respond with JSON: {"description": "what to change", "field": "config.path", "ne
 
   private applyChange(change: Omit<OptimizationChange, 'impact'>): void {
     invalidateConfigCache();
-    // For now, log the change. Full config mutation would require
-    // a safe config updater that handles nested paths.
-    // This is a placeholder — real implementation would use lodash.set or similar.
+    // Apply change to config by reading, modifying, and writing back
+    const config = readOhConfig() ?? {} as OhConfig;
+    try {
+      // Simple top-level field update (nested paths would need lodash.set)
+      const field = change.field.replace(/^config\./, '');
+      (config as any)[field] = change.newValue;
+      writeOhConfig(config);
+    } catch { /* revert will handle failures */ }
   }
 
   private revertChange(change: Omit<OptimizationChange, 'impact'>): void {

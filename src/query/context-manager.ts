@@ -11,8 +11,8 @@
  */
 
 import type { Message } from '../types/message.js';
-import type { Provider } from '../providers/base.js';
 import { getContextWindow } from '../harness/cost.js';
+import { estimateMessagesTokens } from './compress.js';
 
 // ── Types ──
 
@@ -99,17 +99,11 @@ export class ContextManager {
   shouldPreCompress(
     messages: Message[],
     estimatedOutputTokens: number,
-    estimateTokens: (text: string) => number,
   ): boolean {
     const contextWindow = getContextWindow(this.model);
-    let currentTokens = 0;
-    for (const m of messages) {
-      currentTokens += estimateTokens(m.content) + 10;
-    }
-
+    const currentTokens = estimateMessagesTokens(messages);
     const projected = currentTokens + estimatedOutputTokens;
-    const usage = projected / contextWindow;
-    return usage > this.budget.proactiveThreshold;
+    return projected / contextWindow > this.budget.proactiveThreshold;
   }
 
   /**

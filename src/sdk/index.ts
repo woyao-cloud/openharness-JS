@@ -63,7 +63,7 @@ export class Agent {
   private provider: Provider | null = null;
   private tools: Tools | null = null;
   private config: AgentConfig;
-  private initialized = false;
+  private initPromise: Promise<void> | null = null;
 
   constructor(config: AgentConfig) {
     this.config = {
@@ -73,9 +73,12 @@ export class Agent {
     };
   }
 
-  /** Initialize provider and tools (lazy, on first use) */
-  private async init(): Promise<void> {
-    if (this.initialized) return;
+  /** Initialize provider and tools (lazy, on first use). Race-safe via promise guard. */
+  private init(): Promise<void> {
+    return (this.initPromise ??= this._doInit());
+  }
+
+  private async _doInit(): Promise<void> {
 
     const { createProvider } = await import('../providers/index.js');
     const { getAllTools } = await import('../tools.js');
@@ -100,7 +103,6 @@ export class Agent {
       tools = tools.filter(t => allowed.has(t.name.toLowerCase()));
     }
     this.tools = tools;
-    this.initialized = true;
   }
 
   /** Run a single prompt and return the result */
@@ -109,6 +111,7 @@ export class Agent {
 
     const { query } = await import('../query.js');
 
+    const originalCwd = process.cwd();
     if (this.config.cwd) {
       try { process.chdir(this.config.cwd); } catch { /* ignore */ }
     }
@@ -129,26 +132,32 @@ export class Agent {
     let outputTokens = 0;
     let turns = 0;
 
-    for await (const event of query(prompt, config)) {
-      switch (event.type) {
-        case 'text_delta':
-          text += (event as any).content;
-          break;
-        case 'tool_call_end':
-          toolCalls.push({
-            toolName: (event as any).toolName ?? 'unknown',
-            output: (event as any).output ?? '',
-            isError: (event as any).isError ?? false,
-          });
-          break;
-        case 'cost_update':
-          cost += (event as any).cost ?? 0;
-          inputTokens += (event as any).inputTokens ?? 0;
-          outputTokens += (event as any).outputTokens ?? 0;
-          break;
-        case 'turn_complete':
-          turns++;
-          break;
+    try {
+      for await (const event of query(prompt, config)) {
+        switch (event.type) {
+          case 'text_delta':
+            text += (event as any).content;
+            break;
+          case 'tool_call_end':
+            toolCalls.push({
+              toolName: (event as any).toolName ?? 'unknown',
+              output: (event as any).output ?? '',
+              isError: (event as any).isError ?? false,
+            });
+            break;
+          case 'cost_update':
+            cost += (event as any).cost ?? 0;
+            inputTokens += (event as any).inputTokens ?? 0;
+            outputTokens += (event as any).outputTokens ?? 0;
+            break;
+          case 'turn_complete':
+            turns++;
+            break;
+        }
+      }
+    } finally {
+      if (this.config.cwd) {
+        try { process.chdir(originalCwd); } catch { /* ignore */ }
       }
     }
 
@@ -181,7 +190,7 @@ export class Agent {
   stop(): void {
     this.provider = null;
     this.tools = null;
-    this.initialized = false;
+    this.initPromise = null;
   }
 }
 
