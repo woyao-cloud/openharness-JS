@@ -34,6 +34,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "chalk": "^5.4.1",
     "commander": "^13.0.0",
     "ink": "^5.2.0",
@@ -46,6 +47,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/marked": "^5.0.2",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
