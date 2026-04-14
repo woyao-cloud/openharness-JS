@@ -143,6 +143,27 @@ export function findTriggeredSkills(userMessage: string): SkillMetadata[] {
   });
 }
 
+/** Find a skill similar to a candidate (for patch-vs-create decision) */
+export function findSimilarSkill(
+  candidateName: string,
+  candidateDescription: string,
+  skills: Array<{ name: string; description: string }>,
+): { name: string; description: string } | null {
+  const nameWords = new Set(candidateName.toLowerCase().split(/[-_ ]+/));
+  for (const skill of skills) {
+    const skillWords = new Set(skill.name.toLowerCase().split(/[-_ ]+/));
+    const overlap = [...nameWords].filter((w) => skillWords.has(w)).length;
+    if (overlap >= Math.ceil(nameWords.size * 0.5)) return skill;
+    const descWords = new Set(skill.description.toLowerCase().split(/\s+/));
+    const descOverlap = candidateDescription
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => descWords.has(w)).length;
+    if (descOverlap >= 3) return skill;
+  }
+  return null;
+}
+
 /** Load a plugin manifest from a directory */
 export function loadPluginManifest(dir: string): PluginManifest | null {
   const manifestPath = join(dir, "openharness-plugin.json");
