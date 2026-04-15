@@ -115,11 +115,18 @@ export async function* query(
     }
 
     // Context window management
+    // ── Context window management with circuit breaker ──
     const contextWindow = getContextWindow(config.model);
     const estimatedTokens = estimateMessagesTokens(state.messages, estimateTokens);
-    if (estimatedTokens > contextWindow * 0.8) {
+    const MAX_COMPRESSION_FAILURES = 3;
+
+    if (estimatedTokens > contextWindow * 0.8 && (state.compressionFailures ?? 0) < MAX_COMPRESSION_FAILURES) {
+      const tokensBefore = estimatedTokens;
+      let strategy = "basic";
+
       state.messages = compressMessages(state.messages, Math.floor(contextWindow * 0.6));
       const afterBasic = estimateMessagesTokens(state.messages, estimateTokens);
+
       if (afterBasic > contextWindow * 0.7 && state.messages.length > 4) {
         try {
           state.messages = await summarizeConversation(
@@ -128,11 +135,24 @@ export async function* query(
             config.model,
             Math.floor(contextWindow * 0.5),
           );
-          yield { type: "error", message: "Context compressed with LLM summarization." };
+          strategy = "llm-summarization";
+          state.compressionFailures = 0; // Reset on success
         } catch {
-          /* continue with basic compression */
+          state.compressionFailures = (state.compressionFailures ?? 0) + 1;
+          strategy = "basic-only (llm failed)";
         }
       }
+
+      const tokensAfter = estimateMessagesTokens(state.messages, estimateTokens);
+      yield {
+        type: "error",
+        message: `Context compressed (${strategy}): ${tokensBefore} → ${tokensAfter} tokens. Re-read any files you need.`,
+      };
+    } else if (estimatedTokens > contextWindow * 0.8) {
+      yield {
+        type: "error",
+        message: "Context compression disabled (3 consecutive failures). Consider starting a new session.",
+      };
     }
 
     // ── Dynamic prompt: refresh memories if changed, inject warnings ──

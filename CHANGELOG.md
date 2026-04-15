@@ -1,5 +1,47 @@
 # Changelog
 
+## 2.5.0 (2026-04-15) — Context Engineering
+
+### Added
+- **Post-compact recovery**: After context compression, injects note for LLM to re-read working files
+- **Compression circuit breaker**: Stops auto-compressing after 3 consecutive failures
+- **Compression telemetry**: Logs tokens before/after and strategy used
+
+### Changed
+- README badges updated to match actual counts (777 tests, 41 tools, 46 commands)
+- Comparison table tool count corrected (41 with permission gates)
+
+## 2.4.0 (2026-04-14) — Hermes Parity
+
+### Added
+- **Budget warnings**: 70%/90% cost and turn limit warnings injected into system prompt dynamically
+- **Live memory injection**: Memory section refreshed mid-session when memories change (memoryVersion counter)
+- **Skill CRUD commands**: `/skill-create`, `/skill-edit`, `/skill-delete`
+- **Fallback provider chains**: `createFallbackProvider()` with transparent failover on rate limits and 5xx
+- **`fallbackProviders` config**: Chain order in `.oh/config.yaml`
+- **Skill system Claude Code compatibility**: Recursive directory scan, `allowedTools` parsing, `invokeModel: false`
+
+### Changed
+- USER_PROFILE_MAX_CHARS from 2000 to 1375 (Hermes-aligned)
+- MEMORY_PROMPT_MAX_CHARS capped at 2200
+- `memoriesToPrompt()` respects char cap
+- `process.chdir()` race fixed — workingDir passed via QueryConfig
+- FallbackProvider: activeFallback uses getter, stream fallback pre-stream only, 401/403 not retriable
+- Removed 11 unnecessary `as any` casts
+
+### Summary
+777 tests. Hermes parity features + Claude Code skill compatibility. Budget warnings, live memory, skill CRUD, provider fallback, and recursive skill directory support.
+
+## 2.3.1 (2026-04-14) — Polish
+
+### Fixed
+- Wire memories, skills, and user profile into system prompt (were built but never injected)
+- Auto-trigger skill suggestions when user message matches skill triggers
+- LLM quality gate before persisting extracted skills
+- LLM-assisted user profile consolidation (replaces append+truncate)
+- Fix `process.chdir()` race condition in AgentTool (pass workingDir via QueryConfig)
+- 7 new tests (absolute path traversal, ScheduleWakeup lifecycle, FTS5 edge cases, agent eviction)
+
 ## 2.3.0 (2026-04-14) — Self-Evolving Agent
 
 ### Added

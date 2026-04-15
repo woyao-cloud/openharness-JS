@@ -33,4 +33,6 @@ export type QueryLoopState = {
   consecutiveErrors: number;
   transition?: TransitionReason;
   promptTooLongRetries?: number;
+  /** Track consecutive compression failures for circuit breaker */
+  compressionFailures?: number;
 };
