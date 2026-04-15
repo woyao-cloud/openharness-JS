@@ -1,0 +1,36 @@
+{
+  "skills": [
+    {
+      "name": "code-review",
+      "description": "Systematic code review for bugs, security, and style",
+      "author": "zhijiewong",
+      "version": "1.0.0",
+      "source": "https://raw.githubusercontent.com/zhijiewong/openharness/main/data/skills/code-review.md",
+      "tags": ["review", "quality", "security"]
+    },
+    {
+      "name": "debug",
+      "description": "Systematic debugging approach",
+      "author": "zhijiewong",
+      "version": "1.0.0",
+      "source": "https://raw.githubusercontent.com/zhijiewong/openharness/main/data/skills/debug.md",
+      "tags": ["debug", "fix", "troubleshoot"]
+    },
+    {
+      "name": "tdd",
+      "description": "Test-driven development workflow",
+      "author": "zhijiewong",
+      "version": "1.0.0",
+      "source": "https://raw.githubusercontent.com/zhijiewong/openharness/main/data/skills/tdd.md",
+      "tags": ["test", "tdd", "testing"]
+    },
+    {
+      "name": "commit",
+      "description": "Create well-formed git commits",
+      "author": "zhijiewong",
+      "version": "1.0.0",
+      "source": "https://raw.githubusercontent.com/zhijiewong/openharness/main/data/skills/commit.md",
+      "tags": ["git", "commit", "version-control"]
+    }
+  ]
+}
