@@ -1,15 +1,21 @@
 # Changelog
 
-## 2.5.0 (2026-04-15) — Context Engineering
+## 2.5.0 (2026-04-15) — Infrastructure & Community
 
 ### Added
-- **Post-compact recovery**: After context compression, injects note for LLM to re-read working files
-- **Compression circuit breaker**: Stops auto-compressing after 3 consecutive failures
-- **Compression telemetry**: Logs tokens before/after and strategy used
+- **MCP Server Mode**: `oh mcp-server` exposes all 41 tools as an MCP server via stdio JSON-RPC. Any MCP client (Claude Code, Cline, Gemini CLI) can call openHarness tools.
+- **Skills Registry**: `oh skill search <query>` and `oh skill install <name>` for community skills. JSON-based registry at data/registry.json with 4 initial skills.
+- **Auto-commit per tool**: `gitCommitPerTool` config option — atomic git commits after each file-modifying tool execution (Aider-style).
+- **SWE-bench benchmark harness**: `scripts/swe-bench.mjs` runs openHarness against SWE-bench Lite with `--sample N` and `--instance` options. Results to BENCHMARKS.md.
+- **Skill feedback loop**: Skills track `timesUsed` and `lastUsed` in frontmatter. Auto-extracted skills unused for 60 days (<2 uses) are pruned during consolidation.
+- **Post-compact recovery**: Compression message tells LLM to re-read working files.
+- **Compression circuit breaker**: Stops auto-compressing after 3 consecutive failures.
+- **Compression telemetry**: Logs tokens before/after and strategy used.
+- `/skill-search` and `/skill-install` slash commands.
 
 ### Changed
-- README badges updated to match actual counts (777 tests, 41 tools, 46 commands)
-- Comparison table tool count corrected (41 with permission gates)
+- README badges updated to match actual counts (784 tests, 41 tools)
+- Comparison table tool count corrected
 
 ## 2.4.0 (2026-04-14) — Hermes Parity
 
