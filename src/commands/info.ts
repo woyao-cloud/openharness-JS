@@ -18,8 +18,22 @@ export function registerInfoCommands(
 ) {
   register("help", "Show available commands", () => {
     const categories: Record<string, string[]> = {
-      Session: ["clear", "compact", "export", "history", "browse", "resume", "fork", "pin", "unpin", "add-dir"],
-      Git: ["diff", "undo", "rewind", "commit", "log", "review-pr", "pr-comments"],
+      Session: [
+        "clear",
+        "compact",
+        "export",
+        "history",
+        "browse",
+        "resume",
+        "fork",
+        "pin",
+        "unpin",
+        "add-dir",
+        "listen",
+        "truncate",
+        "search",
+      ],
+      Git: ["diff", "undo", "rewind", "commit", "log", "review-pr", "pr-comments", "release-notes", "stash", "branch"],
       Info: [
         "help",
         "cost",
@@ -38,6 +52,12 @@ export function registerInfoCommands(
         "upgrade",
         "token-count",
         "benchmark",
+        "version",
+        "api-credits",
+        "whoami",
+        "project",
+        "stats",
+        "tools",
       ],
       Settings: [
         "theme",
@@ -51,8 +71,12 @@ export function registerInfoCommands(
         "allowed-tools",
         "login",
         "logout",
+        "terminal-setup",
+        "verbose",
+        "quiet",
+        "provider",
       ],
-      AI: ["plan", "review", "roles", "agents", "plugins", "btw", "loop"],
+      AI: ["plan", "review", "roles", "agents", "plugins", "btw", "loop", "summarize", "explain", "fix"],
       Pet: ["cybergotchi"],
     };
     const commands = getCommandMap();
@@ -522,6 +546,159 @@ export function registerInfoCommands(
     }
     const tokens = Math.ceil(text.length / 4);
     return { output: `Text: ${text.length} chars → ~${tokens} tokens (estimated)`, handled: true };
+  });
+
+  register("version", "Show version number", () => {
+    let version = "unknown";
+    try {
+      const pkgPath = join(process.cwd(), "package.json");
+      if (existsSync(pkgPath)) {
+        version = JSON.parse(readFileSync(pkgPath, "utf-8")).version ?? version;
+      }
+    } catch {
+      /* ignore */
+    }
+    return { output: `openHarness v${version}`, handled: true };
+  });
+
+  register("api-credits", "Check API credit balance", (_args, ctx) => {
+    const envHint =
+      ctx.providerName === "anthropic"
+        ? "ANTHROPIC_API_KEY"
+        : ctx.providerName === "openai"
+          ? "OPENAI_API_KEY"
+          : `${ctx.providerName.toUpperCase()}_API_KEY`;
+    const lines = [
+      "API credit balance is not available via local CLI.",
+      "",
+      `Provider: ${ctx.providerName}`,
+      `Check your balance at your provider's dashboard.`,
+      "",
+      `Tip: Ensure ${envHint} is set in your environment.`,
+      `Session cost so far: $${ctx.totalCost.toFixed(4)}`,
+    ];
+    return { output: lines.join("\n"), handled: true };
+  });
+
+  register("whoami", "Show current user and provider info", (_args, ctx) => {
+    const lines = [
+      `Provider:   ${ctx.providerName}`,
+      `Model:      ${ctx.model}`,
+      `Permission: ${ctx.permissionMode}`,
+      `Session:    ${ctx.sessionId}`,
+      `Node.js:    ${process.version}`,
+      `CWD:        ${process.cwd()}`,
+    ];
+    return { output: lines.join("\n"), handled: true };
+  });
+
+  register("project", "Show detected project info", () => {
+    const cwd = process.cwd();
+    const pkgPath = join(cwd, "package.json");
+    const lines: string[] = [`Project directory: ${cwd}`];
+
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+        lines.push(`  Name:        ${pkg.name ?? "unknown"}`);
+        lines.push(`  Version:     ${pkg.version ?? "unknown"}`);
+        lines.push(`  Description: ${pkg.description ?? "none"}`);
+        if (pkg.type) lines.push(`  Type:        ${pkg.type}`);
+        const deps = Object.keys(pkg.dependencies ?? {}).length;
+        const devDeps = Object.keys(pkg.devDependencies ?? {}).length;
+        lines.push(`  Dependencies: ${deps} prod, ${devDeps} dev`);
+
+        // Detect framework
+        const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+        const frameworks: string[] = [];
+        if (allDeps.react) frameworks.push("React");
+        if (allDeps.next) frameworks.push("Next.js");
+        if (allDeps.vue) frameworks.push("Vue");
+        if (allDeps.express) frameworks.push("Express");
+        if (allDeps.fastify) frameworks.push("Fastify");
+        if (allDeps.typescript) frameworks.push("TypeScript");
+        if (frameworks.length > 0) lines.push(`  Detected:    ${frameworks.join(", ")}`);
+      } catch {
+        lines.push("  Could not parse package.json");
+      }
+    } else {
+      lines.push("  No package.json found");
+    }
+
+    if (isGitRepo()) {
+      lines.push(`  Git branch:  ${gitBranch()}`);
+    }
+
+    return { output: lines.join("\n"), handled: true };
+  });
+
+  register("stats", "Show session statistics", (_args, ctx) => {
+    let userMsgs = 0,
+      assistantMsgs = 0,
+      toolMsgs = 0,
+      systemMsgs = 0;
+    let toolCalls = 0;
+    for (const msg of ctx.messages) {
+      switch (msg.role) {
+        case "user":
+          userMsgs++;
+          break;
+        case "assistant":
+          assistantMsgs++;
+          break;
+        case "tool":
+          toolMsgs++;
+          break;
+        case "system":
+          systemMsgs++;
+          break;
+      }
+      if (msg.toolCalls) toolCalls += msg.toolCalls.length;
+    }
+
+    const lines = [
+      "Session Statistics:",
+      "",
+      `  Messages:       ${ctx.messages.length} total`,
+      `    User:         ${userMsgs}`,
+      `    Assistant:    ${assistantMsgs}`,
+      `    Tool:         ${toolMsgs}`,
+      `    System:       ${systemMsgs}`,
+      "",
+      `  Tool calls:     ${toolCalls}`,
+      "",
+      `  Input tokens:   ${ctx.totalInputTokens.toLocaleString()}`,
+      `  Output tokens:  ${ctx.totalOutputTokens.toLocaleString()}`,
+      `  Total cost:     $${ctx.totalCost.toFixed(4)}`,
+      "",
+      `  Model:          ${ctx.model}`,
+      `  Session ID:     ${ctx.sessionId}`,
+    ];
+    return { output: lines.join("\n"), handled: true };
+  });
+
+  register("tools", "List available tools", (_args, ctx) => {
+    const toolNames = new Set<string>();
+    for (const msg of ctx.messages) {
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          if (tc.toolName) toolNames.add(tc.toolName);
+        }
+      }
+    }
+
+    const mcp = connectedMcpServers();
+    const lines = ["Available Tools:"];
+    lines.push("");
+    lines.push("  Built-in: Read, Write, Edit, Bash, Glob, Grep, Agent");
+    if (mcp.length > 0) {
+      lines.push(`  MCP:      ${mcp.join(", ")}`);
+    }
+    if (toolNames.size > 0) {
+      lines.push("");
+      lines.push(`  Used this session: ${[...toolNames].join(", ")}`);
+    }
+    return { output: lines.join("\n"), handled: true };
   });
 
   register("benchmark", "Run SWE-bench benchmark suite", (args) => {

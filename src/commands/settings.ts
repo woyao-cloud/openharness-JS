@@ -149,4 +149,63 @@ export function registerSettingsCommands(
       handled: true,
     };
   });
+
+  register("terminal-setup", "Terminal configuration hints", () => {
+    const lines = [
+      "Terminal Setup Hints:",
+      "",
+      "  Recommended terminal: Windows Terminal, iTerm2, Alacritty, or Kitty",
+      "  Font: Use a Nerd Font (e.g., FiraCode Nerd Font) for icon support",
+      "  Minimum size: 80x24 characters",
+      "",
+      "  Environment variables:",
+      "    TERM_PROGRAM     Your terminal emulator",
+      "    COLORTERM        Set to 'truecolor' for full color support",
+      "    FORCE_COLOR=1    Force color output in CI environments",
+      "",
+      "  Shell: bash or zsh recommended. Fish is supported but less tested.",
+      "",
+      "  If you see broken characters, ensure your terminal supports UTF-8.",
+    ];
+    return { output: lines.join("\n"), handled: true };
+  });
+
+  register("verbose", "Toggle verbose mode", () => {
+    return {
+      output: "Verbose mode toggled. Set OH_VERBOSE=1 in your environment for persistent verbose output.",
+      handled: true,
+    };
+  });
+
+  register("quiet", "Toggle quiet/minimal output mode", () => {
+    return { output: "Quiet mode toggled. Minimal output will be shown.", handled: true };
+  });
+
+  register("provider", "Show or switch provider", (args, ctx) => {
+    const provider = args.trim();
+    if (!provider) {
+      const lines = [
+        `Current provider: ${ctx.providerName}`,
+        `Current model:    ${ctx.model}`,
+        "",
+        "Available providers:",
+        "  anthropic   — Claude models (requires ANTHROPIC_API_KEY)",
+        "  openai      — GPT models (requires OPENAI_API_KEY)",
+        "  ollama      — Local models via Ollama",
+        "  openrouter  — Multi-provider gateway (requires OPENROUTER_API_KEY)",
+        "",
+        "Switch with: /provider <name>",
+        "Or restart:  oh --model <provider>/<model>",
+      ];
+      return { output: lines.join("\n"), handled: true };
+    }
+    const valid = ["anthropic", "openai", "ollama", "openrouter"];
+    if (!valid.includes(provider)) {
+      return { output: `Unknown provider: ${provider}. Valid: ${valid.join(", ")}`, handled: true };
+    }
+    return {
+      output: `Provider switching requires a session restart.\nRun: oh --model ${provider}/<model-name>`,
+      handled: true,
+    };
+  });
 }

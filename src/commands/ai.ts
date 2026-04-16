@@ -241,4 +241,47 @@ export function registerAICommands(register: (name: string, description: string,
   register("cybergotchi", "Manage your cybergotchi — feed · pet · rest · status · rename · reset", (args) => {
     return handleCybergotchiCommand(args);
   });
+
+  register("summarize", "Summarize the current conversation", (_args, ctx) => {
+    if (ctx.messages.length === 0) {
+      return { output: "No messages to summarize.", handled: true };
+    }
+    return {
+      output: `[summarize] ${ctx.messages.length} messages`,
+      handled: false,
+      prependToPrompt: `Summarize this conversation concisely. Highlight the main topics discussed, decisions made, and any pending action items. Be brief but thorough.`,
+    };
+  });
+
+  register("explain", "Explain a file or concept", (args) => {
+    const topic = args.trim();
+    if (!topic) {
+      return {
+        output:
+          "Usage: /explain <file-path or concept>\n\nExamples:\n  /explain src/index.ts\n  /explain dependency injection\n  /explain the authentication flow",
+        handled: true,
+      };
+    }
+    return {
+      output: `[explain] ${topic}`,
+      handled: false,
+      prependToPrompt: `Explain the following clearly and concisely. If it's a file path, read and explain its purpose, structure, and key functions. If it's a concept, explain it in the context of this project.\n\nTopic: ${topic}`,
+    };
+  });
+
+  register("fix", "Fix a specific issue", (args) => {
+    const issue = args.trim();
+    if (!issue) {
+      return {
+        output:
+          "Usage: /fix <issue description>\n\nExamples:\n  /fix the failing test in auth.test.ts\n  /fix TypeScript errors in src/utils.ts\n  /fix the broken import on line 42",
+        handled: true,
+      };
+    }
+    return {
+      output: `[fix] ${issue}`,
+      handled: false,
+      prependToPrompt: `Fix the following issue. Diagnose the root cause, implement the fix, and verify it works. Be precise and minimal in your changes.\n\nIssue: ${issue}`,
+    };
+  });
 }

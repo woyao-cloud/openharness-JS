@@ -183,4 +183,53 @@ export function registerSessionCommands(
     }
     return { output: `Added working directory: ${resolved}`, handled: true };
   });
+
+  register("listen", "Listen to stdin for input", () => {
+    return {
+      output: "Listening mode enabled. Paste or pipe input, then press Ctrl+D (EOF) to submit.",
+      handled: true,
+    };
+  });
+
+  register("truncate", "Remove messages from the end of conversation", (args, ctx) => {
+    const countStr = args.trim();
+    const count = parseInt(countStr, 10);
+    if (!countStr || Number.isNaN(count) || count < 1) {
+      return {
+        output: `Usage: /truncate <count>\n\nRemove the last <count> messages from the conversation.\nCurrent message count: ${ctx.messages.length}`,
+        handled: true,
+      };
+    }
+    if (count >= ctx.messages.length) {
+      return { output: "Cannot truncate all messages. Use /clear instead.", handled: true };
+    }
+    const kept = ctx.messages.slice(0, ctx.messages.length - count);
+    return {
+      output: `Truncated ${count} message(s). ${kept.length} remaining.`,
+      handled: true,
+      compactedMessages: kept,
+    };
+  });
+
+  register("search", "Search current conversation", (args, ctx) => {
+    const term = args.trim().toLowerCase();
+    if (!term) {
+      return {
+        output: "Usage: /search <term>\n\nSearch through all messages in the current conversation.",
+        handled: true,
+      };
+    }
+    const matches: string[] = [];
+    for (let i = 0; i < ctx.messages.length; i++) {
+      const msg = ctx.messages[i]!;
+      if (typeof msg.content === "string" && msg.content.toLowerCase().includes(term)) {
+        const preview = msg.content.slice(0, 80).replace(/\n/g, " ");
+        matches.push(`  #${i + 1} [${msg.role}]: ${preview}...`);
+      }
+    }
+    if (matches.length === 0) {
+      return { output: `No messages matching "${term}".`, handled: true };
+    }
+    return { output: `Found ${matches.length} message(s) matching "${term}":\n${matches.join("\n")}`, handled: true };
+  });
 }

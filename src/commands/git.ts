@@ -2,7 +2,8 @@
  * Git commands — /diff, /undo, /rewind, /commit, /log
  */
 
-import { gitCommit, gitDiff, gitLog, gitUndo, isGitRepo } from "../git/index.js";
+import { execSync } from "node:child_process";
+import { gitBranch, gitCommit, gitDiff, gitLog, gitUndo, isGitRepo } from "../git/index.js";
 import type { CommandHandler } from "./types.js";
 
 export function registerGitCommands(register: (name: string, description: string, handler: CommandHandler) => void) {
@@ -115,5 +116,61 @@ export function registerGitCommands(register: (name: string, description: string
       handled: false,
       prependToPrompt: `Fetch and summarize the comments on pull request ${pr}. Use the Bash tool to run 'gh pr view ${pr} --json comments,reviews' to get all comments and review feedback. Present a clear summary of the discussion.`,
     };
+  });
+
+  register("release-notes", "Generate release notes from recent commits", (args) => {
+    if (!isGitRepo()) {
+      return { output: "Not a git repository.", handled: true };
+    }
+    const range = args.trim() || "HEAD~10..HEAD";
+    let log: string;
+    try {
+      log = execSync(`git log --oneline ${range}`, { encoding: "utf-8" }).trim();
+    } catch {
+      log = gitLog(10) || "";
+    }
+    if (!log) return { output: "No commits found for release notes.", handled: true };
+    return {
+      output: `[release-notes] ${range}`,
+      handled: false,
+      prependToPrompt: `Generate release notes from these commits. Group by category (features, fixes, chores). Use markdown formatting.\n\nCommits:\n${log}`,
+    };
+  });
+
+  register("stash", "Show git stash list", () => {
+    if (!isGitRepo()) {
+      return { output: "Not a git repository.", handled: true };
+    }
+    let stashList: string;
+    try {
+      stashList = execSync("git stash list", { encoding: "utf-8" }).trim();
+    } catch {
+      return { output: "Could not retrieve stash list.", handled: true };
+    }
+    if (!stashList) return { output: "No stashes found.", handled: true };
+    return { output: `Git stashes:\n${stashList}`, handled: true };
+  });
+
+  register("branch", "Show or switch git branch", (args) => {
+    if (!isGitRepo()) {
+      return { output: "Not a git repository.", handled: true };
+    }
+    const target = args.trim();
+    if (!target) {
+      const current = gitBranch();
+      let branches: string;
+      try {
+        branches = execSync("git branch --list", { encoding: "utf-8" }).trim();
+      } catch {
+        branches = current;
+      }
+      return { output: `Current branch: ${current}\n\n${branches}`, handled: true };
+    }
+    try {
+      execSync(`git checkout ${target}`, { encoding: "utf-8" });
+      return { output: `Switched to branch: ${target}`, handled: true };
+    } catch {
+      return { output: `Failed to switch to branch: ${target}. Does it exist?`, handled: true };
+    }
   });
 }
