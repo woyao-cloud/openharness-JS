@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.6.0 (2026-04-16) — Quality & Gap Closure
+
+### Added
+- **TodoWriteTool**: New tool for writing/updating todo items with ID-based upsert (42 tools total)
+- **8 new slash commands**: `/bug`, `/feedback`, `/upgrade`, `/token-count`, `/benchmark`, `/vim`, `/login`/`/logout`, `/review-pr`, `/pr-comments`, `/add-dir` (59 total)
+- **33 new tests**: Extended command tests, EvaluatorLoop tests (817 total)
+
+### Changed
+- **Command decomposition**: Split monolithic `commands/index.ts` (1,299 lines) into 6 domain modules — `session.ts`, `git.ts`, `info.ts`, `settings.ts`, `ai.ts`, `skills.ts` + thin registry (83 lines)
+- **Model-aware extended thinking**: Anthropic thinking budget scales by model (Opus: 32K tokens, others: 10K). Max output tokens also model-aware (Opus: 16,384, others: 8,192)
+- **OpenAI reasoning effort**: Now model-aware — full models get `high`, mini models get `medium`. Added `o4` model detection
+- **InitWizard hooks**: Proper `useCallback` wrapping for `runTest`, correct dependency arrays (fixed 3 React warnings)
+
+### Fixed
+- 6 Biome lint warnings resolved (unused variables, exhaustive dependencies, dead code)
+- 2 TODO comments resolved (hooks.ts prompt hook documented, skill template placeholder)
+- Removed unused `inThinkingBlock` state tracking in Anthropic provider
+- Removed unused `cursor` destructure in renderer layout
+
+### Summary
+817 tests, 42 tools, 59 slash commands. Zero Biome warnings. Commands decomposed for maintainability. Extended thinking now model-aware.
+
 ## 2.5.0 (2026-04-15) — Infrastructure & Community
 
 ### Added
