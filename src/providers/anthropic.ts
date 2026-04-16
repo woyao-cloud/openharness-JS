@@ -100,15 +100,19 @@ export class AnthropicProvider implements Provider {
     // Anthropic caches matching prefixes — 90% cost reduction on repeat turns.
     const systemBlocks = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
 
+    // Scale max_tokens and thinking budget based on model
+    const isOpus = m.includes("opus");
+    const maxTokens = isOpus ? 16384 : 8192;
+    const thinkingBudget = isOpus ? 32000 : 10000;
+
     const body: Record<string, unknown> = {
       model: m,
-      max_tokens: 8192,
+      max_tokens: maxTokens,
       system: systemBlocks,
       messages: this.convertMessages(messages),
       stream: true,
+      thinking: { type: "enabled", budget_tokens: thinkingBudget },
     };
-    // Enable extended thinking for Claude models
-    body.thinking = { type: "enabled", budget_tokens: 10000 };
     const anthropicTools = this.convertTools(tools);
     if (anthropicTools) {
       // Mark last tool definition as cacheable (cache covers all tools before it)
@@ -147,8 +151,6 @@ export class AnthropicProvider implements Provider {
     let currentToolId = "";
     let currentToolName = "";
     let currentToolArgs = "";
-    let _inThinkingBlock = false;
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -190,9 +192,7 @@ export class AnthropicProvider implements Provider {
                 callId: block.id,
               };
             }
-            if (block?.type === "thinking") {
-              _inThinkingBlock = true;
-            }
+            // thinking blocks are handled via thinking_delta in content_block_delta
             break;
           }
           case "content_block_delta": {
@@ -209,7 +209,6 @@ export class AnthropicProvider implements Provider {
             break;
           }
           case "content_block_stop": {
-            _inThinkingBlock = false;
             if (currentToolId) {
               let parsedArgs: Record<string, unknown> = {};
               if (currentToolArgs) {

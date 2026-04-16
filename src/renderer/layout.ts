@@ -421,7 +421,7 @@ function renderQuestionPromptSection(
 ): { nextRow: number; questionInputRow: number } {
   if (!state.questionPrompt || grid.width < 20) return { nextRow, questionInputRow: -1 };
   const w = grid.width;
-  const { question, options, input, cursor } = state.questionPrompt;
+  const { question, options, input } = state.questionPrompt;
   const qStyle: Style = { fg: "yellow", bg: null, bold: false, dim: false, underline: false };
 
   if (opts.boxed) {

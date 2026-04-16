@@ -464,7 +464,7 @@ describe("tools-basic", () => {
   // ── ScheduleWakeupTool ──
 
   it("ScheduleWakeupTool — schedules a wakeup and clamps delay", async () => {
-    const { ScheduleWakeupTool, consumeWakeup, cancelWakeup } = await import("./ScheduleWakeupTool/index.js");
+    const { ScheduleWakeupTool, consumeWakeup } = await import("./ScheduleWakeupTool/index.js");
     const tmp = makeTmpDir();
 
     // Schedule a wakeup with delay under minimum (should clamp to 60)

@@ -149,13 +149,16 @@ async function runHttpHook(url: string, event: HookEvent, ctx: HookContext, time
   }
 }
 
-/** Run a prompt hook. Uses LLM to make a yes/no decision. */
+/**
+ * Run a prompt hook. Uses LLM to make a yes/no decision.
+ *
+ * Currently a stub — prompt hooks always allow because the hook system
+ * runs outside the query loop and has no access to a Provider instance.
+ * Full implementation requires passing a Provider via HookContext so the
+ * hook can call provider.complete() with the prompt text.
+ */
 async function runPromptHook(_promptText: string, _ctx: HookContext): Promise<boolean> {
-  // Prompt hooks require a provider — skip if not available
-  // This is a lightweight check; full LLM call would need provider injection
-  // For now, prompt hooks evaluate the prompt text as a simple template
-  // TODO: inject provider for full LLM-based prompt hooks
-  return true; // Default allow if no LLM available
+  return true;
 }
 
 // ── Hook Execution ──

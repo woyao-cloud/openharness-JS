@@ -87,8 +87,9 @@ export class OpenAIProvider implements Provider {
     if (tools?.length) body.tools = tools;
 
     // Enable reasoning for o-series models
-    if (m.startsWith("o1") || m.startsWith("o3")) {
-      body.reasoning_effort = "medium";
+    const isReasoning = m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4");
+    if (isReasoning) {
+      body.reasoning_effort = m.includes("mini") ? "medium" : "high";
     }
 
     let res: Response;

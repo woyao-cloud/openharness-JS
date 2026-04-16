@@ -114,6 +114,70 @@ export default function InitWizard({ onDone }: Props) {
 
   const provider = PROVIDERS[providerIdx]!;
 
+  // ── Connection test ──
+
+  const runTest = useCallback(async (prov: Provider, key: string, url: string) => {
+    setTestStatus("testing");
+    try {
+      const { createProviderInstance } = await import("../providers/index.js");
+      const p = createProviderInstance(prov.key, {
+        name: prov.key,
+        apiKey: key || process.env[`${prov.key.toUpperCase()}_API_KEY`],
+        baseUrl: url || prov.defaultBaseUrl,
+        defaultModel: prov.defaultModel,
+      });
+      const fetched =
+        "fetchModels" in p && typeof (p as any).fetchModels === "function"
+          ? await (p as any).fetchModels()
+          : p.listModels();
+      const modelNames = fetched.map((m: any) => m.id as string);
+      setAvailableModels(modelNames.length > 0 ? modelNames : [prov.defaultModel]);
+      setTestStatus("ok");
+      setTimeout(() => setStep("model"), 600);
+    } catch (err) {
+      setTestStatus("fail");
+      setTestError(err instanceof Error ? err.message : String(err));
+      setAvailableModels([prov.defaultModel]);
+      setTimeout(() => setStep("model"), 800);
+    }
+  }, []);
+
+  // ── Write final config ──
+
+  const writeFinal = useCallback(() => {
+    const selectedModel = availableModels.length > 0 ? (availableModels[modelIdx] ?? model) : model;
+
+    // Build MCP server configs from selected registry entries
+    let mcpServers: any[] | undefined;
+    if (selectedMcp.size > 0) {
+      try {
+        const { MCP_REGISTRY } = require("../mcp/registry.js");
+        mcpServers = [...selectedMcp]
+          .map((name) => MCP_REGISTRY.find((e: any) => e.name === name))
+          .filter(Boolean)
+          .map((e: any) => ({
+            name: e.name,
+            command: "npx",
+            args: ["-y", e.package, ...(e.args ?? [])],
+            ...(e.envVars?.length ? { env: Object.fromEntries(e.envVars.map((v: string) => [v, `YOUR_${v}`])) } : {}),
+          }));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    writeOhConfig({
+      provider: provider.key,
+      model: selectedModel || provider.defaultModel,
+      permissionMode: PERMISSION_MODES[permIdx]!.key as any,
+      ...(apiKey ? { apiKey } : {}),
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(mcpServers?.length ? { mcpServers } : {}),
+    });
+    setStep("done");
+    setTimeout(() => onDone?.(), 1500);
+  }, [provider, model, availableModels, modelIdx, permIdx, apiKey, baseUrl, selectedMcp, onDone]);
+
   // ── Keyboard navigation ──
 
   useInput(
@@ -190,74 +254,9 @@ export default function InitWizard({ onDone }: Props) {
           if (input === "n" || input === "N") writeFinal();
         }
       },
-      // biome-ignore lint/correctness/useExhaustiveDependencies: runTest/writeFinal declared below, providerIdx intentionally omitted
-      [step, providerIdx, provider, modelIdx, availableModels, model, suggestedMcp, mcpIdx],
+      [step, provider, modelIdx, availableModels, model, suggestedMcp, mcpIdx, runTest, writeFinal],
     ),
   );
-
-  // ── Connection test ──
-
-  const runTest = async (prov: Provider, key: string, url: string) => {
-    setTestStatus("testing");
-    try {
-      const { createProviderInstance } = await import("../providers/index.js");
-      const p = createProviderInstance(prov.key, {
-        name: prov.key,
-        apiKey: key || process.env[`${prov.key.toUpperCase()}_API_KEY`],
-        baseUrl: url || prov.defaultBaseUrl,
-        defaultModel: prov.defaultModel,
-      });
-      const fetched =
-        "fetchModels" in p && typeof (p as any).fetchModels === "function"
-          ? await (p as any).fetchModels()
-          : p.listModels();
-      const modelNames = fetched.map((m: any) => m.id as string);
-      setAvailableModels(modelNames.length > 0 ? modelNames : [prov.defaultModel]);
-      setTestStatus("ok");
-      setTimeout(() => setStep("model"), 600);
-    } catch (err) {
-      setTestStatus("fail");
-      setTestError(err instanceof Error ? err.message : String(err));
-      setAvailableModels([prov.defaultModel]);
-      setTimeout(() => setStep("model"), 800);
-    }
-  };
-
-  // ── Write final config ──
-
-  const writeFinal = useCallback(() => {
-    const selectedModel = availableModels.length > 0 ? (availableModels[modelIdx] ?? model) : model;
-
-    // Build MCP server configs from selected registry entries
-    let mcpServers: any[] | undefined;
-    if (selectedMcp.size > 0) {
-      try {
-        const { MCP_REGISTRY } = require("../mcp/registry.js");
-        mcpServers = [...selectedMcp]
-          .map((name) => MCP_REGISTRY.find((e: any) => e.name === name))
-          .filter(Boolean)
-          .map((e: any) => ({
-            name: e.name,
-            command: "npx",
-            args: ["-y", e.package, ...(e.args ?? [])],
-            ...(e.envVars?.length ? { env: Object.fromEntries(e.envVars.map((v: string) => [v, `YOUR_${v}`])) } : {}),
-          }));
-      } catch {
-        /* ignore */
-      }
-    }
-
-    writeOhConfig({
-      provider: provider.key,
-      model: selectedModel || provider.defaultModel,
-      permissionMode: PERMISSION_MODES[permIdx]!.key as any,
-      ...(apiKey ? { apiKey } : {}),
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(mcpServers?.length ? { mcpServers } : {}),
-    });
-    setStep("done");
-    setTimeout(() => onDone?.(), 1500);
-  }, [provider, model, availableModels, modelIdx, permIdx, apiKey, baseUrl, selectedMcp, onDone]);
 
   // ── Render ──
 

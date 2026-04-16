@@ -45,6 +45,7 @@ import { TaskListTool } from "./tools/TaskListTool/index.js";
 import { TaskOutputTool } from "./tools/TaskOutputTool/index.js";
 import { TaskStopTool } from "./tools/TaskStopTool/index.js";
 import { TaskUpdateTool } from "./tools/TaskUpdateTool/index.js";
+import { TodoWriteTool } from "./tools/TodoWriteTool/index.js";
 import { ToolSearchTool } from "./tools/ToolSearchTool/index.js";
 import { WebFetchTool } from "./tools/WebFetchTool/index.js";
 import { WebSearchTool } from "./tools/WebSearchTool/index.js";
@@ -108,6 +109,7 @@ export function getAllTools(): Tools {
     MonitorTool,
     ScheduleWakeupTool,
     SessionSearchTool,
+    TodoWriteTool,
   ];
 
   return [...core, ...extended.map((t) => new DeferredTool(t))];
