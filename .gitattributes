@@ -1,0 +1,4 @@
+# Enforce LF line endings for all text files on all platforms.
+# Prevents Windows (core.autocrlf=true) from checking out CRLF files
+# that Biome's formatter would flag in its pre-commit hook.
+* text=auto eol=lf
