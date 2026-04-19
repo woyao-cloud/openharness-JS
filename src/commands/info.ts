@@ -9,7 +9,10 @@ import { gitBranch, isGitRepo, isInMergeOrRebase } from "../git/index.js";
 import { readOhConfig } from "../harness/config.js";
 import { estimateMessageTokens } from "../harness/context-warning.js";
 import { getContextWindow } from "../harness/cost.js";
+import { normalizeMcpConfig } from "../mcp/config-normalize.js";
 import { connectedMcpServers } from "../mcp/loader.js";
+import { getAuthStatus } from "../mcp/oauth.js";
+import { mcpLoginHandler, mcpLogoutHandler } from "./mcp-auth.js";
 import type { CommandHandler } from "./types.js";
 
 export function registerInfoCommands(
@@ -45,6 +48,8 @@ export function registerInfoCommands(
         "doctor",
         "context",
         "mcp",
+        "mcp-login",
+        "mcp-logout",
         "mcp-registry",
         "init",
         "bug",
@@ -410,20 +415,52 @@ export function registerInfoCommands(
     return { output: lines.join("\n"), handled: true };
   });
 
-  register("mcp", "Show MCP server status", () => {
-    const mcp = connectedMcpServers();
-    if (mcp.length === 0) {
+  register("mcp", "Show MCP server status", async () => {
+    const connected = connectedMcpServers();
+    if (connected.length === 0) {
       return {
         output:
           "No MCP servers connected.\nConfigure in .oh/config.yaml under mcpServers.\nRun /mcp-registry to browse available servers.",
         handled: true,
       };
     }
-    const lines = [`MCP Servers (${mcp.length} connected):\n`];
-    for (const name of mcp) {
-      lines.push(`  ✓ ${name}`);
+    const cfg = readOhConfig();
+    const servers = cfg?.mcpServers ?? [];
+    const storageDir = join(homedir(), ".oh", "credentials", "mcp");
+
+    const lines = [`MCP Servers (${connected.length} connected):`, ""];
+    for (const name of connected) {
+      const entry = servers.find((s) => s.name === name);
+      if (!entry) {
+        lines.push(`  ${name.padEnd(20)}  unknown  —`);
+        continue;
+      }
+      const normalized = normalizeMcpConfig(entry, process.env);
+      if (normalized.kind === "error") {
+        lines.push(`  ${name.padEnd(20)}  error    ${normalized.message}`);
+        continue;
+      }
+      const kind = normalized.cfg.type;
+      const status = await getAuthStatus(normalized.cfg, storageDir);
+      let statusText: string;
+      switch (status) {
+        case "n/a":
+          statusText = "—";
+          break;
+        case "none":
+          statusText = "not authenticated";
+          break;
+        case "authenticated":
+          statusText = "authenticated";
+          break;
+        case "expired":
+          statusText = "expired (re-authenticate with /mcp-login)";
+          break;
+      }
+      lines.push(`  ${name.padEnd(20)}  ${kind.padEnd(6)}  ${statusText}`);
     }
-    lines.push("\nRun /mcp-registry to browse and add more servers.");
+    lines.push("");
+    lines.push("Run /mcp-registry to browse and add more servers.");
     return { output: lines.join("\n"), handled: true };
   });
 
@@ -454,6 +491,14 @@ export function registerInfoCommands(
     }
 
     return { output: `Found ${results.length} servers:\n\n${formatRegistry(results)}`, handled: true };
+  });
+
+  register("mcp-login", "Authenticate to a remote MCP server via OAuth", async (args) => {
+    return mcpLoginHandler(args);
+  });
+
+  register("mcp-logout", "Wipe local OAuth tokens for an MCP server", async (args) => {
+    return mcpLogoutHandler(args);
   });
 
   register("init", "Initialize project with .oh/ config", () => {

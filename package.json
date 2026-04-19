@@ -1,6 +1,6 @@
 {
   "name": "@zhijiewang/openharness",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "description": "Open-source terminal coding agent. Works with any LLM.",
   "type": "module",
   "bin": {
@@ -44,6 +44,7 @@
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
     "marked": "^17.0.5",
+    "open": "^11.0.0",
     "react": "^18.3.1",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
