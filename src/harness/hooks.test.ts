@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { makeTmpDir } from "../test-helpers.js";
 import { invalidateConfigCache } from "./config.js";
-import { emitHook, emitHookAsync, invalidateHookCache, matchesHook } from "./hooks.js";
+import {
+  emitHook,
+  emitHookAsync,
+  emitHookWithOutcome,
+  type HookOutcome,
+  invalidateHookCache,
+  matchesHook,
+  parseJsonIoResponse,
+} from "./hooks.js";
 
 describe("emitHook", () => {
   it("returns true when no hooks configured (default)", () => {
@@ -248,5 +256,403 @@ describe("prompt hooks (LLM-decision)", () => {
     // true (there's no hook to fail), then write a bad config and see false.
     const noHooks = await emitHookAsync("preToolUse", { toolName: "Bash" });
     assert.equal(noHooks, true, "with no hooks configured, emitHookAsync should allow");
+  });
+});
+
+describe("new hook event types (Task 1)", () => {
+  it("HookEvent accepts postToolUseFailure / userPromptSubmit / permissionRequest at type level", () => {
+    // Compile-time check only — if this file type-checks, the union accepts the new variants.
+    const events: Array<"postToolUseFailure" | "userPromptSubmit" | "permissionRequest"> = [
+      "postToolUseFailure",
+      "userPromptSubmit",
+      "permissionRequest",
+    ];
+    assert.equal(events.length, 3);
+  });
+
+  it("emitHook accepts the three new events without throwing (no hooks configured)", () => {
+    assert.equal(emitHook("postToolUseFailure", { toolName: "t", errorMessage: "x" }), true);
+    assert.equal(emitHook("userPromptSubmit", { prompt: "hi" }), true);
+    assert.equal(emitHook("permissionRequest", { toolName: "Bash", permissionAction: "ask" }), true);
+  });
+});
+
+// ── Task 2: parseJsonIoResponse + emitHookWithOutcome ──
+
+describe("parseJsonIoResponse", () => {
+  it("parses allow decision without hookSpecificOutput", () => {
+    const r = parseJsonIoResponse(JSON.stringify({ decision: "allow" }));
+    assert.equal(r.decision, "allow");
+    assert.equal(r.additionalContext, undefined);
+    assert.equal(r.permissionDecision, undefined);
+  });
+
+  it("parses deny decision with reason", () => {
+    const r = parseJsonIoResponse(JSON.stringify({ decision: "deny", reason: "blocked" }));
+    assert.equal(r.decision, "deny");
+    assert.equal(r.reason, "blocked");
+  });
+
+  it("extracts hookSpecificOutput.additionalContext", () => {
+    const r = parseJsonIoResponse(
+      JSON.stringify({ decision: "allow", hookSpecificOutput: { additionalContext: "[hello]" } }),
+    );
+    assert.equal(r.additionalContext, "[hello]");
+  });
+
+  it("extracts hookSpecificOutput.decision as permissionDecision", () => {
+    const r = parseJsonIoResponse(JSON.stringify({ hookSpecificOutput: { decision: "deny", reason: "not allowed" } }));
+    assert.equal(r.permissionDecision, "deny");
+    assert.equal(r.reason, "not allowed");
+  });
+
+  it("returns empty object on malformed JSON (no throw)", () => {
+    const r = parseJsonIoResponse("{not valid");
+    assert.deepEqual(r, {});
+  });
+
+  it("returns empty object on non-object JSON", () => {
+    const r = parseJsonIoResponse(JSON.stringify("just a string"));
+    assert.deepEqual(r, {});
+  });
+
+  it("ignores unknown decision values", () => {
+    const r = parseJsonIoResponse(JSON.stringify({ decision: "maybe" }));
+    assert.equal(r.decision, undefined);
+  });
+
+  it("ignores unknown hookSpecificOutput.decision values", () => {
+    const r = parseJsonIoResponse(JSON.stringify({ hookSpecificOutput: { decision: "sometimes" } }));
+    assert.equal(r.permissionDecision, undefined);
+  });
+});
+
+describe("emitHookWithOutcome (no hooks configured)", () => {
+  it("returns {allowed: true} for every event with no config", async () => {
+    const events: Array<"postToolUseFailure" | "userPromptSubmit" | "permissionRequest"> = [
+      "postToolUseFailure",
+      "userPromptSubmit",
+      "permissionRequest",
+    ];
+    for (const e of events) {
+      const o = await emitHookWithOutcome(e, {});
+      assert.equal(o.allowed, true);
+      assert.equal(o.additionalContext, undefined);
+      assert.equal(o.permissionDecision, undefined);
+    }
+  });
+});
+
+// ── Async withTmpCwd for emitHookWithOutcome integration tests ──
+
+function withTmpCwdAsync(fn: (dir: string) => Promise<void>): Promise<void> {
+  const dir = makeTmpDir();
+  const original = process.cwd();
+  process.chdir(dir);
+  return fn(dir).finally(() => {
+    process.chdir(original);
+    invalidateHookCache();
+    invalidateConfigCache();
+  });
+}
+
+describe("emitHookWithOutcome (jsonIO hooks)", () => {
+  it("prepends additionalContext from a userPromptSubmit hook", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({hookSpecificOutput:{additionalContext:'[PREFIX]'}})); });",
+      );
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          "  userPromptSubmit:",
+          `    - command: "node ${JSON.stringify(scriptPath).slice(1, -1)}"`,
+          "      jsonIO: true",
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+
+      const outcome = await emitHookWithOutcome("userPromptSubmit", { prompt: "hi" });
+      assert.equal(outcome.allowed, true);
+      assert.equal(outcome.additionalContext, "[PREFIX]");
+    });
+  });
+
+  it("blocks on deny decision with reason", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({decision:'deny',reason:'nope'})); });",
+      );
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          "  userPromptSubmit:",
+          `    - command: "node ${JSON.stringify(scriptPath).slice(1, -1)}"`,
+          "      jsonIO: true",
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+
+      const outcome = await emitHookWithOutcome("userPromptSubmit", { prompt: "hi" });
+      assert.equal(outcome.allowed, false);
+      assert.equal(outcome.reason, "nope");
+    });
+  });
+
+  it("returns permissionDecision from hookSpecificOutput for permissionRequest", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({hookSpecificOutput:{decision:'allow'}})); });",
+      );
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          "  permissionRequest:",
+          `    - command: "node ${JSON.stringify(scriptPath).slice(1, -1)}"`,
+          "      jsonIO: true",
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+
+      const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+      assert.equal(outcome.allowed, true);
+      assert.equal(outcome.permissionDecision, "allow");
+    });
+  });
+
+  it("treats postToolUseFailure as notify-only (ignores decision from hook)", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({decision:'deny',reason:'nope'})); });",
+      );
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          "  postToolUseFailure:",
+          `    - command: "node ${JSON.stringify(scriptPath).slice(1, -1)}"`,
+          "      jsonIO: true",
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+
+      const outcome = await emitHookWithOutcome("postToolUseFailure", { toolName: "Bash", errorMessage: "oops" });
+      // deny is ignored — notify-only
+      assert.equal(outcome.allowed, true);
+    });
+  });
+});
+
+describe("emitHookWithOutcome — env-mode exit-code mapping (Task 7)", () => {
+  async function runEnvExitTest(opts: {
+    event: "userPromptSubmit" | "permissionRequest" | "postToolUseFailure";
+    exitCode: number;
+  }): Promise<HookOutcome> {
+    let outcome!: HookOutcome;
+    await withTmpCwdAsync(async (dir) => {
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(scriptPath, `process.exit(${opts.exitCode});`);
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          `  ${opts.event}:`,
+          `    - command: "node ${scriptPath.replace(/\\/g, "/")}"`,
+          // NOTE: no jsonIO flag — this exercises the env-mode path
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+      outcome = await emitHookWithOutcome(opts.event, {});
+    });
+    return outcome;
+  }
+
+  it("userPromptSubmit env-mode exit 0 → allowed", async () => {
+    const o = await runEnvExitTest({ event: "userPromptSubmit", exitCode: 0 });
+    assert.equal(o.allowed, true);
+    assert.equal(o.additionalContext, undefined);
+  });
+
+  it("userPromptSubmit env-mode exit nonzero → denied", async () => {
+    const o = await runEnvExitTest({ event: "userPromptSubmit", exitCode: 1 });
+    assert.equal(o.allowed, false);
+  });
+
+  it("permissionRequest env-mode exit 0 → permissionDecision 'ask' (fall-through)", async () => {
+    const o = await runEnvExitTest({ event: "permissionRequest", exitCode: 0 });
+    assert.equal(o.allowed, true);
+    assert.equal(o.permissionDecision, "ask");
+  });
+
+  it("permissionRequest env-mode exit nonzero → permissionDecision 'deny'", async () => {
+    const o = await runEnvExitTest({ event: "permissionRequest", exitCode: 1 });
+    assert.equal(o.allowed, false);
+    assert.equal(o.permissionDecision, "deny");
+  });
+
+  it("postToolUseFailure env-mode exit 0 → allowed (notify-only)", async () => {
+    const o = await runEnvExitTest({ event: "postToolUseFailure", exitCode: 0 });
+    assert.equal(o.allowed, true);
+  });
+
+  it("postToolUseFailure env-mode exit nonzero → still allowed (notify-only)", async () => {
+    const o = await runEnvExitTest({ event: "postToolUseFailure", exitCode: 1 });
+    assert.equal(o.allowed, true);
+  });
+});
+
+describe("emitHookWithOutcome — multi-hook merge semantics", () => {
+  it("two userPromptSubmit hooks: additionalContext concatenates in order, \\n\\n separated", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const s1 = `${dir}/h1.cjs`;
+      const s2 = `${dir}/h2.cjs`;
+      writeFileSync(
+        s1,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({hookSpecificOutput:{additionalContext:'FIRST'}})); });",
+      );
+      writeFileSync(
+        s2,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({hookSpecificOutput:{additionalContext:'SECOND'}})); });",
+      );
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          "  userPromptSubmit:",
+          `    - command: "node ${s1.replace(/\\/g, "/")}"`,
+          "      jsonIO: true",
+          `    - command: "node ${s2.replace(/\\/g, "/")}"`,
+          "      jsonIO: true",
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+
+      const outcome = await emitHookWithOutcome("userPromptSubmit", { prompt: "hi" });
+      assert.equal(outcome.allowed, true);
+      assert.equal(outcome.additionalContext, "FIRST\n\nSECOND");
+    });
+  });
+
+  it("first deny short-circuits — second hook does not run", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const s1 = `${dir}/h1.cjs`;
+      const s2 = `${dir}/h2.cjs`;
+      const marker = `${dir}/second-ran.marker`;
+      writeFileSync(
+        s1,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({decision:'deny',reason:'first said no'})); });",
+      );
+      writeFileSync(
+        s2,
+        `require("node:fs").writeFileSync(${JSON.stringify(marker).replace(/\\/g, "/")}, "ran"); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write('{}'); });`,
+      );
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          "  userPromptSubmit:",
+          `    - command: "node ${s1.replace(/\\/g, "/")}"`,
+          "      jsonIO: true",
+          `    - command: "node ${s2.replace(/\\/g, "/")}"`,
+          "      jsonIO: true",
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+
+      const outcome = await emitHookWithOutcome("userPromptSubmit", { prompt: "hi" });
+      assert.equal(outcome.allowed, false);
+      assert.match(outcome.reason ?? "", /first said no/i);
+      assert.equal(existsSync(marker), false, "second hook should not have run");
+    });
+  });
+
+  it("permissionRequest: 'allow' short-circuits — second 'deny' hook does not override", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const s1 = `${dir}/h1.cjs`;
+      const s2 = `${dir}/h2.cjs`;
+      writeFileSync(
+        s1,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({hookSpecificOutput:{decision:'allow'}})); });",
+      );
+      writeFileSync(
+        s2,
+        "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ process.stdout.write(JSON.stringify({hookSpecificOutput:{decision:'deny'}})); });",
+      );
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "hooks:",
+          "  permissionRequest:",
+          `    - command: "node ${s1.replace(/\\/g, "/")}"`,
+          "      jsonIO: true",
+          `    - command: "node ${s2.replace(/\\/g, "/")}"`,
+          "      jsonIO: true",
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+
+      const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+      assert.equal(outcome.allowed, true);
+      assert.equal(outcome.permissionDecision, "allow");
+    });
   });
 });
