@@ -3,7 +3,7 @@ requires = ["hatchling>=1.18"]
 build-backend = "hatchling.build"
 
 [project]
-name = "openharness"
+name = "openharness-sdk"
 version = "0.3.0"
 description = "Python SDK for openHarness — drive the `oh` terminal coding agent from Python."
 readme = "README.md"

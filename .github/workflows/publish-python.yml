@@ -16,7 +16,7 @@ jobs:
         working-directory: python
     environment:
       name: pypi
-      url: https://pypi.org/p/openharness
+      url: https://pypi.org/p/openharness-sdk
     steps:
       - uses: actions/checkout@v4
 

@@ -15,8 +15,10 @@ The Python SDK finds `oh` on PATH. To point at a specific binary, set `OH_BINARY
 ## Install
 
 ```bash
-pip install openharness
+pip install openharness-sdk
 ```
+
+The PyPI distribution is `openharness-sdk` (the shorter `openharness` name is taken by an unrelated project). The import path remains `from openharness import ...`.
 
 Requires Python ≥3.10. Small dependency surface: the `mcp` SDK and `uvicorn` (pulled in to host Python-defined tools as MCP servers). Both are optional to *use* — `query()` without `tools=` never touches them at runtime — but they're installed eagerly for simplicity.
 
