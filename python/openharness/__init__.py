@@ -12,6 +12,19 @@ Quick start::
                 print(event.content, end="")
 
     asyncio.run(main())
+
+Custom Python tools::
+
+    from openharness import OpenHarnessClient, tool
+
+    @tool
+    async def get_weather(city: str) -> str:
+        '''Fetch the current weather for a city.'''
+        return f"Sunny in {city}"
+
+    async with OpenHarnessClient(tools=[get_weather]) as client:
+        async for event in await client.send("What's the weather in Paris?"):
+            print(event)
 """
 
 from .client import OpenHarnessClient
@@ -27,8 +40,9 @@ from .events import (
 )
 from .exceptions import OhBinaryNotFoundError, OpenHarnessError
 from .query import query
+from .tools import tool
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "CostUpdate",
@@ -44,4 +58,5 @@ __all__ = [
     "__version__",
     "parse_event",
     "query",
+    "tool",
 ]

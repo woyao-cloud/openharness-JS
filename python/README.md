@@ -18,7 +18,7 @@ The Python SDK finds `oh` on PATH. To point at a specific binary, set `OH_BINARY
 pip install openharness
 ```
 
-Requires Python ≥3.10. Zero runtime dependencies — just the stdlib.
+Requires Python ≥3.10. Small dependency surface: the `mcp` SDK and `uvicorn` (pulled in to host Python-defined tools as MCP servers). Both are optional to *use* — `query()` without `tools=` never touches them at runtime — but they're installed eagerly for simplicity.
 
 ## Quick start
 
@@ -66,6 +66,38 @@ asyncio.run(main())
 
 The client keeps a single `oh session` subprocess warm across calls, preserving conversation state in-process. Concurrent `send()` calls on one client are serialized via an `asyncio.Lock`. Call `close()` (or exit the async context) to terminate the subprocess.
 
+## Custom Python tools
+
+Expose your own Python functions to the agent. Decorate with `@tool`, then pass the callables via `tools=[...]` on either `query()` or `OpenHarnessClient`:
+
+```python
+import asyncio
+from openharness import OpenHarnessClient, ToolEnd, tool
+
+
+@tool
+async def get_weather(city: str) -> str:
+    """Fetch the current weather for a city."""
+    return f"Sunny in {city}, 22°C"
+
+
+async def main() -> None:
+    async with OpenHarnessClient(
+        model="ollama/llama3",
+        tools=[get_weather],
+    ) as client:
+        async for event in await client.send("What's the weather in Paris?"):
+            if isinstance(event, ToolEnd):
+                print(event.tool, event.output)
+
+
+asyncio.run(main())
+```
+
+Under the hood the SDK spins up an in-process MCP HTTP server on a random `127.0.0.1` port, writes an ephemeral `.oh/config.yaml` pointing at it, and runs `oh` with that temp dir as its cwd. Any existing user config at the caller-supplied `cwd=` is preserved.
+
+Use `@tool(name="custom-name", description="…")` to override the auto-inferred metadata. Sync and async functions both work.
+
 ## API
 
 ### `query(prompt, **options) -> AsyncIterator[Event]`
@@ -82,6 +114,7 @@ Run a single prompt and stream events as they arrive. Options:
 | `system_prompt` | `str \| None` | `None` | Override the default system prompt. |
 | `cwd` | `str \| None` | current dir | Working directory for the spawned CLI. |
 | `env` | `dict[str, str] \| None` | `None` | Env vars merged on top of `os.environ`. |
+| `tools` | `Sequence[Callable] \| None` | `None` | Python callables (optionally `@tool`-decorated) to expose to the agent via an in-process MCP server. |
 
 ### Event types
 

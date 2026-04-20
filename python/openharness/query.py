@@ -10,11 +10,12 @@ import asyncio
 import contextlib
 import json
 import os
-from collections.abc import AsyncIterator, Sequence
-from typing import Literal
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from typing import Any, Literal
 
 from ._binary import find_oh_binary
 from ._signals import terminate_signal
+from ._tools_runtime import prepare_tools_runtime
 from .events import Event, parse_event
 from .exceptions import OpenHarnessError
 
@@ -62,6 +63,7 @@ async def query(
     system_prompt: str | None = None,
     cwd: str | os.PathLike[str] | None = None,
     env: dict[str, str] | None = None,
+    tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]] | None = None,
 ) -> AsyncIterator[Event]:
     """Run a single prompt through openHarness and stream events.
 
@@ -83,6 +85,11 @@ async def query(
     :param cwd: Working directory for the spawned CLI.
     :param env: Environment variables to pass to the CLI. Merged on top of
         ``os.environ``.
+    :param tools: Python callables to expose as MCP tools for this query.
+        When set, an in-process MCP HTTP server is started and injected
+        into an ephemeral ``.oh/config.yaml``; the subprocess runs with
+        that temp dir as its cwd. Any existing user config at ``cwd`` is
+        preserved (copied over, then the server entry is appended).
 
     :yields: Typed :class:`Event` objects matching NDJSON lines emitted by
         the CLI.
@@ -104,12 +111,20 @@ async def query(
 
     merged_env = {**os.environ, **(env or {})}
 
+    runtime = None
+    effective_cwd: str | os.PathLike[str] | None = cwd
+    if tools:
+        runtime = await prepare_tools_runtime(
+            tools, base_cwd=str(cwd) if cwd else None
+        )
+        effective_cwd = runtime.cwd
+
     proc = await asyncio.create_subprocess_exec(
         *argv,
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
+        cwd=effective_cwd,
         env=merged_env,
     )
 
@@ -136,6 +151,8 @@ async def query(
         raise
     finally:
         rc = await proc.wait()
+        if runtime is not None:
+            await runtime.close()
         if rc != 0:
             stderr = ""
             if proc.stderr is not None:

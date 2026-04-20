@@ -2,6 +2,19 @@
 
 This package follows its own SemVer track, independent of the `@zhijiewang/openharness` npm package.
 
+## 0.3.0 — 2026-04-20
+
+### Added
+- `@tool` decorator for registering Python callables as MCP tools. Accepts `name=` and `description=` overrides; falls back to `__name__` and the first line of the docstring.
+- `tools=[...]` parameter on both `query()` and `OpenHarnessClient`. When set, the SDK starts an in-process MCP HTTP server hosting those callables and injects it into an ephemeral `.oh/config.yaml` used as the subprocess `cwd`. Any existing user config at the caller's `cwd` is preserved.
+- The MCP server is cleaned up automatically when `query()` completes or the client is closed.
+
+### Dependencies
+- Adds `mcp>=1.27` and `uvicorn>=0.30` as runtime deps (previously zero-dep). Both are pulled in only when `tools=` is used, but Python's import graph loads `openharness.tools` eagerly.
+
+### CLI dependency
+Works with any `@zhijiewang/openharness` version that supports `type: "http"` MCP servers — v2.11.0 and later. No CLI changes required for this release.
+
 ## 0.2.0 — 2026-04-19
 
 ### Added

@@ -12,11 +12,12 @@ import contextlib
 import json
 import os
 import uuid
-from collections.abc import AsyncIterator, Sequence
-from typing import Literal
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from typing import Any, Literal
 
 from ._binary import find_oh_binary
 from ._signals import interrupt_signal, terminate_signal
+from ._tools_runtime import ToolsRuntime, prepare_tools_runtime
 from .events import Event, parse_event
 from .exceptions import OpenHarnessError
 
@@ -38,6 +39,9 @@ class OpenHarnessClient:
 
     Internally spawns ``oh session`` which keeps the provider, tools, and
     conversation state warm across multiple prompts on a single process.
+
+    :param tools: Optional Python callables to expose to the agent as MCP
+        tools for the lifetime of this client. See :func:`openharness.tool`.
     """
 
     def __init__(
@@ -51,6 +55,7 @@ class OpenHarnessClient:
         system_prompt: str | None = None,
         cwd: str | os.PathLike[str] | None = None,
         env: dict[str, str] | None = None,
+        tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]] | None = None,
     ) -> None:
         self._model = model
         self._permission_mode = permission_mode
@@ -60,6 +65,7 @@ class OpenHarnessClient:
         self._system_prompt = system_prompt
         self._cwd = cwd
         self._env = env
+        self._tools = list(tools) if tools else None
 
         self._proc: asyncio.subprocess.Process | None = None
         self._send_lock = asyncio.Lock()  # serializes prompts
@@ -69,6 +75,8 @@ class OpenHarnessClient:
         self._closed = False
         # Surfaces a fatal subprocess error to any in-flight send()s.
         self._fatal: Exception | None = None
+        # Only set when tools=[...] is provided.
+        self._tools_runtime: ToolsRuntime | None = None
 
     async def __aenter__(self) -> OpenHarnessClient:
         await self._start()
@@ -99,12 +107,18 @@ class OpenHarnessClient:
         oh = find_oh_binary()
         argv = self._build_argv(oh)
         merged_env = {**os.environ, **(self._env or {})}
+        effective_cwd: str | os.PathLike[str] | None = self._cwd
+        if self._tools:
+            self._tools_runtime = await prepare_tools_runtime(
+                self._tools, base_cwd=str(self._cwd) if self._cwd else None
+            )
+            effective_cwd = self._tools_runtime.cwd
         self._proc = await asyncio.create_subprocess_exec(
             *argv,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=self._cwd,
+            cwd=effective_cwd,
             env=merged_env,
         )
         # Start the background reader that demultiplexes events by id.
@@ -227,6 +241,9 @@ class OpenHarnessClient:
             self._reader_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._reader_task
+        if self._tools_runtime is not None:
+            await self._tools_runtime.close()
+            self._tools_runtime = None
 
     async def interrupt(self) -> None:
         """Interrupt an in-flight prompt by sending SIGINT to the subprocess.
