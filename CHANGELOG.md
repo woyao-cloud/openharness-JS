@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+## 2.15.0 (2026-04-21) — Python SDK + streaming + `oh session`
+
 ### Added
-- Python SDK launched as a separate package on PyPI: `openharness` (v0.2.0). Mirrors Claude Code's `claude-agent-sdk` shape — spawns the `oh` CLI as a subprocess and streams typed events. See [`python/README.md`](python/README.md). Separate SemVer track from the npm package.
+- Python SDK launched as a separate package on PyPI: `openharness-sdk` (v0.3.0; the shorter `openharness` name is taken by an unrelated project). Import path remains `from openharness import ...`. Mirrors Claude Code's `claude-agent-sdk` shape — spawns the `oh` CLI as a subprocess and streams typed events. See [`python/README.md`](python/README.md). Separate SemVer track from the npm package.
   - `query(prompt, **options)` async generator for one-shot prompts.
   - `OpenHarnessClient` class for long-lived multi-turn conversations (async context manager, `send()` returns async iterator of typed events, concurrent sends serialized, `interrupt()` and idempotent `close()` supported).
+  - `@tool` decorator + `tools=[...]` kwarg on both `query()` and `OpenHarnessClient`. When tools are passed, the SDK starts an in-process MCP HTTP server hosting the Python callables and injects an ephemeral `.oh/config.yaml` pointing at it.
 - `oh run --output-format stream-json` emits two additional NDJSON event types: `cost_update` (inputTokens, outputTokens, cost, model) and `turn_complete` (reason). Existing `text`, `tool_start`, `tool_end`, `error` events unchanged.
 - New `oh session` command — long-lived stateful session for the Python SDK. Reads JSON prompts from stdin (`{id, prompt}` per line), emits id-tagged NDJSON events on stdout. Conversation history persists across prompts on a single warm process. Not intended for direct terminal use.
 - New CI workflows: `.github/workflows/python-lint.yml` runs ruff + mypy + pytest on every Python-affecting change (matrix: ubuntu + windows × py3.10 + py3.12). `.github/workflows/publish-python.yml` triggers on `python-v*` tag and publishes to PyPI via trusted publishing (OIDC).
