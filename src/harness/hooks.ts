@@ -29,7 +29,9 @@ export type HookEvent =
   | "preCompact"
   | "postCompact"
   | "configChange"
-  | "notification";
+  | "notification"
+  | "turnStart"
+  | "turnStop";
 
 export type HookContext = {
   toolName?: string;
@@ -58,6 +60,10 @@ export type HookContext = {
   errorMessage?: string;
   /** For permissionRequest: the decision OH would take absent the hook ("ask", "allow", "deny") — informational */
   permissionAction?: "ask" | "allow" | "deny";
+  /** For turnStart/turnStop: zero-indexed turn number within the current session */
+  turnNumber?: string;
+  /** For turnStop: reason the turn ended ("completed", "max_turns", "error", "interrupted") */
+  turnReason?: string;
 };
 
 let cachedHooks: HooksConfig | null | undefined;
@@ -101,6 +107,8 @@ function buildEnv(event: HookEvent, ctx: HookContext): Record<string, string> {
   if (ctx.toolError !== undefined) env.OH_TOOL_ERROR = ctx.toolError;
   if (ctx.errorMessage !== undefined) env.OH_ERROR_MESSAGE = ctx.errorMessage;
   if (ctx.permissionAction !== undefined) env.OH_PERMISSION_ACTION = ctx.permissionAction;
+  if (ctx.turnNumber !== undefined) env.OH_TURN_NUMBER = ctx.turnNumber;
+  if (ctx.turnReason !== undefined) env.OH_TURN_REASON = ctx.turnReason;
   return env;
 }
 
@@ -319,6 +327,51 @@ async function runHttpHook(url: string, event: HookEvent, ctx: HookContext, time
     return data.allowed !== false;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Run an HTTP hook and return its full structured response. POSTs `{event, ...ctx}`
+ * as JSON and parses the response body with the same jsonIO envelope shape used
+ * by command hooks:
+ *   { decision?: "allow" | "deny", reason?: string,
+ *     hookSpecificOutput?: { decision?: "allow" | "deny" | "ask", reason?, additionalContext? } }
+ *
+ * Also honors a legacy `{ allowed: boolean }` shape (downgrades to decision).
+ *
+ * Network errors / non-2xx responses / malformed JSON all return a "deny" outcome
+ * so the caller can fail closed.
+ */
+async function runHttpHookDetailed(
+  url: string,
+  event: HookEvent,
+  ctx: HookContext,
+  timeoutMs = 10_000,
+): Promise<ParsedJsonIoResponse> {
+  try {
+    const body = JSON.stringify({ event, ...ctx });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return { decision: "deny", reason: `hook HTTP ${res.status}` };
+    const text = await res.text();
+    if (!text.trim()) return {};
+    const parsed = parseJsonIoResponse(text);
+    // If the response only used the legacy `{ allowed: false }` shape, surface as deny.
+    if (!parsed.decision && !parsed.permissionDecision) {
+      try {
+        const legacy = JSON.parse(text) as { allowed?: boolean };
+        if (legacy.allowed === false) return { decision: "deny", reason: "hook denied" };
+      } catch {
+        // already handled by parseJsonIoResponse
+      }
+    }
+    return parsed;
+  } catch {
+    return { decision: "deny", reason: "hook HTTP error" };
   }
 }
 
@@ -583,8 +636,7 @@ async function runHookForOutcome(def: HookDef, event: HookEvent, ctx: HookContex
   }
 
   if (def.http) {
-    const allowed = await runHttpHook(def.http, event, ctx, def.timeout ?? 10_000);
-    return mapEnvExitToOutcome(event, allowed);
+    return await runHttpHookDetailed(def.http, event, ctx, def.timeout ?? 10_000);
   }
 
   if (def.prompt) {
@@ -621,19 +673,23 @@ export async function emitHookWithOutcome(event: HookEvent, ctx: HookContext = {
 
     if (!notifyOnly) {
       if (parsed.decision === "deny" || parsed.permissionDecision === "deny") {
-        return {
+        const outcome: HookOutcome = {
           allowed: false,
           reason: parsed.reason ?? reason,
           permissionDecision: parsed.permissionDecision,
         };
+        notifyHookDecision(event, ctx, outcome);
+        return outcome;
       }
       if (parsed.permissionDecision === "allow") {
         if (parsed.additionalContext) additionalContexts.push(parsed.additionalContext);
-        return {
+        const outcome: HookOutcome = {
           allowed: true,
           permissionDecision: "allow",
           additionalContext: additionalContexts.length ? additionalContexts.join("\n\n") : undefined,
         };
+        notifyHookDecision(event, ctx, outcome);
+        return outcome;
       }
       if (parsed.permissionDecision === "ask") askSeen = true;
     }
@@ -641,10 +697,53 @@ export async function emitHookWithOutcome(event: HookEvent, ctx: HookContext = {
     if (!reason && parsed.reason) reason = parsed.reason;
   }
 
-  return {
+  const outcome: HookOutcome = {
     allowed: true,
     additionalContext: additionalContexts.length ? additionalContexts.join("\n\n") : undefined,
     permissionDecision: askSeen ? "ask" : undefined,
     reason,
   };
+  notifyHookDecision(event, ctx, outcome);
+  return outcome;
+}
+
+// ── Hook-decision observer (for stream-json NDJSON emission) ──
+
+export type HookDecisionNotification = {
+  event: HookEvent;
+  /** Present when the hook fired in a tool-specific context. */
+  tool?: string;
+  /** The effective decision. "ask" means defer to the user / default permission flow. */
+  decision: "allow" | "deny" | "ask";
+  /** Reason returned by the hook, if any. */
+  reason?: string;
+};
+
+type HookDecisionObserver = (n: HookDecisionNotification) => void;
+let hookDecisionObserver: HookDecisionObserver | null = null;
+
+/**
+ * Register (or clear) a single observer that receives one notification per
+ * `emitHookWithOutcome` call that produces a decision. Used by
+ * `oh run --output-format stream-json` to emit `hook_decision` NDJSON events
+ * so the Python SDK can surface permission outcomes in real time.
+ */
+export function setHookDecisionObserver(cb: HookDecisionObserver | null): void {
+  hookDecisionObserver = cb;
+}
+
+function notifyHookDecision(event: HookEvent, ctx: HookContext, outcome: HookOutcome): void {
+  if (!hookDecisionObserver) return;
+  // Prefer the richer permissionDecision when present; fall back to deny if the hook blocked.
+  let decision: "allow" | "deny" | "ask" | undefined = outcome.permissionDecision;
+  if (!decision) {
+    if (!outcome.allowed) decision = "deny";
+    else if (outcome.reason) decision = "allow";
+  }
+  if (!decision) return;
+  try {
+    hookDecisionObserver({ event, tool: ctx.toolName, decision, reason: outcome.reason });
+  } catch {
+    // Observer errors must not break the hook pipeline.
+  }
 }

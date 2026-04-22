@@ -74,6 +74,10 @@ export type HooksConfig = {
   postCompact?: HookDef[];
   configChange?: HookDef[];
   notification?: HookDef[];
+  /** Fires at the start of each top-level agent turn (after a user prompt is accepted, before model call). */
+  turnStart?: HookDef[];
+  /** Fires at the end of each top-level agent turn (after the model either completes or errors). Matches Claude Code's Stop hook. */
+  turnStop?: HookDef[];
 };
 
 export type ToolPermissionRule = {

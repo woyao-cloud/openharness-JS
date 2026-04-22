@@ -21,6 +21,8 @@ Hooks let you run arbitrary commands or HTTP callbacks at well-defined points in
 | `postCompact` | After compaction completes | No | |
 | `configChange` | When `.oh/config.yaml` changes on disk | No | |
 | `notification` | Reserved for future use | No | |
+| `turnStart` | At the start of each top-level agent turn | No | Receives `OH_TURN_NUMBER`. |
+| `turnStop` | At the end of each top-level agent turn | No | Receives `OH_TURN_NUMBER` and `OH_TURN_REASON` (`completed`, `max_turns`, `error`, `interrupted`). Matches Claude Code's `Stop` hook. |
 
 ## Two hook modes
 
@@ -74,7 +76,27 @@ Env vars set per event:
 - `OH_PROMPT` — for `userPromptSubmit` (capped at 8KB on all platforms)
 - `OH_TOOL_ERROR`, `OH_ERROR_MESSAGE` — for `postToolUseFailure`
 - `OH_PERMISSION_ACTION` — for `permissionRequest` (value: `ask`, `allow`, or `deny`)
+- `OH_TURN_NUMBER` — for `turnStart`/`turnStop` (zero-indexed within the session)
+- `OH_TURN_REASON` — for `turnStop` (value: `completed`, `max_turns`, `error`, `interrupted`)
 - `OH_SESSION_ID`, `OH_MODEL`, `OH_PROVIDER`, `OH_PERMISSION_MODE`
+
+### HTTP mode
+
+Set `http: <url>` on the hook def. OH POSTs a JSON body `{event, ...context}` (same shape as JSON I/O stdin) and parses the response the same way stdout is parsed:
+
+```json
+{ "decision": "allow" | "deny",
+  "reason": "optional explanation",
+  "hookSpecificOutput": {
+    "decision": "allow" | "deny" | "ask",
+    "reason": "optional",
+    "additionalContext": "text to prepend"
+  } }
+```
+
+Legacy `{"allowed": false}` responses are still honored (surface as a deny). Network errors, non-2xx statuses, and malformed JSON all fail closed (deny).
+
+This is the wire contract that the Python SDK's `can_use_tool` callback uses — the SDK hosts an in-process HTTP server on 127.0.0.1 and injects a `permissionRequest` hook that POSTs to it.
 
 ## Examples
 

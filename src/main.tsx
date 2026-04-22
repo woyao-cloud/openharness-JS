@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { Command, Option } from "commander";
 import { render } from "ink";
 import { readOhConfig } from "./harness/config.js";
-import { emitHook } from "./harness/hooks.js";
+import { emitHook, setHookDecisionObserver } from "./harness/hooks.js";
 import { loadActiveMemories, memoriesToPrompt, userProfileToPrompt } from "./harness/memory.js";
 import { detectProject, projectContextToPrompt } from "./harness/onboarding.js";
 import { discoverSkills, skillsToPrompt } from "./harness/plugins.js";
@@ -216,6 +216,30 @@ program
     const toolResults: Array<{ tool: string; output: string; error: boolean | undefined }> = [];
     const callIdToName: Record<string, string> = {};
 
+    if (outputFormat === "stream-json") {
+      setHookDecisionObserver((n) => {
+        console.log(
+          JSON.stringify({
+            type: "hook_decision",
+            event: n.event,
+            tool: n.tool,
+            decision: n.decision,
+            reason: n.reason,
+          }),
+        );
+      });
+    }
+
+    emitHook("turnStart", {
+      turnNumber: "0",
+      model,
+      provider: typeof config.provider === "string" ? config.provider : undefined,
+      permissionMode,
+    });
+    if (outputFormat === "stream-json") {
+      console.log(JSON.stringify({ type: "turnStart", turnNumber: 0 }));
+    }
+
     for await (const event of query(prompt, config)) {
       if (event.type === "text_delta") {
         fullOutput += event.content;
@@ -266,6 +290,10 @@ program
       } else if (event.type === "turn_complete") {
         if (outputFormat === "stream-json") {
           console.log(JSON.stringify({ type: "turn_complete", reason: event.reason }));
+        }
+        emitHook("turnStop", { turnNumber: "0", turnReason: event.reason, model, permissionMode });
+        if (outputFormat === "stream-json") {
+          console.log(JSON.stringify({ type: "turnStop", turnNumber: 0, reason: event.reason }));
         }
         if (event.reason !== "completed") {
           process.exitCode = 1;
@@ -335,6 +363,23 @@ program
 
     // Conversation history, shared across all prompts for this process.
     const conversation: import("./types/message.js").Message[] = [];
+    let turnCounter = 0;
+    // Will be set to the current prompt id before each turn so hook_decision
+    // events can be demultiplexed by the client.
+    let activePromptId = "";
+
+    setHookDecisionObserver((n) => {
+      console.log(
+        JSON.stringify({
+          id: activePromptId,
+          type: "hook_decision",
+          event: n.event,
+          tool: n.tool,
+          decision: n.decision,
+          reason: n.reason,
+        }),
+      );
+    });
 
     // Announce readiness so the client can send the first prompt.
     console.log(JSON.stringify({ type: "ready" }));
@@ -368,6 +413,17 @@ program
       const turnToolCalls: Array<{ id: string; toolName: string; arguments: Record<string, unknown> }> = [];
       const callIdToName: Record<string, string> = {};
       const toolResults: Array<{ callId: string; output: string; isError: boolean }> = [];
+
+      const turnIdx = turnCounter++;
+      const turnNumber = String(turnIdx);
+      activePromptId = id;
+      emitHook("turnStart", {
+        turnNumber,
+        model,
+        provider: typeof config.provider === "string" ? config.provider : undefined,
+        permissionMode,
+      });
+      console.log(JSON.stringify({ id, type: "turnStart", turnNumber: turnIdx }));
 
       for await (const event of query(prompt, config, conversation)) {
         if (event.type === "text_delta") {
@@ -408,6 +464,8 @@ program
           );
         } else if (event.type === "turn_complete") {
           console.log(JSON.stringify({ id, type: "turn_complete", reason: event.reason }));
+          emitHook("turnStop", { turnNumber, turnReason: event.reason, model, permissionMode });
+          console.log(JSON.stringify({ id, type: "turnStop", turnNumber: turnIdx, reason: event.reason }));
         }
       }
 

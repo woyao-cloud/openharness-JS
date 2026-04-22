@@ -7,10 +7,12 @@ import {
   emitHook,
   emitHookAsync,
   emitHookWithOutcome,
+  type HookDecisionNotification,
   type HookOutcome,
   invalidateHookCache,
   matchesHook,
   parseJsonIoResponse,
+  setHookDecisionObserver,
 } from "./hooks.js";
 
 describe("emitHook", () => {
@@ -653,6 +655,200 @@ describe("emitHookWithOutcome — multi-hook merge semantics", () => {
       const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
       assert.equal(outcome.allowed, true);
       assert.equal(outcome.permissionDecision, "allow");
+    });
+  });
+});
+
+// ── Turn-boundary hooks + hook_decision observer (v2.16.0) ──
+
+/** Write a minimal .oh/config.yaml with a single hook under an arbitrary event. */
+function writeHookConfigForEvent(
+  dir: string,
+  event: string,
+  hookDef: { command?: string; http?: string; jsonIO?: boolean; timeout?: number },
+) {
+  mkdirSync(`${dir}/.oh`, { recursive: true });
+  const lines = ["provider: mock", "model: mock", "permissionMode: ask", "hooks:", `  ${event}:`, "    -"];
+  if (hookDef.command) lines.push(`      command: ${JSON.stringify(hookDef.command)}`);
+  if (hookDef.http) lines.push(`      http: ${JSON.stringify(hookDef.http)}`);
+  if (hookDef.jsonIO) lines.push(`      jsonIO: ${JSON.stringify(hookDef.jsonIO)}`);
+  if (hookDef.timeout) lines.push(`      timeout: ${hookDef.timeout}`);
+  lines.push("");
+  writeFileSync(`${dir}/.oh/config.yaml`, lines.join("\n"));
+  invalidateConfigCache();
+  invalidateHookCache();
+}
+
+describe("turnStart / turnStop hooks", () => {
+  it("emitHook('turnStart') returns true with no hooks configured", () => {
+    assert.equal(emitHook("turnStart", { turnNumber: "0", model: "foo" }), true);
+  });
+
+  it("emitHook('turnStop') returns true with no hooks configured", () => {
+    assert.equal(emitHook("turnStop", { turnNumber: "0", turnReason: "completed" }), true);
+  });
+
+  it("turnStart command hook receives OH_TURN_NUMBER + OH_EVENT env vars", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const outPath = `${dir.replace(/\\/g, "/")}/out.txt`;
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        `require('fs').writeFileSync(${JSON.stringify(outPath)}, (process.env.OH_EVENT || '') + ':' + (process.env.OH_TURN_NUMBER || ''));\n`,
+      );
+      writeHookConfigForEvent(dir, "turnStart", { command: `node ${JSON.stringify(scriptPath)}` });
+      emitHook("turnStart", { turnNumber: "7" });
+      const deadline = Date.now() + 5000;
+      while (!existsSync(outPath) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      assert.ok(existsSync(outPath), "hook did not fire within 5s");
+      assert.equal(readFileSync(outPath, "utf8"), "turnStart:7");
+    });
+  });
+
+  it("turnStop command hook receives OH_TURN_REASON", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const outPath = `${dir.replace(/\\/g, "/")}/out.txt`;
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        `require('fs').writeFileSync(${JSON.stringify(outPath)}, process.env.OH_TURN_REASON || '');\n`,
+      );
+      writeHookConfigForEvent(dir, "turnStop", { command: `node ${JSON.stringify(scriptPath)}` });
+      emitHook("turnStop", { turnNumber: "0", turnReason: "max_turns" });
+      const deadline = Date.now() + 5000;
+      while (!existsSync(outPath) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      assert.ok(existsSync(outPath), "hook did not fire within 5s");
+      assert.equal(readFileSync(outPath, "utf8"), "max_turns");
+    });
+  });
+});
+
+describe("hook decision observer", () => {
+  it("fires with a deny notification when a jsonIO hook denies", async () => {
+    const received: HookDecisionNotification[] = [];
+    setHookDecisionObserver((n) => received.push(n));
+    try {
+      await withTmpCwdAsync(async (dir) => {
+        const scriptPath = `${dir}/hook.mjs`;
+        writeFileSync(
+          scriptPath,
+          "let d=''; process.stdin.on('data', c => d+=c); process.stdin.on('end', () => { process.stdout.write(JSON.stringify({decision:'deny',reason:'nope'})); });",
+        );
+        writeHookConfigForEvent(dir, "permissionRequest", {
+          command: `node ${JSON.stringify(scriptPath)}`,
+          jsonIO: true,
+        });
+        const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+        assert.equal(outcome.allowed, false);
+        assert.equal(received.length, 1);
+        assert.equal(received[0].event, "permissionRequest");
+        assert.equal(received[0].decision, "deny");
+        assert.equal(received[0].tool, "Bash");
+        assert.equal(received[0].reason, "nope");
+      });
+    } finally {
+      setHookDecisionObserver(null);
+    }
+  });
+
+  it("setHookDecisionObserver(null) stops notifications", async () => {
+    let fired = 0;
+    setHookDecisionObserver(() => {
+      fired++;
+    });
+    setHookDecisionObserver(null);
+    await withTmpCwdAsync(async (dir) => {
+      const scriptPath = `${dir}/hook.mjs`;
+      writeFileSync(
+        scriptPath,
+        "let d=''; process.stdin.on('data', c => d+=c); process.stdin.on('end', () => { process.stdout.write(JSON.stringify({decision:'deny'})); });",
+      );
+      writeHookConfigForEvent(dir, "permissionRequest", {
+        command: `node ${JSON.stringify(scriptPath)}`,
+        jsonIO: true,
+      });
+      await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+      assert.equal(fired, 0);
+    });
+  });
+
+  it("observer errors do not break the hook pipeline", async () => {
+    setHookDecisionObserver(() => {
+      throw new Error("observer crashed");
+    });
+    try {
+      await withTmpCwdAsync(async (dir) => {
+        const scriptPath = `${dir}/hook.mjs`;
+        writeFileSync(
+          scriptPath,
+          "let d=''; process.stdin.on('data', c => d+=c); process.stdin.on('end', () => { process.stdout.write(JSON.stringify({decision:'deny'})); });",
+        );
+        writeHookConfigForEvent(dir, "permissionRequest", {
+          command: `node ${JSON.stringify(scriptPath)}`,
+          jsonIO: true,
+        });
+        const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+        assert.equal(outcome.allowed, false);
+      });
+    } finally {
+      setHookDecisionObserver(null);
+    }
+  });
+});
+
+describe("HTTP hook detailed response shape", () => {
+  it("honors {decision: 'deny', reason: ...} response", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const http = await import("node:http");
+      const server = http.createServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ decision: "deny", reason: "server says no" }));
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const addr = server.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      writeHookConfigForEvent(dir, "permissionRequest", { http: `http://127.0.0.1:${port}/` });
+      try {
+        const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+        assert.equal(outcome.allowed, false);
+        assert.equal(outcome.reason, "server says no");
+      } finally {
+        server.close();
+      }
+    });
+  });
+
+  it("honors {hookSpecificOutput: {decision: 'allow'}} response", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const http = await import("node:http");
+      const server = http.createServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ hookSpecificOutput: { decision: "allow" } }));
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const addr = server.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      writeHookConfigForEvent(dir, "permissionRequest", { http: `http://127.0.0.1:${port}/` });
+      try {
+        const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+        assert.equal(outcome.allowed, true);
+        assert.equal(outcome.permissionDecision, "allow");
+      } finally {
+        server.close();
+      }
+    });
+  });
+
+  it("network error → deny (fail-closed)", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      // Port 1 is reserved — the OS refuses the connection.
+      writeHookConfigForEvent(dir, "permissionRequest", { http: "http://127.0.0.1:1/" });
+      const outcome = await emitHookWithOutcome("permissionRequest", { toolName: "Bash" });
+      assert.equal(outcome.allowed, false);
     });
   });
 });

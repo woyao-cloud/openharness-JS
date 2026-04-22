@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.16.0 (2026-04-22) — Turn-boundary hooks + richer HTTP hook protocol
+
+### Added
+- Two new hook events: `turnStart` (fires at the start of each top-level agent turn) and `turnStop` (fires at turn end, mirrors Claude Code's `Stop` hook). Receive `OH_TURN_NUMBER` and (for `turnStop`) `OH_TURN_REASON` env vars. Fire in both `oh run` and `oh session`.
+- Three new NDJSON event types in `oh run --output-format stream-json` and `oh session`: `turnStart` (`{type: "turnStart", turnNumber}`), `turnStop` (`{type: "turnStop", turnNumber, reason}`), and `hook_decision` (`{type: "hook_decision", event, tool?, decision: "allow"|"deny"|"ask", reason?}`). The Python SDK v0.4.0 consumes these as new typed events.
+- HTTP hooks can now return the full structured response shape (`{decision, reason, hookSpecificOutput}`) that JSON I/O command hooks have supported since v2.10.0. Previously HTTP hooks were limited to `{allowed: boolean}`. Legacy `{allowed}` still honored.
+- Public `setHookDecisionObserver(cb)` in `src/harness/hooks.ts` for embedders that want the hook-decision notifications programmatically. Observer errors are swallowed so they can never break the hook pipeline.
+
+### Changed
+- `src/harness/hooks.ts` internal refactor: added `runHttpHookDetailed` alongside `runHttpHook`; `runHookForOutcome` now uses the detailed variant for richer HTTP semantics.
+
 ## 2.15.0 (2026-04-21) — Python SDK + streaming + `oh session`
 
 ### Added
