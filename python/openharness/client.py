@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any, Literal
 
 from ._binary import find_oh_binary
+from ._permission_server import PermissionCallback
 from ._signals import interrupt_signal, terminate_signal
 from ._tools_runtime import ToolsRuntime, prepare_tools_runtime
 from .events import Event, parse_event
@@ -42,6 +43,11 @@ class OpenHarnessClient:
 
     :param tools: Optional Python callables to expose to the agent as MCP
         tools for the lifetime of this client. See :func:`openharness.tool`.
+    :param can_use_tool: Optional sync or async permission callback. When
+        set, the SDK starts an in-process HTTP server for the duration
+        of the client and routes every ``permissionRequest`` hook through
+        it. Callback receives a context dict and must return
+        ``"allow"``/``"deny"``/``"ask"`` (or a dict).
     """
 
     def __init__(
@@ -56,6 +62,7 @@ class OpenHarnessClient:
         cwd: str | os.PathLike[str] | None = None,
         env: dict[str, str] | None = None,
         tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]] | None = None,
+        can_use_tool: PermissionCallback | None = None,
     ) -> None:
         self._model = model
         self._permission_mode = permission_mode
@@ -66,6 +73,7 @@ class OpenHarnessClient:
         self._cwd = cwd
         self._env = env
         self._tools = list(tools) if tools else None
+        self._can_use_tool = can_use_tool
 
         self._proc: asyncio.subprocess.Process | None = None
         self._send_lock = asyncio.Lock()  # serializes prompts
@@ -75,7 +83,7 @@ class OpenHarnessClient:
         self._closed = False
         # Surfaces a fatal subprocess error to any in-flight send()s.
         self._fatal: Exception | None = None
-        # Only set when tools=[...] is provided.
+        # Only set when tools=[...] and/or can_use_tool=... is provided.
         self._tools_runtime: ToolsRuntime | None = None
 
     async def __aenter__(self) -> OpenHarnessClient:
@@ -108,11 +116,22 @@ class OpenHarnessClient:
         argv = self._build_argv(oh)
         merged_env = {**os.environ, **(self._env or {})}
         effective_cwd: str | os.PathLike[str] | None = self._cwd
-        if self._tools:
+        if self._tools or self._can_use_tool is not None:
             self._tools_runtime = await prepare_tools_runtime(
-                self._tools, base_cwd=str(self._cwd) if self._cwd else None
+                self._tools,
+                base_cwd=str(self._cwd) if self._cwd else None,
+                can_use_tool=self._can_use_tool,
             )
             effective_cwd = self._tools_runtime.cwd
+        # On Windows, CREATE_NEW_PROCESS_GROUP makes the child its own
+        # process group leader so CTRL_BREAK_EVENT (SIGBREAK) delivers
+        # cleanly on interrupt(). Without it SIGBREAK triggers a hard
+        # kill of the whole group — including the parent Python. See
+        # https://docs.python.org/3/library/subprocess.html#windows-constants
+        spawn_kwargs: dict[str, Any] = {}
+        if os.name == "nt":
+            # 0x00000200 = CREATE_NEW_PROCESS_GROUP (Windows subprocess flag).
+            spawn_kwargs["creationflags"] = 0x00000200
         self._proc = await asyncio.create_subprocess_exec(
             *argv,
             stdin=asyncio.subprocess.PIPE,
@@ -120,6 +139,7 @@ class OpenHarnessClient:
             stderr=asyncio.subprocess.PIPE,
             cwd=effective_cwd,
             env=merged_env,
+            **spawn_kwargs,
         )
         # Start the background reader that demultiplexes events by id.
         self._reader_task = asyncio.create_task(self._read_loop())

@@ -100,6 +100,34 @@ Under the hood the SDK spins up an in-process MCP HTTP server on a random `127.0
 
 Use `@tool(name="custom-name", description="…")` to override the auto-inferred metadata. Sync and async functions both work.
 
+## Custom permission gate
+
+Pass `can_use_tool=<callback>` on either `query()` or `OpenHarnessClient` to make every permission check round-trip through Python. Useful for Jupyter notebooks, CI policy gates, or any scenario where you want to decide per-tool whether the agent may run it.
+
+```python
+import asyncio
+from openharness import OpenHarnessClient
+
+async def gate(ctx):
+    # ctx contains "toolName", "toolInputJson", and other context fields.
+    if ctx["toolName"] == "Bash":
+        return {"decision": "deny", "reason": "Bash is not allowed in this notebook"}
+    return "allow"
+
+async def main() -> None:
+    async with OpenHarnessClient(model="ollama/llama3", can_use_tool=gate) as client:
+        async for event in await client.send("List the current directory"):
+            print(event)
+
+asyncio.run(main())
+```
+
+Callbacks may return:
+- a bare decision string: `"allow"`, `"deny"`, or `"ask"` (fall through to the CLI's interactive prompt);
+- a dict: `{"decision": "allow", "reason": "trusted"}`.
+
+Sync and async callbacks both work. Exceptions and timeouts default to `deny` (fail-closed), so a misbehaving gate can never silently allow. Requires `@zhijiewang/openharness` v2.16.0+.
+
 ## API
 
 ### `query(prompt, **options) -> AsyncIterator[Event]`
@@ -117,6 +145,7 @@ Run a single prompt and stream events as they arrive. Options:
 | `cwd` | `str \| None` | current dir | Working directory for the spawned CLI. |
 | `env` | `dict[str, str] \| None` | `None` | Env vars merged on top of `os.environ`. |
 | `tools` | `Sequence[Callable] \| None` | `None` | Python callables (optionally `@tool`-decorated) to expose to the agent via an in-process MCP server. |
+| `can_use_tool` | `Callable[[ctx], "allow"\|"deny"\|"ask"] \| None` | `None` | Permission callback — sync or async. When set, every permission check routes through this function. See "Custom permission gate" above. Requires CLI v2.16.0+. |
 
 ### Event types
 
@@ -127,7 +156,10 @@ All events are frozen dataclasses. Use `isinstance` to discriminate.
 - `ToolEnd(tool: str, output: str, error: bool)` — tool invocation finished
 - `ErrorEvent(message: str)` — recoverable error during the turn
 - `CostUpdate(input_tokens: int, output_tokens: int, cost: float, model: str)` — cost + usage
-- `TurnComplete(reason: str)` — one model turn ended; `reason` is `"completed"`, `"max_turns"`, `"error"`, etc.
+- `TurnComplete(reason: str)` — a sub-agent turn ended
+- `TurnStart(turn_number: int)` — a top-level agent turn began (CLI v2.16.0+)
+- `TurnStop(turn_number: int, reason: str)` — a top-level agent turn ended; mirrors Claude Code's `Stop` hook (CLI v2.16.0+)
+- `HookDecision(event: str, tool: str | None, decision: str, reason: str | None)` — a hook produced a permission decision (CLI v2.16.0+)
 - `UnknownEvent(raw: dict)` — forward-compatibility shim for future event types
 
 ### Exceptions

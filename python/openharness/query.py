@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any, Literal
 
 from ._binary import find_oh_binary
+from ._permission_server import PermissionCallback
 from ._signals import terminate_signal
 from ._tools_runtime import prepare_tools_runtime
 from .events import Event, parse_event
@@ -64,6 +65,7 @@ async def query(
     cwd: str | os.PathLike[str] | None = None,
     env: dict[str, str] | None = None,
     tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]] | None = None,
+    can_use_tool: PermissionCallback | None = None,
 ) -> AsyncIterator[Event]:
     """Run a single prompt through openHarness and stream events.
 
@@ -90,6 +92,14 @@ async def query(
         into an ephemeral ``.oh/config.yaml``; the subprocess runs with
         that temp dir as its cwd. Any existing user config at ``cwd`` is
         preserved (copied over, then the server entry is appended).
+    :param can_use_tool: Optional sync or async callback invoked on every
+        permission check. Receives a context dict (``toolName``,
+        ``toolInputJson``, etc.) and must return ``"allow"``,
+        ``"deny"``, or ``"ask"`` — optionally wrapped as
+        ``{"decision": "...", "reason": "..."}``. Mirrors Claude Code's
+        ``can_use_tool`` SDK hook. When set, the SDK starts an
+        in-process HTTP server and wires a ``permissionRequest`` hook in
+        the ephemeral config.
 
     :yields: Typed :class:`Event` objects matching NDJSON lines emitted by
         the CLI.
@@ -113,9 +123,11 @@ async def query(
 
     runtime = None
     effective_cwd: str | os.PathLike[str] | None = cwd
-    if tools:
+    if tools or can_use_tool is not None:
         runtime = await prepare_tools_runtime(
-            tools, base_cwd=str(cwd) if cwd else None
+            tools,
+            base_cwd=str(cwd) if cwd else None,
+            can_use_tool=can_use_tool,
         )
         effective_cwd = runtime.cwd
 

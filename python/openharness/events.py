@@ -14,10 +14,13 @@ __all__ = [
     "CostUpdate",
     "ErrorEvent",
     "Event",
+    "HookDecision",
     "TextDelta",
     "ToolEnd",
     "ToolStart",
     "TurnComplete",
+    "TurnStart",
+    "TurnStop",
     "UnknownEvent",
     "parse_event",
 ]
@@ -71,9 +74,52 @@ class CostUpdate(Event):
 @dataclass(frozen=True)
 class TurnComplete(Event):
     """A turn has ended. ``reason`` is ``"completed"`` for normal end,
-    ``"max_turns"`` when the turn cap was hit, ``"error"`` on failure, etc."""
+    ``"max_turns"`` when the turn cap was hit, ``"error"`` on failure, etc.
+
+    Emitted by ``query()`` for each subagent turn. For top-level turn
+    boundaries, watch :class:`TurnStart` and :class:`TurnStop`.
+    """
 
     reason: str
+
+
+@dataclass(frozen=True)
+class TurnStart(Event):
+    """A top-level agent turn has begun.
+
+    New in CLI v2.16.0 / SDK v0.4.0. ``turn_number`` is zero-indexed
+    within the current session (one-shot ``query()`` calls always see 0).
+    """
+
+    turn_number: int
+
+
+@dataclass(frozen=True)
+class TurnStop(Event):
+    """A top-level agent turn has ended.
+
+    New in CLI v2.16.0 / SDK v0.4.0. Mirrors Claude Code's ``Stop`` hook
+    event. ``reason`` is ``"completed"``, ``"max_turns"``, ``"error"``,
+    or ``"interrupted"``.
+    """
+
+    turn_number: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class HookDecision(Event):
+    """A hook produced a permission decision during this turn.
+
+    New in CLI v2.16.0 / SDK v0.4.0. Fires for any hook (user-configured
+    via ``.oh/config.yaml`` or injected by the SDK via ``can_use_tool``)
+    that returns an ``allow`` / ``deny`` / ``ask`` decision.
+    """
+
+    event: str
+    tool: str | None
+    decision: str
+    reason: str | None
 
 
 @dataclass(frozen=True)
@@ -122,4 +168,20 @@ def parse_event(obj: dict[str, Any]) -> Event:
         )
     if kind == "turn_complete":
         return TurnComplete(reason=str(obj.get("reason", "completed")))
+    if kind == "turnStart":
+        return TurnStart(turn_number=int(obj.get("turnNumber", 0)))
+    if kind == "turnStop":
+        return TurnStop(
+            turn_number=int(obj.get("turnNumber", 0)),
+            reason=str(obj.get("reason", "completed")),
+        )
+    if kind == "hook_decision":
+        tool_val = obj.get("tool")
+        reason_val = obj.get("reason")
+        return HookDecision(
+            event=str(obj.get("event", "")),
+            tool=str(tool_val) if tool_val is not None else None,
+            decision=str(obj.get("decision", "")),
+            reason=str(reason_val) if reason_val is not None else None,
+        )
     return UnknownEvent(raw=dict(obj))

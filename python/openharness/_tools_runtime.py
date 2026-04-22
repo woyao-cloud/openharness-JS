@@ -1,11 +1,16 @@
-"""Runtime glue for user-defined Python tools.
+"""Runtime glue for user-defined Python tools and permission callbacks.
 
-Given a list of Python callables, this module:
+Given a list of Python callables and/or a ``can_use_tool`` permission
+callback, this module:
 
-1. Starts an in-process MCP HTTP server hosting those callables as tools.
-2. Creates a temporary directory with ``.oh/config.yaml`` whose
-   ``mcpServers`` entry points at the in-process server.
-3. Returns the cwd to use when spawning the ``oh`` subprocess, plus a
+1. Starts an in-process MCP HTTP server hosting tool callables
+   (when ``tools=[...]`` is passed).
+2. Starts an in-process permission HTTP server
+   (when ``can_use_tool=...`` is passed).
+3. Creates a temporary directory with ``.oh/config.yaml`` whose
+   ``mcpServers`` entry points at the tool server and whose
+   ``hooks.permissionRequest`` entry points at the permission server.
+4. Returns the cwd to use when spawning the ``oh`` subprocess, plus a
    cleanup coroutine.
 
 Used by both :func:`openharness.query` and
@@ -21,19 +26,27 @@ from pathlib import Path
 from typing import Any
 
 from ._mcp_server import InProcessMcpServer
+from ._permission_server import InProcessPermissionServer, PermissionCallback
 
 __all__ = ["ToolsRuntime", "prepare_tools_runtime"]
 
 
 class ToolsRuntime:
-    """Bundle of resources created when ``tools=[...]`` is passed.
+    """Bundle of resources created when ``tools=[...]`` and/or
+    ``can_use_tool=...`` is passed.
 
     Exposes :attr:`cwd` for the subprocess and :meth:`close` to tear
     everything down.
     """
 
-    def __init__(self, server: InProcessMcpServer, tempdir: Path) -> None:
-        self._server = server
+    def __init__(
+        self,
+        mcp_server: InProcessMcpServer | None,
+        permission_server: InProcessPermissionServer | None,
+        tempdir: Path,
+    ) -> None:
+        self._mcp_server = mcp_server
+        self._permission_server = permission_server
         self._tempdir = tempdir
         self._closed = False
 
@@ -43,27 +56,55 @@ class ToolsRuntime:
         return str(self._tempdir)
 
     async def close(self) -> None:
-        """Stop the MCP server and remove the temp directory. Idempotent."""
+        """Stop any running servers and remove the temp directory. Idempotent."""
         if self._closed:
             return
         self._closed = True
-        await self._server.close()
+        if self._mcp_server is not None:
+            await self._mcp_server.close()
+        if self._permission_server is not None:
+            await self._permission_server.close()
         shutil.rmtree(self._tempdir, ignore_errors=True)
+
+
+def _strip_top_level_key(lines: list[str], key: str) -> list[str]:
+    """Remove any top-level ``<key>:`` block (plus its indented body) from ``lines``.
+
+    Used to make room for the SDK-injected ``mcpServers:`` and ``hooks:``
+    blocks. We don't parse YAML here — just drop the key's contiguous
+    indented block. If ``key`` doesn't appear, ``lines`` is returned
+    unchanged.
+    """
+    out: list[str] = []
+    skipping = False
+    for line in lines:
+        if not skipping and line.startswith(f"{key}:"):
+            skipping = True
+            continue
+        if skipping and (line.startswith("  ") or line.startswith("- ") or line == ""):
+            if line == "":
+                skipping = False
+            continue
+        skipping = False
+        out.append(line)
+    return out
 
 
 def _write_ephemeral_config(
     tempdir: Path,
-    mcp_url: str,
-    server_name: str,
     *,
+    mcp_url: str | None,
+    mcp_server_name: str,
+    permission_url: str | None,
     base_cwd: Path | None,
 ) -> None:
-    """Write ``.oh/config.yaml`` pointing at ``mcp_url``.
+    """Write ``.oh/config.yaml`` with SDK-injected hooks and MCP servers.
 
-    If ``base_cwd`` is given and has its own ``.oh/config.yaml``, copy it
-    in first so existing user settings (model, providers, other MCP
-    servers) survive. The injected server is appended to the
-    ``mcpServers`` list.
+    If ``base_cwd`` has its own ``.oh/config.yaml``, its top-level keys
+    other than ``mcpServers`` and ``hooks`` are preserved (so model,
+    provider, permissionMode etc. carry through). Existing
+    ``mcpServers`` and ``hooks`` blocks are dropped — the SDK owns those
+    entries for the duration of the runtime.
     """
     oh_dir = tempdir / ".oh"
     oh_dir.mkdir(parents=True, exist_ok=True)
@@ -75,62 +116,76 @@ def _write_ephemeral_config(
         if src.is_file():
             existing = src.read_text(encoding="utf-8").rstrip() + "\n"
 
-    injected_lines = [
-        "mcpServers:",
-        f"  - name: {server_name}",
-        '    type: "http"',
-        f'    url: "{mcp_url}"',
-        "",
-    ]
-    # Naive append — if the existing config already has an mcpServers list,
-    # YAML will complain about the duplicate key. Strip any prior entry.
     lines = existing.splitlines()
-    filtered: list[str] = []
-    skipping = False
-    for line in lines:
-        if not skipping and line.startswith("mcpServers"):
-            skipping = True
-            continue
-        if skipping and (line.startswith("  ") or line.startswith("- ") or line == ""):
-            # still inside the mcpServers block (or a blank line)
-            if line == "":
-                skipping = False
-            continue
-        skipping = False
-        filtered.append(line)
+    lines = _strip_top_level_key(lines, "mcpServers")
+    lines = _strip_top_level_key(lines, "hooks")
 
-    body = "\n".join(filtered).rstrip()
+    body = "\n".join(lines).rstrip()
     if body:
         body += "\n\n"
-    body += "\n".join(injected_lines)
+
+    injected: list[str] = []
+    if mcp_url is not None:
+        injected += [
+            "mcpServers:",
+            f"  - name: {mcp_server_name}",
+            '    type: "http"',
+            f'    url: "{mcp_url}"',
+        ]
+    if permission_url is not None:
+        injected += [
+            "hooks:",
+            "  permissionRequest:",
+            f'    - http: "{permission_url}"',
+        ]
+    injected.append("")
+    body += "\n".join(injected)
     config_path.write_text(body, encoding="utf-8")
 
 
 async def prepare_tools_runtime(
-    tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]],
+    tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]] | None = None,
     *,
     base_cwd: str | None,
     server_name: str = "openharness-python-tools",
+    can_use_tool: PermissionCallback | None = None,
 ) -> ToolsRuntime:
-    """Spin up the MCP server and write the ephemeral config.
+    """Spin up the MCP and/or permission servers and write the ephemeral config.
 
-    :param tools: Callables to expose as MCP tools.
+    At least one of ``tools`` or ``can_use_tool`` must be provided — callers
+    should gate this function behind that check.
+
+    :param tools: Callables to expose as MCP tools. ``None`` or empty skips
+        the MCP server.
     :param base_cwd: If set, any existing ``.oh/config.yaml`` there is
-        preserved (its non-mcpServers contents copied into the temp dir).
+        preserved (its non-mcpServers/non-hooks contents copied into the
+        temp dir).
     :param server_name: Name used in the MCP entry. Visible to the agent.
+    :param can_use_tool: Permission callback. When set, a permission HTTP
+        server is started and wired into ``hooks.permissionRequest``.
     """
-    server = InProcessMcpServer(list(tools), name=server_name)
-    await server.start()
+    mcp_server: InProcessMcpServer | None = None
+    permission_server: InProcessPermissionServer | None = None
     tempdir = Path(tempfile.mkdtemp(prefix="oh-py-tools-"))
     try:
+        if tools:
+            mcp_server = InProcessMcpServer(list(tools), name=server_name)
+            await mcp_server.start()
+        if can_use_tool is not None:
+            permission_server = InProcessPermissionServer(can_use_tool)
+            await permission_server.start()
         _write_ephemeral_config(
             tempdir,
-            server.url,
-            server_name,
+            mcp_url=mcp_server.url if mcp_server else None,
+            mcp_server_name=server_name,
+            permission_url=permission_server.url if permission_server else None,
             base_cwd=Path(base_cwd) if base_cwd else None,
         )
     except Exception:
-        await server.close()
+        if mcp_server is not None:
+            await mcp_server.close()
+        if permission_server is not None:
+            await permission_server.close()
         shutil.rmtree(tempdir, ignore_errors=True)
         raise
-    return ToolsRuntime(server, tempdir)
+    return ToolsRuntime(mcp_server, permission_server, tempdir)

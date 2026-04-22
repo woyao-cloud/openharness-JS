@@ -25,6 +25,15 @@ Custom Python tools::
     async with OpenHarnessClient(tools=[get_weather]) as client:
         async for event in await client.send("What's the weather in Paris?"):
             print(event)
+
+Custom permission gate::
+
+    async def gate(ctx):
+        return "allow" if ctx["toolName"] != "Bash" else "deny"
+
+    async with OpenHarnessClient(can_use_tool=gate) as client:
+        async for event in await client.send("List the current directory"):
+            print(event)
 """
 
 from .client import OpenHarnessClient
@@ -32,22 +41,26 @@ from .events import (
     CostUpdate,
     ErrorEvent,
     Event,
+    HookDecision,
     TextDelta,
     ToolEnd,
     ToolStart,
     TurnComplete,
+    TurnStart,
+    TurnStop,
     parse_event,
 )
 from .exceptions import OhBinaryNotFoundError, OpenHarnessError
 from .query import query
 from .tools import tool
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "CostUpdate",
     "ErrorEvent",
     "Event",
+    "HookDecision",
     "OhBinaryNotFoundError",
     "OpenHarnessClient",
     "OpenHarnessError",
@@ -55,6 +68,8 @@ __all__ = [
     "ToolEnd",
     "ToolStart",
     "TurnComplete",
+    "TurnStart",
+    "TurnStop",
     "__version__",
     "parse_event",
     "query",
