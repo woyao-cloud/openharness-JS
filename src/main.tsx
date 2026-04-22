@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Command, Option } from "commander";
 import { render } from "ink";
-import { readOhConfig } from "./harness/config.js";
+import { parseSettingSources, readOhConfig } from "./harness/config.js";
 import { emitHook, setHookDecisionObserver } from "./harness/hooks.js";
 import { loadActiveMemories, memoriesToPrompt, userProfileToPrompt } from "./harness/memory.js";
 import { detectProject, projectContextToPrompt } from "./harness/onboarding.js";
@@ -140,6 +140,11 @@ program
   .option("--append-system-prompt <text>", "Append text to the system prompt")
   .option("--allowed-tools <tools>", "Comma-separated list of allowed tools")
   .option("--disallowed-tools <tools>", "Comma-separated list of disallowed tools")
+  .option("--resume <id>", "Resume a saved session (replays its message history before this prompt)")
+  .option(
+    "--setting-sources <sources>",
+    "Comma-separated list of setting sources to merge (e.g. 'user,project,local'). Mirrors Claude Code's setting_sources.",
+  )
   .action(async (promptArg: string | undefined, opts: Record<string, unknown>) => {
     // Read from stdin if prompt is "-" or omitted and stdin is not a TTY
     let prompt: string;
@@ -156,7 +161,8 @@ program
       prompt = promptArg;
     }
 
-    const savedConfig = readOhConfig();
+    const settingSources = parseSettingSources(opts.settingSources as string | undefined);
+    const savedConfig = readOhConfig(undefined, settingSources);
     const permissionMode: PermissionMode = (
       opts.trust
         ? "trust"
@@ -216,7 +222,30 @@ program
     const toolResults: Array<{ tool: string; output: string; error: boolean | undefined }> = [];
     const callIdToName: Record<string, string> = {};
 
+    // Resume a saved session if --resume <id> was passed. Replays its message
+    // history into the conversation before the new prompt. If the session can't
+    // be loaded (missing file, malformed JSON), fail early with a clear error
+    // rather than silently starting fresh.
+    let priorMessages: Message[] | undefined;
+    let sessionId: string | undefined;
+    if (opts.resume) {
+      const { loadSession } = await import("./harness/session.js");
+      try {
+        const src = loadSession(opts.resume as string);
+        priorMessages = src.messages;
+        sessionId = src.id;
+      } catch {
+        process.stderr.write(`Error: could not load session '${opts.resume as string}'\n`);
+        process.exit(1);
+      }
+    }
+
     if (outputFormat === "stream-json") {
+      // Emit a session_start event so SDK callers can capture the id for
+      // later resume (fires once, before turnStart).
+      if (sessionId) {
+        console.log(JSON.stringify({ type: "session_start", sessionId }));
+      }
       setHookDecisionObserver((n) => {
         console.log(
           JSON.stringify({
@@ -240,7 +269,7 @@ program
       console.log(JSON.stringify({ type: "turnStart", turnNumber: 0 }));
     }
 
-    for await (const event of query(prompt, config)) {
+    for await (const event of query(prompt, config, priorMessages)) {
       if (event.type === "text_delta") {
         fullOutput += event.content;
         if (outputFormat === "text") process.stdout.write(event.content);
@@ -322,8 +351,14 @@ program
   .option("--disallowed-tools <tools>", "Comma-separated disallowed tool names")
   .option("--max-turns <n>", "Maximum turns per prompt", "20")
   .option("--system-prompt <prompt>", "Override the system prompt")
+  .option("--resume <id>", "Resume a saved session (seeds the conversation with its prior message history)")
+  .option(
+    "--setting-sources <sources>",
+    "Comma-separated list of setting sources to merge (mirrors Claude Code's setting_sources).",
+  )
   .action(async (opts: Record<string, unknown>) => {
-    const savedConfig = readOhConfig();
+    const settingSources = parseSettingSources(opts.settingSources as string | undefined);
+    const savedConfig = readOhConfig(undefined, settingSources);
     const permissionMode: PermissionMode = (opts.permissionMode ??
       savedConfig?.permissionMode ??
       "trust") as PermissionMode;
@@ -362,7 +397,20 @@ program
     };
 
     // Conversation history, shared across all prompts for this process.
+    // Seeded from a prior session when --resume <id> is passed.
     const conversation: import("./types/message.js").Message[] = [];
+    let sessionId: string | undefined;
+    if (opts.resume) {
+      const { loadSession } = await import("./harness/session.js");
+      try {
+        const src = loadSession(opts.resume as string);
+        conversation.push(...src.messages);
+        sessionId = src.id;
+      } catch {
+        console.log(JSON.stringify({ type: "error", message: `could not load session '${opts.resume as string}'` }));
+        return;
+      }
+    }
     let turnCounter = 0;
     // Will be set to the current prompt id before each turn so hook_decision
     // events can be demultiplexed by the client.
@@ -382,7 +430,7 @@ program
     });
 
     // Announce readiness so the client can send the first prompt.
-    console.log(JSON.stringify({ type: "ready" }));
+    console.log(JSON.stringify({ type: "ready", sessionId }));
 
     const readline = await import("node:readline");
     const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });

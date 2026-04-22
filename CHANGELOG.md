@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.17.0 (2026-04-22) — Session resume + setting_sources
+
+### Added
+- `--resume <id>` flag on both `oh run` and `oh session` — replays a prior session's message history before accepting the new prompt. Previously only the default interactive command supported resume.
+- `--setting-sources <sources>` flag on both `oh run` and `oh session` — comma-separated subset of `user,project,local` controlling which config layers are merged. Mirrors Claude Code's `setting_sources`. `readOhConfig()` takes an optional second argument for programmatic use.
+- Two new stream-json event types: `session_start` (fires once at the top of `oh run` when `--resume` loads a session) and a `sessionId` field on the existing `ready` event (emitted by `oh session`). Lets the Python SDK capture the session ID for later resume.
+
+### Changed
+- `readOhConfig()` now accepts a `sources?: ("user" | "project" | "local")[]` second parameter. When omitted, existing global → project → local merging behavior is unchanged.
+
 ## 2.16.0 (2026-04-22) — Turn-boundary hooks + richer HTTP hook protocol
 
 ### Added

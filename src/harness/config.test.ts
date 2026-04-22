@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { readOhConfig, writeOhConfig } from "./config.js";
+import { parseSettingSources, readOhConfig, writeOhConfig } from "./config.js";
 
 function tmp(): string {
   return mkdtempSync(`${tmpdir()}/oh-cfg-test-`);
@@ -124,4 +124,50 @@ test("readOhConfig() ignores malformed config.local.yaml", () => {
   const cfg = readOhConfig(dir);
   assert.ok(cfg !== null);
   assert.equal(cfg.model, "gpt-4o"); // base config unchanged
+});
+
+// ── setting_sources (v2.17.0) ──
+
+test("readOhConfig(sources=['project']) skips user+local layers", () => {
+  const dir = tmp();
+  writeOhConfig({ provider: "openai", model: "gpt-4o", permissionMode: "ask" }, dir);
+  mkdirSync(join(dir, ".oh"), { recursive: true });
+  writeFileSync(join(dir, ".oh", "config.local.yaml"), "model: 'should-be-skipped'\napiKey: 'also-skipped'\n");
+  // User layer (~/.oh) is whatever the real homedir has — we can't control it,
+  // but restricting to "project" means that's ignored too.
+  const cfg = readOhConfig(dir, ["project"]);
+  assert.ok(cfg !== null);
+  assert.equal(cfg.model, "gpt-4o");
+  assert.equal(cfg.apiKey, undefined);
+});
+
+test("readOhConfig(sources=['local']) skips project layer", () => {
+  const dir = tmp();
+  writeOhConfig({ provider: "openai", model: "from-project", permissionMode: "ask" }, dir);
+  writeFileSync(join(dir, ".oh", "config.local.yaml"), "model: 'from-local'\n");
+  const cfg = readOhConfig(dir, ["local"]);
+  assert.ok(cfg !== null);
+  assert.equal(cfg.model, "from-local");
+});
+
+test("readOhConfig(sources=[]) returns null", () => {
+  const dir = tmp();
+  writeOhConfig({ provider: "openai", model: "gpt-4o", permissionMode: "ask" }, dir);
+  const cfg = readOhConfig(dir, []);
+  assert.equal(cfg, null);
+});
+
+test("parseSettingSources() parses comma-separated list", () => {
+  assert.deepEqual(parseSettingSources("user,project"), ["user", "project"]);
+  assert.deepEqual(parseSettingSources("project, local"), ["project", "local"]);
+});
+
+test("parseSettingSources() drops unknown source names", () => {
+  assert.deepEqual(parseSettingSources("user,bogus,project"), ["user", "project"]);
+});
+
+test("parseSettingSources() returns undefined for empty / undefined input", () => {
+  assert.equal(parseSettingSources(undefined), undefined);
+  assert.equal(parseSettingSources(""), undefined);
+  assert.equal(parseSettingSources("bogus"), undefined);
 });

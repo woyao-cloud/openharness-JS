@@ -194,54 +194,77 @@ function readGlobalConfig(): Partial<OhConfig> | null {
   }
 }
 
-export function readOhConfig(root?: string): OhConfig | null {
+export type SettingSource = "user" | "project" | "local";
+const ALL_SOURCES: readonly SettingSource[] = ["user", "project", "local"] as const;
+
+export function readOhConfig(root?: string, sources?: readonly SettingSource[]): OhConfig | null {
   const effectiveRoot = root ?? ".";
-  if (_configCache !== undefined && _configCacheRoot === effectiveRoot) return _configCache;
+  // Only cache when merging the full default set. Callers that pass a subset
+  // are expressing a request-scoped intent and shouldn't poison the cache.
+  const usingDefaults = sources === undefined;
+  if (usingDefaults && _configCache !== undefined && _configCacheRoot === effectiveRoot) return _configCache;
 
-  const p = configPath(root);
+  const enabled = new Set<SettingSource>(sources ?? ALL_SOURCES);
 
-  // Layer 1: Global defaults from ~/.oh/config.yaml
-  const globalCfg = readGlobalConfig();
+  // Layer 1: Global defaults from ~/.oh/config.yaml (source: "user")
+  const globalCfg = enabled.has("user") ? readGlobalConfig() : null;
 
-  // Layer 2: Project config from .oh/config.yaml
+  // Layer 2: Project config from .oh/config.yaml (source: "project")
   let projectCfg: OhConfig | null = null;
-  if (existsSync(p)) {
-    try {
-      projectCfg = parse(readFileSync(p, "utf-8")) as OhConfig;
-    } catch {
-      /* ignore malformed project config */
+  if (enabled.has("project")) {
+    const p = configPath(root);
+    if (existsSync(p)) {
+      try {
+        projectCfg = parse(readFileSync(p, "utf-8")) as OhConfig;
+      } catch {
+        /* ignore malformed project config */
+      }
     }
   }
 
-  // If neither exists, no config
-  if (!globalCfg && !projectCfg) {
-    _configCache = null;
-    _configCacheRoot = effectiveRoot;
+  // Layer 3: Local overrides from .oh/config.local.yaml (source: "local")
+  let localCfg: Partial<OhConfig> | null = null;
+  if (enabled.has("local")) {
+    const localPath = join(root ?? ".", ".oh", "config.local.yaml");
+    if (existsSync(localPath)) {
+      try {
+        localCfg = parse(readFileSync(localPath, "utf-8")) as Partial<OhConfig>;
+      } catch {
+        /* ignore malformed local config */
+      }
+    }
+  }
+
+  if (!globalCfg && !projectCfg && !localCfg) {
+    if (usingDefaults) {
+      _configCache = null;
+      _configCacheRoot = effectiveRoot;
+    }
     return null;
   }
 
-  // Merge: global → project (project overrides global)
-  const base = { ...globalCfg, ...projectCfg } as OhConfig;
-
-  // Layer 3: Local overrides from .oh/config.local.yaml (gitignored personal settings)
-  const localPath = join(root ?? ".", ".oh", "config.local.yaml");
-  if (existsSync(localPath)) {
-    try {
-      const local = parse(readFileSync(localPath, "utf-8")) as Partial<OhConfig>;
-      if (local) {
-        const merged = { ...base, ...local } as OhConfig;
-        _configCache = merged;
-        _configCacheRoot = effectiveRoot;
-        return merged;
-      }
-    } catch {
-      /* ignore malformed local config */
-    }
+  // Precedence: local > project > user
+  const merged = { ...(globalCfg ?? {}), ...(projectCfg ?? {}), ...(localCfg ?? {}) } as OhConfig;
+  if (usingDefaults) {
+    _configCache = merged;
+    _configCacheRoot = effectiveRoot;
   }
+  return merged;
+}
 
-  _configCache = base;
-  _configCacheRoot = effectiveRoot;
-  return base;
+/**
+ * Parse the `--setting-sources` CLI flag (comma-separated source names).
+ * Returns `undefined` when the flag is absent or empty (caller uses defaults).
+ * Unknown names are silently dropped.
+ */
+export function parseSettingSources(raw: string | undefined): SettingSource[] | undefined {
+  if (!raw) return undefined;
+  const valid = new Set<SettingSource>(["user", "project", "local"]);
+  const out = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is SettingSource => valid.has(s as SettingSource));
+  return out.length > 0 ? out : undefined;
 }
 
 export function writeOhConfig(cfg: OhConfig, root?: string): void {
