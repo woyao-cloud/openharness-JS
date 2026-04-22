@@ -42,6 +42,7 @@ from .events import (
     ErrorEvent,
     Event,
     HookDecision,
+    SessionStart,
     TextDelta,
     ToolEnd,
     ToolStart,
@@ -51,10 +52,11 @@ from .events import (
     parse_event,
 )
 from .exceptions import OhBinaryNotFoundError, OpenHarnessError
+from .options import OpenHarnessOptions
 from .query import query
 from .tools import tool
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "CostUpdate",
@@ -64,6 +66,8 @@ __all__ = [
     "OhBinaryNotFoundError",
     "OpenHarnessClient",
     "OpenHarnessError",
+    "OpenHarnessOptions",
+    "SessionStart",
     "TextDelta",
     "ToolEnd",
     "ToolStart",

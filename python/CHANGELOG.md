@@ -2,6 +2,18 @@
 
 This package follows its own SemVer track, independent of the `@zhijiewang/openharness` npm package.
 
+## 0.5.0 — 2026-04-22
+
+### Added
+- `resume: str | None` kwarg on both `query()` and `OpenHarnessClient`. When set, the CLI replays the prior session's message history before the new prompt. Capture the ID from `OpenHarnessClient.session_id` (populated from the CLI's `ready` event) or from a `SessionStart` event emitted by `query()`.
+- `setting_sources: Sequence[str] | None` kwarg on both entry points — passes through to the CLI's `--setting-sources` flag. Any subset of `"user"`, `"project"`, `"local"`. Mirrors Claude Code's `setting_sources`.
+- `OpenHarnessClient.session_id` read-only property — surfaces the session ID after entering the async context (None on older CLIs).
+- New `SessionStart(session_id)` event type, emitted when the CLI's `session_start` or `ready` NDJSON message arrives.
+- New `OpenHarnessOptions` frozen dataclass bundling all 12 kwargs. Use `**opts.to_kwargs()` to unpack into `query()` or `OpenHarnessClient`. Mirrors Claude Code's `ClaudeAgentOptions`.
+
+### CLI dependency
+Requires `@zhijiewang/openharness` v2.17.0+ for the new `--resume` and `--setting-sources` flags on `oh run` / `oh session`, and for the `sessionId` field on the `ready` stream-json event.
+
 ## 0.4.0 — 2026-04-22
 
 ### Added

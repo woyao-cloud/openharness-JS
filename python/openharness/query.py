@@ -35,6 +35,8 @@ def _build_argv(
     disallowed_tools: Sequence[str] | None,
     max_turns: int,
     system_prompt: str | None,
+    resume: str | None,
+    setting_sources: Sequence[str] | None,
 ) -> list[str]:
     """Assemble the argv for ``oh run ... --output-format stream-json``."""
     argv: list[str] = [oh, "run", prompt, "--output-format", "stream-json"]
@@ -50,6 +52,10 @@ def _build_argv(
         argv += ["--max-turns", str(max_turns)]
     if system_prompt:
         argv += ["--system-prompt", system_prompt]
+    if resume:
+        argv += ["--resume", resume]
+    if setting_sources:
+        argv += ["--setting-sources", ",".join(setting_sources)]
     return argv
 
 
@@ -66,6 +72,8 @@ async def query(
     env: dict[str, str] | None = None,
     tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]] | None = None,
     can_use_tool: PermissionCallback | None = None,
+    resume: str | None = None,
+    setting_sources: Sequence[str] | None = None,
 ) -> AsyncIterator[Event]:
     """Run a single prompt through openHarness and stream events.
 
@@ -100,6 +108,15 @@ async def query(
         ``can_use_tool`` SDK hook. When set, the SDK starts an
         in-process HTTP server and wires a ``permissionRequest`` hook in
         the ephemeral config.
+    :param resume: Session ID to resume. When set, the CLI replays that
+        session's message history into the conversation before the new
+        prompt. Capture the ID from a prior :class:`SessionStart` event
+        (or from ``oh session``'s ``ready`` event). Requires CLI v2.17.0+.
+    :param setting_sources: Subset of config layers to merge when the CLI
+        reads ``.oh/config.yaml``. Any combination of ``"user"``,
+        ``"project"``, ``"local"``. When omitted, all three merge in
+        the default precedence (``local`` > ``project`` > ``user``).
+        Mirrors Claude Code's ``setting_sources``. Requires CLI v2.17.0+.
 
     :yields: Typed :class:`Event` objects matching NDJSON lines emitted by
         the CLI.
@@ -116,6 +133,8 @@ async def query(
         allowed_tools=allowed_tools,
         disallowed_tools=disallowed_tools,
         max_turns=max_turns,
+        resume=resume,
+        setting_sources=setting_sources,
         system_prompt=system_prompt,
     )
 

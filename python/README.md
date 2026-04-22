@@ -128,6 +128,49 @@ Callbacks may return:
 
 Sync and async callbacks both work. Exceptions and timeouts default to `deny` (fail-closed), so a misbehaving gate can never silently allow. Requires `@zhijiewang/openharness` v2.16.0+.
 
+## Session resume
+
+Capture the `session_id` from one run, pass it to the next:
+
+```python
+import asyncio
+from openharness import OpenHarnessClient
+
+async def main() -> None:
+    async with OpenHarnessClient(model="ollama/llama3") as c1:
+        async for _ in await c1.send("Remember that my favorite color is teal."):
+            pass
+        sid = c1.session_id                        # e.g. "abc-123"
+
+    # Later, maybe in a new process — restore context
+    async with OpenHarnessClient(model="ollama/llama3", resume=sid) as c2:
+        async for e in await c2.send("What's my favorite color?"):
+            print(e)
+
+asyncio.run(main())
+```
+
+Requires `@zhijiewang/openharness` v2.17.0+.
+
+## Typed options
+
+`OpenHarnessOptions` bundles every kwarg into one frozen dataclass, useful for test helpers and higher-level wrappers:
+
+```python
+from openharness import OpenHarnessClient, OpenHarnessOptions
+
+opts = OpenHarnessOptions(
+    model="ollama/llama3",
+    permission_mode="trust",
+    max_turns=5,
+    setting_sources=["user", "project"],
+)
+async with OpenHarnessClient(**opts.to_kwargs()) as client:
+    ...
+```
+
+`setting_sources` mirrors Claude Code's option of the same name — it controls which config layers (`user` = `~/.oh/config.yaml`, `project` = `./.oh/config.yaml`, `local` = `./.oh/config.local.yaml`) get merged.
+
 ## API
 
 ### `query(prompt, **options) -> AsyncIterator[Event]`
@@ -146,6 +189,8 @@ Run a single prompt and stream events as they arrive. Options:
 | `env` | `dict[str, str] \| None` | `None` | Env vars merged on top of `os.environ`. |
 | `tools` | `Sequence[Callable] \| None` | `None` | Python callables (optionally `@tool`-decorated) to expose to the agent via an in-process MCP server. |
 | `can_use_tool` | `Callable[[ctx], "allow"\|"deny"\|"ask"] \| None` | `None` | Permission callback — sync or async. When set, every permission check routes through this function. See "Custom permission gate" above. Requires CLI v2.16.0+. |
+| `resume` | `str \| None` | `None` | Session ID to resume — replays prior message history. See "Session resume". Requires CLI v2.17.0+. |
+| `setting_sources` | `Sequence[str] \| None` | `None` | Subset of `["user", "project", "local"]` — which config layers to merge. Omit to use all three. Requires CLI v2.17.0+. |
 
 ### Event types
 
@@ -160,6 +205,7 @@ All events are frozen dataclasses. Use `isinstance` to discriminate.
 - `TurnStart(turn_number: int)` — a top-level agent turn began (CLI v2.16.0+)
 - `TurnStop(turn_number: int, reason: str)` — a top-level agent turn ended; mirrors Claude Code's `Stop` hook (CLI v2.16.0+)
 - `HookDecision(event: str, tool: str | None, decision: str, reason: str | None)` — a hook produced a permission decision (CLI v2.16.0+)
+- `SessionStart(session_id: str | None)` — a session resumed or started with a known ID (CLI v2.17.0+)
 - `UnknownEvent(raw: dict)` — forward-compatibility shim for future event types
 
 ### Exceptions

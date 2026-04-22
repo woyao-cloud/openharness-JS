@@ -15,6 +15,7 @@ __all__ = [
     "ErrorEvent",
     "Event",
     "HookDecision",
+    "SessionStart",
     "TextDelta",
     "ToolEnd",
     "ToolStart",
@@ -108,6 +109,20 @@ class TurnStop(Event):
 
 
 @dataclass(frozen=True)
+class SessionStart(Event):
+    """The CLI resumed (or fresh-started) a session with a known ID.
+
+    New in CLI v2.17.0 / SDK v0.5.0. Emitted once at the top of the
+    stream when ``oh run --resume <id>`` loads a prior session, and
+    (with just ``session_id=None`` if no resume) on every ``oh session``
+    ``ready`` event. Capture it to pass back as ``resume=`` on a
+    subsequent call for conversation continuity.
+    """
+
+    session_id: str | None
+
+
+@dataclass(frozen=True)
 class HookDecision(Event):
     """A hook produced a permission decision during this turn.
 
@@ -184,4 +199,7 @@ def parse_event(obj: dict[str, Any]) -> Event:
             decision=str(obj.get("decision", "")),
             reason=str(reason_val) if reason_val is not None else None,
         )
+    if kind in ("session_start", "ready"):
+        sid = obj.get("sessionId")
+        return SessionStart(session_id=str(sid) if sid else None)
     return UnknownEvent(raw=dict(obj))

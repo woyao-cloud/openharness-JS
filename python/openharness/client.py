@@ -48,6 +48,13 @@ class OpenHarnessClient:
         of the client and routes every ``permissionRequest`` hook through
         it. Callback receives a context dict and must return
         ``"allow"``/``"deny"``/``"ask"`` (or a dict).
+    :param resume: Session ID to resume. When set, the CLI seeds the
+        conversation with the prior session's message history before
+        the first ``send()``. Capture the ID from :attr:`session_id`
+        on a prior client. Requires CLI v2.17.0+.
+    :param setting_sources: Which config layers the CLI should merge from
+        ``.oh/config.yaml``. Any subset of ``"user"``, ``"project"``,
+        ``"local"``. Omit to use all three. Requires CLI v2.17.0+.
     """
 
     def __init__(
@@ -63,6 +70,8 @@ class OpenHarnessClient:
         env: dict[str, str] | None = None,
         tools: Sequence[Callable[..., Any] | Callable[..., Awaitable[Any]]] | None = None,
         can_use_tool: PermissionCallback | None = None,
+        resume: str | None = None,
+        setting_sources: Sequence[str] | None = None,
     ) -> None:
         self._model = model
         self._permission_mode = permission_mode
@@ -74,6 +83,11 @@ class OpenHarnessClient:
         self._env = env
         self._tools = list(tools) if tools else None
         self._can_use_tool = can_use_tool
+        self._resume = resume
+        self._setting_sources = tuple(setting_sources) if setting_sources else None
+        # Populated from the CLI's `ready` event — surfaces via the
+        # ``session_id`` property so callers can capture it for later resume.
+        self._session_id: str | None = None
 
         self._proc: asyncio.subprocess.Process | None = None
         self._send_lock = asyncio.Lock()  # serializes prompts
@@ -109,6 +123,10 @@ class OpenHarnessClient:
             argv += ["--max-turns", str(self._max_turns)]
         if self._system_prompt:
             argv += ["--system-prompt", self._system_prompt]
+        if self._resume:
+            argv += ["--resume", self._resume]
+        if self._setting_sources:
+            argv += ["--setting-sources", ",".join(self._setting_sources)]
         return argv
 
     async def _start(self) -> None:
@@ -172,8 +190,11 @@ class OpenHarnessClient:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                # Ready marker
+                # Ready marker — capture session_id (CLI v2.17.0+) and unblock start().
                 if obj.get("type") == "ready":
+                    sid = obj.get("sessionId")
+                    if isinstance(sid, str) and sid:
+                        self._session_id = sid
                     ev = getattr(self, "_ready_event", None)
                     if ev is not None:
                         ev.set()
@@ -197,6 +218,19 @@ class OpenHarnessClient:
             self._queues.clear()
 
     # ────────────────────────────────────────────────────────── public ──
+
+    @property
+    def session_id(self) -> str | None:
+        """The ID of the session this client is running.
+
+        Populated from the CLI's ``ready`` event after entering the
+        async context. ``None`` if the CLI predates v2.17.0 or if no
+        session was established (e.g. subprocess died).
+
+        Capture this to pass back as ``resume=`` on a later client for
+        conversation continuity across process restarts.
+        """
+        return self._session_id
 
     async def send(self, prompt: str) -> AsyncIterator[Event]:
         """Send a prompt and stream the resulting events.
