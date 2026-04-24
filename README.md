@@ -23,6 +23,8 @@ AI coding agent in your terminal. Works with any LLM -- free local models or clo
 
 [![npm version](https://img.shields.io/npm/v/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![npm downloads](https://img.shields.io/npm/dm/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![license](https://img.shields.io/npm/l/@zhijiewang/openharness)](LICENSE) ![tests](https://img.shields.io/badge/tests-890-brightgreen) ![tools](https://img.shields.io/badge/tools-42-blue) ![Node.js 18+](https://img.shields.io/badge/node-18%2B-green) ![TypeScript](https://img.shields.io/badge/typescript-strict-blue) [![GitHub stars](https://img.shields.io/github/stars/zhijiewong/openharness)](https://github.com/zhijiewong/openharness) [![GitHub issues](https://img.shields.io/github/issues-raw/zhijiewong/openharness)](https://github.com/zhijiewong/openharness/issues) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/zhijiewong/openharness/pulls)
 
+**English** | [简体中文](README.zh-CN.md)
+
 ---
 
 ## Table of Contents
@@ -81,26 +83,6 @@ Ctrl+O                                # flush transcript to scrollback for revie
 ## Why OpenHarness?
 
 Most AI coding agents are locked to one provider or cost $20+/month. OpenHarness works with any LLM -- run it free with Ollama on your own machine, or connect to any cloud API. Every AI edit is git-committed and reversible with `/undo`.
-
-|  | OpenHarness | Claude Code | Aider | OpenCode |
-|---|---|---|---|---|
-| Any LLM | Yes (Ollama, OpenAI, Anthropic, OpenRouter, any OpenAI-compatible) | Anthropic only | Yes | Yes |
-| Free local models | Ollama native | No | Yes | Yes |
-| Tools | 41 with permission gates | 43+ | File-focused | 20+ |
-| Permission modes | 7 (ask, trust, deny, acceptEdits, plan, auto, bypass) | 7 | Basic | Basic |
-| Git integration | Auto-commit + /undo + /rewind checkpoints | Yes | Deep git | Basic |
-| Slash commands | 42+ built-in | 80+ | Some | Some |
-| Headless/CI mode | `oh -p "prompt"` or `oh run --json` | Yes | Yes | Yes |
-| GitHub Action | Built-in PR review action | Yes | No | No |
-| Agent roles | 6 specializations (reviewer, tester, debugger...) | Yes | No | No |
-| Vim mode | hjkl, w/b/e, 0/$, x, d, i/a/I/A/o | Full vim | No | No |
-| Prompt caching | Anthropic cache_control | Yes | No | No |
-| Bash security | AST-based command analysis | AST analysis | No | No |
-| Companion | Cybergotchi virtual pet | Basic | No | No |
-| Terminal UI | Sequential renderer (Ink pattern) | React + Ink | Basic | BubbleTea |
-| Language | TypeScript | TypeScript | Python | Go |
-| License | MIT | Proprietary | Apache 2.0 | MIT |
-| Price | Free (BYOK) | $20+/month | Free (BYOK) | Free (BYOK) |
 
 ## Terminal UI
 
@@ -706,7 +688,7 @@ Yes. Use `oh -p "prompt" --auto` for headless execution, or the built-in GitHub 
 Yes. OpenHarness is language-agnostic — it reads, writes, and executes code in any language. Syntax highlighting covers 20+ languages.
 
 **How does it compare to Claude Code?**
-~95% feature parity for CLI use cases. Main advantage: works with ANY LLM (not just Anthropic). See the [comparison table](#why-openharness) above.
+~95% feature parity for CLI use cases. Main advantage: works with ANY LLM (not just Anthropic) and is MIT-licensed. See [Why OpenHarness?](#why-openharness) above.
 
 ## Install
 
