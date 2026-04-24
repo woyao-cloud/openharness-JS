@@ -57,7 +57,7 @@ oh
 
 That's it. OpenHarness auto-detects Ollama and starts chatting. No API key needed.
 
-**Python SDK:** there's also an official Python SDK for driving `oh` from Python programs (notebooks, batch scripts, ML pipelines). Install with `pip install openharness` after the npm install, then `from openharness import query`. See [`python/README.md`](python/README.md).
+**Python SDK:** there's also an official Python SDK for driving `oh` from Python programs (notebooks, batch scripts, ML pipelines). Install with `pip install openharness-sdk` after the npm install (the PyPI distribution is `openharness-sdk` because the unqualified name is taken), then `from openharness import query`. See [`python/README.md`](python/README.md).
 
 ```bash
 oh init                               # interactive setup wizard (provider + cybergotchi)
