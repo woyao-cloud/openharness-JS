@@ -25,6 +25,7 @@ import { discoverSkills, skillsToPrompt } from "./harness/plugins.js";
 import { createRulesFile, loadRules, loadRulesAsPrompt } from "./harness/rules.js";
 import { listSessions } from "./harness/session.js";
 import { connectedMcpServers, disconnectMcpClients, getMcpInstructions, loadMcpTools } from "./mcp/loader.js";
+import { loadOutputStyle } from "./outputStyles/index.js";
 import type { Provider, ProviderConfig } from "./providers/base.js";
 import { getAllTools } from "./tools.js";
 import type { Message } from "./types/message.js";
@@ -85,7 +86,14 @@ You have access to tools for reading, writing, and searching files, running shel
 - Keep responses short and direct. If you can say it in one sentence, don't use three.`;
 
 function buildSystemPrompt(model?: string): string {
-  const parts: string[] = [DEFAULT_SYSTEM_PROMPT];
+  const cfg = readOhConfig();
+
+  // Output-style preface (first — sets personality for everything that follows).
+  // Skipped silently for the "default" style (empty prompt).
+  const parts: string[] = [];
+  const style = loadOutputStyle(cfg?.outputStyle);
+  if (style.prompt) parts.push(style.prompt);
+  parts.push(DEFAULT_SYSTEM_PROMPT);
 
   const projectCtx = detectProject();
   const projectPrompt = projectContextToPrompt(projectCtx, model);
@@ -118,7 +126,7 @@ function buildSystemPrompt(model?: string): string {
   }
 
   // Response-language directive (last — it should apply to everything above)
-  const languagePrompt = languageToPrompt(readOhConfig()?.language);
+  const languagePrompt = languageToPrompt(cfg?.language);
   if (languagePrompt) parts.push(languagePrompt);
 
   return parts.join("\n\n");

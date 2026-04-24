@@ -103,6 +103,13 @@ export type OhConfig = {
    * any name the model understands (e.g., "zh-CN", "Japanese", "Spanish").
    */
   language?: string;
+  /**
+   * Output style — swaps the system-prompt preface to change the agent's
+   * personality without touching the core instructions. Built-ins: "default",
+   * "explanatory", "learning". Custom styles live in `.oh/output-styles/*.md`
+   * or `~/.oh/output-styles/*.md` (project shadows user shadows built-in).
+   */
+  outputStyle?: string;
   apiKey?: string;
   baseUrl?: string;
   mcpServers?: McpServerConfig[];

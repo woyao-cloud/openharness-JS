@@ -613,7 +613,8 @@ provider: ollama
 model: llama3
 permissionMode: ask
 theme: dark
-language: zh-CN   # optional — respond in this language (code stays as-is)
+language: zh-CN        # optional — respond in this language (code stays as-is)
+outputStyle: default   # optional — "default", "explanatory", "learning", or a custom name
 ```
 
 Then per-project configs only need what's different:
@@ -622,6 +623,27 @@ Then per-project configs only need what's different:
 # .oh/config.yaml
 model: codellama   # override just the model
 ```
+
+### Output Styles
+
+Swap the agent's personality without touching its core instructions. Built-ins:
+
+- **`default`** — standard software engineering assistant (no preface)
+- **`explanatory`** — adds an `## Insights` section after each task explaining *why* the agent made its choices
+- **`learning`** — leaves 1–3 `TODO(human)` markers at strategic points so you write the instructive parts yourself
+
+Create your own styles as markdown files with YAML frontmatter. Save to `.oh/output-styles/<name>.md` (project) or `~/.oh/output-styles/<name>.md` (user). Project shadows user shadows built-in.
+
+````markdown
+---
+name: code-review
+description: Focused code review mode
+---
+
+Review rigorously. For every function, ask: is the logic correct, is error handling complete, are there edge cases ignored?
+````
+
+Activate with `outputStyle: code-review` in `.oh/config.yaml`.
 
 ## Project Rules
 
