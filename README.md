@@ -186,6 +186,9 @@ Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XX
 | Memory | low | Save/list/search persistent memories |
 | Skill | low | Invoke a skill from .oh/skills/ |
 | ToolSearch | low | Find tools by description |
+| **MCP** | | |
+| ListMcpResources | low | List resources from connected MCP servers |
+| ReadMcpResource | low | Read a specific MCP resource by URI |
 | **Git Worktrees** | | |
 | EnterWorktree | medium | Create isolated git worktree |
 | ExitWorktree | medium | Remove a git worktree |
@@ -500,6 +503,24 @@ oh run "add error handling to api.ts" --json    # JSON output
 cat error.log | oh run "what's wrong here?"
 git diff | oh run "review these changes"
 ```
+
+### Structured output with `--json-schema`
+
+Constrain the model's output to a JSON Schema. Useful for CI scripts that
+parse model output programmatically without regex heuristics:
+
+```bash
+oh -p "output {\"ok\": true, \"count\": 3} as JSON" \
+  --trust \
+  --json-schema '{"type":"object","properties":{"ok":{"type":"boolean"},"count":{"type":"integer"}},"required":["ok","count"]}'
+```
+
+Behavior:
+- stdout: the validated JSON (single line), only when it passes the schema.
+- stderr: structured errors on failure, plus the raw model output for debugging.
+- Exit codes: **0** valid, **2** malformed schema, **3** model output was not JSON, **4** JSON didn't match the schema.
+
+Supported keywords: `type`, `properties`, `required`, `items`, `enum`. For richer validation, pipe the output through a dedicated validator.
 
 ### GitHub Action for PR Review
 

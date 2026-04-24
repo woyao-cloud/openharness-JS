@@ -25,6 +25,7 @@ import { GlobTool } from "./tools/GlobTool/index.js";
 import { GrepTool } from "./tools/GrepTool/index.js";
 import { ImageReadTool } from "./tools/ImageReadTool/index.js";
 import { KillProcessTool } from "./tools/KillProcessTool/index.js";
+import { ListMcpResourcesTool } from "./tools/ListMcpResourcesTool/index.js";
 import { LSTool } from "./tools/LSTool/index.js";
 import { MemoryTool } from "./tools/MemoryTool/index.js";
 import { MonitorTool } from "./tools/MonitorTool/index.js";
@@ -33,6 +34,7 @@ import { NotebookEditTool } from "./tools/NotebookEditTool/index.js";
 import { ParallelAgentTool } from "./tools/ParallelAgentTool/index.js";
 import { PipelineTool } from "./tools/PipelineTool/index.js";
 import { PowerShellTool } from "./tools/PowerShellTool/index.js";
+import { ReadMcpResourceTool } from "./tools/ReadMcpResourceTool/index.js";
 import { RemoteTriggerTool } from "./tools/RemoteTriggerTool/index.js";
 import { ScheduleWakeupTool } from "./tools/ScheduleWakeupTool/index.js";
 import { SendMessageTool } from "./tools/SendMessageTool/index.js";
@@ -110,6 +112,8 @@ export function getAllTools(): Tools {
     ScheduleWakeupTool,
     SessionSearchTool,
     TodoWriteTool,
+    ListMcpResourcesTool,
+    ReadMcpResourceTool,
   ];
 
   return [...core, ...extended.map((t) => new DeferredTool(t))];

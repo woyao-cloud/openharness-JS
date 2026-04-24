@@ -29,6 +29,7 @@ import type { Provider, ProviderConfig } from "./providers/base.js";
 import { getAllTools } from "./tools.js";
 import type { Message } from "./types/message.js";
 import type { PermissionMode } from "./types/permissions.js";
+import { validateAgainstJsonSchema } from "./utils/json-schema.js";
 
 const _require = createRequire(import.meta.url);
 const VERSION: string = (_require("../package.json") as { version: string }).version;
@@ -705,6 +706,9 @@ program
         model: resolvedModel,
       };
       const outputFormat = (opts.outputFormat as string) ?? "text";
+      // When --json-schema is set, suppress all streaming output — we emit
+      // only the final validated JSON (or a structured error) after the loop.
+      const jsonSchemaMode = !!opts.jsonSchema;
       let fullOutput = "";
       const toolResults: Array<{ tool: string; output: string; error: boolean | undefined }> = [];
       const callIdToName: Record<string, string> = {};
@@ -712,26 +716,62 @@ program
       for await (const event of query(opts.print as string, qConfig)) {
         if (event.type === "text_delta") {
           fullOutput += event.content;
-          if (outputFormat === "text") process.stdout.write(event.content);
-          else if (outputFormat === "stream-json") {
+          if (jsonSchemaMode) {
+            /* accumulate silently; emitted after validation below */
+          } else if (outputFormat === "text") {
+            process.stdout.write(event.content);
+          } else if (outputFormat === "stream-json") {
             console.log(JSON.stringify({ type: "text", content: event.content }));
           }
         } else if (event.type === "tool_call_start") {
           callIdToName[event.callId] = event.toolName;
-          if (outputFormat === "text") process.stderr.write(`[tool] ${event.toolName}\n`);
+          if (outputFormat === "text" && !jsonSchemaMode) process.stderr.write(`[tool] ${event.toolName}\n`);
         } else if (event.type === "tool_call_end") {
           toolResults.push({
             tool: callIdToName[event.callId] || "unknown",
             output: event.output,
             error: event.isError,
           });
-          if (outputFormat === "text" && event.isError) process.stderr.write(`[error] ${event.output}\n`);
+          if (outputFormat === "text" && !jsonSchemaMode && event.isError)
+            process.stderr.write(`[error] ${event.output}\n`);
         } else if (event.type === "error") {
-          if (outputFormat === "text") process.stderr.write(`[error] ${event.message}\n`);
+          if (outputFormat === "text" && !jsonSchemaMode) process.stderr.write(`[error] ${event.message}\n`);
         } else if (event.type === "turn_complete" && event.reason !== "completed") {
           process.exitCode = 1;
         }
       }
+
+      // --json-schema: parse the schema, parse the model output, validate, and
+      // emit only the validated JSON. Exit codes: 2 bad schema, 3 non-JSON
+      // output, 4 schema mismatch. Success exits 0.
+      if (jsonSchemaMode) {
+        const rawSchema = opts.jsonSchema as string;
+        let schema: Record<string, unknown>;
+        try {
+          schema = JSON.parse(rawSchema) as Record<string, unknown>;
+        } catch (e) {
+          process.stderr.write(`[error] --json-schema is not valid JSON: ${(e as Error).message}\n`);
+          process.exit(2);
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(fullOutput.trim());
+        } catch (e) {
+          process.stderr.write(`[error] Model output is not valid JSON: ${(e as Error).message}\n`);
+          const preview = fullOutput.length > 500 ? `${fullOutput.slice(0, 500)}...` : fullOutput;
+          process.stderr.write(`[raw] ${preview}\n`);
+          process.exit(3);
+        }
+        const validation = validateAgainstJsonSchema(parsed, schema);
+        if (!validation.ok) {
+          process.stderr.write(`[error] Output does not match schema:\n`);
+          for (const err of validation.errors) process.stderr.write(`  - ${err}\n`);
+          process.exit(4);
+        }
+        console.log(JSON.stringify(parsed));
+        process.exit(0);
+      }
+
       if (outputFormat === "json") {
         console.log(JSON.stringify({ output: fullOutput, tools: toolResults }, null, 2));
       } else if (outputFormat === "text") {

@@ -186,6 +186,9 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 | Memory | 低 | 保存/列出/搜索持久化记忆 |
 | Skill | 低 | 调用 .oh/skills/ 下的技能 |
 | ToolSearch | 低 | 按描述查找工具 |
+| **MCP** | | |
+| ListMcpResources | 低 | 列出已连接 MCP 服务器上的资源 |
+| ReadMcpResource | 低 | 按 URI 读取指定的 MCP 资源 |
 | **Git 工作树** | | |
 | EnterWorktree | 中 | 创建隔离的 git worktree |
 | ExitWorktree | 中 | 移除一个 git worktree |
@@ -500,6 +503,23 @@ oh run "add error handling to api.ts" --json    # JSON 输出
 cat error.log | oh run "what's wrong here?"
 git diff | oh run "review these changes"
 ```
+
+### 使用 `--json-schema` 约束结构化输出
+
+按 JSON Schema 约束模型输出。适用于需要以编程方式解析模型输出、避免正则启发式的 CI 脚本：
+
+```bash
+oh -p "output {\"ok\": true, \"count\": 3} as JSON" \
+  --trust \
+  --json-schema '{"type":"object","properties":{"ok":{"type":"boolean"},"count":{"type":"integer"}},"required":["ok","count"]}'
+```
+
+行为：
+- stdout：校验通过时输出单行的 JSON。
+- stderr：失败时输出结构化错误，并附带原始模型输出以便调试。
+- 退出码：**0** 校验通过，**2** schema 本身不合法，**3** 模型输出不是合法 JSON，**4** JSON 不匹配 schema。
+
+支持的关键字：`type`、`properties`、`required`、`items`、`enum`。如需更完整的校验，请通过管道交给专用校验器。
 
 ### 用于 PR 审查的 GitHub Action
 

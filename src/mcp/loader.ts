@@ -128,6 +128,24 @@ export async function listMcpResources(): Promise<
   return resources;
 }
 
+/**
+ * Read an MCP resource by URI. When `server` is given, only that server is
+ * consulted (and a mismatch returns null even if another server happens to
+ * expose the same URI). When `server` is omitted, the first client whose
+ * `readResource(uri)` succeeds wins — subsequent clients aren't queried.
+ */
+export async function readMcpResource(uri: string, server?: string): Promise<string | null> {
+  const candidates = server ? connectedClients.filter((c) => c.name === server) : connectedClients;
+  for (const client of candidates) {
+    try {
+      return await client.readResource(uri);
+    } catch {
+      /* try the next one */
+    }
+  }
+  return null;
+}
+
 /** Resolve a @mention to MCP resource content. Returns content or null. */
 export async function resolveMcpMention(mention: string): Promise<string | null> {
   for (const client of connectedClients) {
