@@ -1,5 +1,5 @@
 /**
- * Info commands — /help, /cost, /status, /config, /files, /model, /memory, /doctor, /context, /mcp, /mcp-registry, /init
+ * Info commands — /help, /cost, /status, /config, /files, /model, /memory, /doctor, /hooks, /context, /mcp, /mcp-registry, /init
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -9,10 +9,12 @@ import { gitBranch, isGitRepo, isInMergeOrRebase } from "../git/index.js";
 import { readOhConfig } from "../harness/config.js";
 import { estimateMessageTokens } from "../harness/context-warning.js";
 import { getContextWindow } from "../harness/cost.js";
+import { getHooks } from "../harness/hooks.js";
 import { normalizeMcpConfig } from "../mcp/config-normalize.js";
 import { connectedMcpServers } from "../mcp/loader.js";
 import { getAuthStatus } from "../mcp/oauth.js";
 import { getRouteSelection } from "../providers/router.js";
+import { formatHooksReport } from "./hooks-report.js";
 import { mcpLoginHandler, mcpLogoutHandler } from "./mcp-auth.js";
 import type { CommandHandler } from "./types.js";
 
@@ -47,6 +49,7 @@ export function registerInfoCommands(
         "model",
         "memory",
         "doctor",
+        "hooks",
         "context",
         "mcp",
         "mcp-login",
@@ -361,6 +364,10 @@ export function registerInfoCommands(
     }
 
     return { output: lines.join("\n"), handled: true };
+  });
+
+  register("hooks", "List loaded hooks grouped by event", () => {
+    return { output: formatHooksReport(getHooks()), handled: true };
   });
 
   register("context", "Show context window usage breakdown", (_args, ctx) => {

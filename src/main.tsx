@@ -18,6 +18,7 @@ import { Command, Option } from "commander";
 import { render } from "ink";
 import { parseSettingSources, readOhConfig } from "./harness/config.js";
 import { emitHook, setHookDecisionObserver } from "./harness/hooks.js";
+import { languageToPrompt } from "./harness/language.js";
 import { loadActiveMemories, memoriesToPrompt, userProfileToPrompt } from "./harness/memory.js";
 import { detectProject, projectContextToPrompt } from "./harness/onboarding.js";
 import { discoverSkills, skillsToPrompt } from "./harness/plugins.js";
@@ -114,6 +115,10 @@ function buildSystemPrompt(model?: string): string {
         mcpInstructions.join("\n\n"),
     );
   }
+
+  // Response-language directive (last — it should apply to everything above)
+  const languagePrompt = languageToPrompt(readOhConfig()?.language);
+  if (languagePrompt) parts.push(languagePrompt);
 
   return parts.join("\n\n");
 }

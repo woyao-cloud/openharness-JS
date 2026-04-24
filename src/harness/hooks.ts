@@ -68,7 +68,7 @@ export type HookContext = {
 
 let cachedHooks: HooksConfig | null | undefined;
 
-function getHooks(): HooksConfig | null {
+export function getHooks(): HooksConfig | null {
   if (cachedHooks !== undefined) return cachedHooks;
   const cfg = readOhConfig();
   cachedHooks = cfg?.hooks ?? null;

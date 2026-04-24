@@ -227,6 +227,8 @@ Type these during a chat session. Aliases: `/q` exit, `/h` help, `/c` commit, `/
 | `/files` | List files in context |
 | `/model <name>` | Switch model mid-session |
 | `/memory` | View and search memories |
+| `/doctor` | Run diagnostic health checks |
+| `/hooks` | List loaded hooks grouped by event |
 
 **Settings:**
 | Command | Description |
@@ -590,6 +592,7 @@ provider: ollama
 model: llama3
 permissionMode: ask
 theme: dark
+language: zh-CN   # optional — respond in this language (code stays as-is)
 ```
 
 Then per-project configs only need what's different:

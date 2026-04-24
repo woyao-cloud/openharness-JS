@@ -227,6 +227,8 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 | `/files` | 列出上下文中的文件 |
 | `/model <name>` | 会话中切换模型 |
 | `/memory` | 查看并搜索记忆 |
+| `/doctor` | 运行诊断健康检查 |
+| `/hooks` | 按事件列出已加载的钩子 |
 
 **设置：**
 | 命令 | 描述 |
@@ -590,6 +592,7 @@ provider: ollama
 model: llama3
 permissionMode: ask
 theme: dark
+language: zh-CN   # 可选 —— 模型会用该语言回复（代码、命令、路径保持原样）
 ```
 
 之后项目配置只需写不同之处：

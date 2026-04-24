@@ -97,6 +97,12 @@ export type OhConfig = {
   model: string;
   permissionMode: PermissionMode;
   theme?: "dark" | "light";
+  /**
+   * Response language — when set, the model responds to the user in this language
+   * while leaving code, commands, and file paths in their original form. Accepts
+   * any name the model understands (e.g., "zh-CN", "Japanese", "Spanish").
+   */
+  language?: string;
   apiKey?: string;
   baseUrl?: string;
   mcpServers?: McpServerConfig[];

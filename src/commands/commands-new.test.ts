@@ -39,6 +39,22 @@ test("/doctor shows diagnostic info", async () => {
   assert.ok(result.output.includes("Session"));
 });
 
+// ── /hooks ──
+
+test("/hooks is dispatched and returns a handled report", async () => {
+  const result = await processSlashCommand("/hooks", makeCtx());
+  assert.ok(result);
+  assert.equal(result.handled, true);
+  assert.ok(result.output.includes("Loaded Hooks"));
+});
+
+test("/help lists /hooks in the Info category", async () => {
+  const result = await processSlashCommand("/help", makeCtx());
+  assert.ok(result);
+  assert.equal(result.handled, true);
+  assert.ok(result.output.includes("hooks"));
+});
+
 // ── /context ──
 
 test("/context shows context window breakdown", async () => {
