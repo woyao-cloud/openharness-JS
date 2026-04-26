@@ -15,11 +15,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parse, stringify } from "yaml";
+import type { PermissionCallback } from "../permissions.js";
 import type { ToolDefinition } from "../tools.js";
 import { InProcessMcpServer } from "./mcp-server.js";
+import { InProcessPermissionServer } from "./permission-server.js";
 
 export interface ToolsRuntimeOptions {
   tools?: ToolDefinition[];
+  canUseTool?: PermissionCallback;
   baseCwd?: string;
   serverName?: string;
 }
@@ -27,6 +30,7 @@ export interface ToolsRuntimeOptions {
 export class ToolsRuntime {
   constructor(
     private readonly mcpServer: InProcessMcpServer | null,
+    private readonly permissionServer: InProcessPermissionServer | null,
     private readonly tempDir: string,
   ) {}
 
@@ -39,6 +43,9 @@ export class ToolsRuntime {
   async close(): Promise<void> {
     if (this.mcpServer) {
       await this.mcpServer.close();
+    }
+    if (this.permissionServer) {
+      await this.permissionServer.close();
     }
     await rm(this.tempDir, { recursive: true, force: true });
   }
@@ -62,11 +69,16 @@ function readBaseConfig(baseCwd: string | undefined): Record<string, unknown> {
 export async function prepareToolsRuntime(options: ToolsRuntimeOptions): Promise<ToolsRuntime> {
   const tempDir = await mkdtemp(path.join(tmpdir(), "oh-ts-tools-"));
   let mcpServer: InProcessMcpServer | null = null;
+  let permissionServer: InProcessPermissionServer | null = null;
 
   try {
     if (options.tools && options.tools.length > 0) {
       mcpServer = new InProcessMcpServer(options.tools, { name: options.serverName });
       await mcpServer.start();
+    }
+    if (options.canUseTool) {
+      permissionServer = new InProcessPermissionServer(options.canUseTool);
+      await permissionServer.start();
     }
 
     const base = readBaseConfig(options.baseCwd);
@@ -85,15 +97,21 @@ export async function prepareToolsRuntime(options: ToolsRuntimeOptions): Promise
         },
       ];
     }
+    if (permissionServer) {
+      merged.hooks = {
+        permissionRequest: [{ http: permissionServer.url }],
+      };
+    }
 
     const ohDir = path.join(tempDir, ".oh");
     await mkdir(ohDir, { recursive: true });
     await writeFile(path.join(ohDir, "config.yaml"), stringify(merged), "utf8");
   } catch (err) {
     if (mcpServer) await mcpServer.close().catch(() => {});
+    if (permissionServer) await permissionServer.close().catch(() => {});
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
     throw err;
   }
 
-  return new ToolsRuntime(mcpServer, tempDir);
+  return new ToolsRuntime(mcpServer, permissionServer, tempDir);
 }

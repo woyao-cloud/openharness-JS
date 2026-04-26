@@ -1,5 +1,19 @@
 # @zhijiewang/openharness-sdk — Changelog
 
+## 0.4.0 (unreleased)
+
+Mirrors Python SDK v0.4.0 — `canUseTool` permission callback + turn-boundary events.
+
+- `canUseTool: PermissionCallback` option on `query()` and `OpenHarnessClient`. The SDK starts an in-process HTTP server, injects a `permissionRequest` HTTP hook into the ephemeral `.oh/config.yaml`, and routes each permission check through the user's callback. Sync and async callbacks both work.
+- Failure modes all surface as `decision: "deny"` (fail-closed):
+  - Callback throws ⇒ `{decision:"deny", reason:"callback error: …"}`
+  - Callback exceeds the 30 s default timeout ⇒ `{decision:"deny", reason:"callback timeout"}`
+  - Callback returns an unrecognised value ⇒ `{decision:"deny", reason:"…"}`
+- Public types in the new `permissions` module (re-exported from the package root): `PermissionCallback`, `PermissionContext`, `PermissionDecision`, `PermissionDecisionObject`, `PermissionVerdict`.
+- `tools` and `canUseTool` can be set together — the SDK starts both servers and points the CLI's ephemeral config at both.
+- Existing `TurnStart` / `TurnStop` / `HookDecision` event types (parsed since v0.1) are now meaningfully populated by the CLI in this scenario.
+- Requires the `oh` CLI shipped in `@zhijiewang/openharness` v2.16.0+ (turn-boundary hooks + richer HTTP hook envelope).
+
 ## 0.3.0 (unreleased)
 
 Mirrors Python SDK v0.3.0 — custom TypeScript tools via an in-process MCP server.

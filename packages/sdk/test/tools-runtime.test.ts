@@ -103,4 +103,41 @@ hooks:
       await runtime.close();
     }
   });
+
+  test("canUseTool injects a hooks.permissionRequest HTTP entry pointing at the in-process server", async () => {
+    const runtime = await prepareToolsRuntime({
+      canUseTool: () => "deny",
+      baseCwd,
+    });
+    try {
+      const cfg = parse(readFileSync(path.join(runtime.cwd, ".oh", "config.yaml"), "utf8")) as Record<string, unknown>;
+      assert.ok(cfg.hooks && typeof cfg.hooks === "object", "hooks block should be present");
+      const hooks = cfg.hooks as Record<string, unknown>;
+      const entries = hooks.permissionRequest as Array<Record<string, unknown>>;
+      assert.equal(entries.length, 1);
+      assert.match(String(entries[0]?.http), /^http:\/\/127\.0\.0\.1:\d+\/permission$/);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  test("tools + canUseTool together inject both mcpServers and hooks", async () => {
+    const echo = tool({
+      name: "echo",
+      inputSchema: z.object({ msg: z.string() }),
+      handler: ({ msg }) => msg,
+    });
+    const runtime = await prepareToolsRuntime({
+      tools: [echo],
+      canUseTool: async () => ({ decision: "allow" }),
+      baseCwd,
+    });
+    try {
+      const cfg = parse(readFileSync(path.join(runtime.cwd, ".oh", "config.yaml"), "utf8")) as Record<string, unknown>;
+      assert.ok(Array.isArray(cfg.mcpServers));
+      assert.ok(cfg.hooks && typeof cfg.hooks === "object");
+    } finally {
+      await runtime.close();
+    }
+  });
 });

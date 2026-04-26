@@ -108,7 +108,37 @@ Handler return shapes:
 
 Requires `@zhijiewang/openharness` v2.11.0+ (HTTP MCP servers).
 
-## API (v0.3)
+## Custom permission gate
+
+Pass `canUseTool: <callback>` to make every permission check round-trip through your code. Useful for notebook policies, CI gates, or any per-tool decision logic:
+
+```ts
+import { OpenHarnessClient, type PermissionContext } from "@zhijiewang/openharness-sdk";
+
+async function gate(ctx: PermissionContext) {
+  if (ctx.toolName === "Bash") {
+    return { decision: "deny", reason: "Bash is not allowed in this notebook" } as const;
+  }
+  return "allow";
+}
+
+await using client = new OpenHarnessClient({ model: "ollama/llama3", canUseTool: gate });
+for await (const event of client.send("List the current directory")) {
+  if (event.type === "hook_decision") {
+    console.log("decision:", event.decision, event.reason);
+  }
+}
+```
+
+A callback may return:
+- a bare verdict string: `"allow"`, `"deny"`, or `"ask"` (fall through to the CLI's interactive prompt);
+- a decision object: `{ decision: "allow", reason: "trusted" }`.
+
+Sync and async callbacks both work. Exceptions and timeouts default to `deny` (fail-closed) — a misbehaving gate can never silently allow.
+
+Requires `@zhijiewang/openharness` v2.16.0+ (turn-boundary hooks + richer HTTP hook envelope).
+
+## API (v0.4)
 
 ### `query(prompt, options?) → AsyncGenerator<Event>`
 
@@ -125,7 +155,8 @@ Run a single prompt through `oh` and stream events as they arrive.
 | `cwd` | `string` | current dir | Working directory for the spawned CLI. |
 | `env` | `Record<string, string>` | — | Env vars merged on top of `process.env`. |
 | `ohBinary` | `string` | from `OH_BINARY` / PATH | Override the `oh` binary path. |
-| `tools` | `ToolDefinition[]` | — | Custom TypeScript tools to expose to the agent. See the section above. |
+| `tools` | `ToolDefinition[]` | — | Custom TypeScript tools to expose to the agent. See "Custom TypeScript tools" above. |
+| `canUseTool` | `PermissionCallback` | — | Permission gate. See "Custom permission gate" above. Requires CLI v2.16.0+. |
 
 Breaking out of the iterator early (`break`) terminates the subprocess (graceful `SIGTERM` with a 5 s grace window before `SIGKILL`).
 
@@ -158,8 +189,8 @@ The Python SDK shipped a v0.5 surface in five steps; this TypeScript SDK follows
 |---|---|
 | 0.1 | `query()`, typed events, error taxonomy |
 | 0.2 | `OpenHarnessClient` stateful sessions (`oh session`) with multi-turn `send()`, `interrupt()`, `Symbol.asyncDispose` |
-| **0.3** *(this release)* | Custom tools via in-process MCP server (`tool()` + `tools: [...]`) |
-| 0.4 | `canUseTool` permission callback + turn-boundary events |
+| 0.3 | Custom tools via in-process MCP server (`tool()` + `tools: [...]`) |
+| **0.4** *(this release)* | `canUseTool` permission callback + turn-boundary events |
 | 0.5 | `resume`, `settingSources`, `OpenHarnessOptions` typed bundle |
 
 ## Relationship to `@zhijiewang/openharness`

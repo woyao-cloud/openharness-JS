@@ -84,9 +84,10 @@ export class OpenHarnessClient {
     const argv = [...handle.prefixArgs, ...buildSessionArgv(this.options)];
     const env = { ...process.env, ...(this.options.env ?? {}) };
     let effectiveCwd = this.options.cwd;
-    if (this.options.tools && this.options.tools.length > 0) {
+    if ((this.options.tools && this.options.tools.length > 0) || this.options.canUseTool) {
       this.toolsRuntime = await prepareToolsRuntime({
         tools: this.options.tools,
+        canUseTool: this.options.canUseTool,
         baseCwd: this.options.cwd,
       });
       effectiveCwd = this.toolsRuntime.cwd;

@@ -52,8 +52,12 @@ export async function* query(prompt: string, options: OpenHarnessOptions = {}): 
 
   let runtime: ToolsRuntime | null = null;
   let effectiveCwd = options.cwd;
-  if (options.tools && options.tools.length > 0) {
-    runtime = await prepareToolsRuntime({ tools: options.tools, baseCwd: options.cwd });
+  if ((options.tools && options.tools.length > 0) || options.canUseTool) {
+    runtime = await prepareToolsRuntime({
+      tools: options.tools,
+      canUseTool: options.canUseTool,
+      baseCwd: options.cwd,
+    });
     effectiveCwd = runtime.cwd;
   }
 

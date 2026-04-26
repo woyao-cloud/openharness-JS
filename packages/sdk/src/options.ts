@@ -6,6 +6,7 @@
  * conversion is needed here.
  */
 
+import type { PermissionCallback } from "./permissions.js";
 import type { ToolDefinition } from "./tools.js";
 
 export type PermissionMode = "ask" | "trust" | "deny" | "acceptEdits" | "plan" | "auto" | "bypassPermissions";
@@ -36,4 +37,13 @@ export interface OpenHarnessOptions {
    * it. Use {@link tool} for ergonomic construction.
    */
   tools?: ToolDefinition[];
+  /**
+   * Permission gate. When set, the SDK starts an in-process HTTP server and
+   * routes every `permissionRequest` hook through this callback. Sync and
+   * async callbacks both work. Failures (throw / timeout / unrecognised
+   * return) all surface as `deny` — fail-closed.
+   *
+   * Requires the `oh` CLI shipped in `@zhijiewang/openharness` v2.16.0+.
+   */
+  canUseTool?: PermissionCallback;
 }
