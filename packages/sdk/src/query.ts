@@ -10,6 +10,7 @@ import { type Event, parseEvent } from "./events.js";
 import { findOhBinary } from "./internal/binary.js";
 import { splitNdjson } from "./internal/ndjson.js";
 import { sendKill, sendTerminate } from "./internal/signals.js";
+import { prepareToolsRuntime, type ToolsRuntime } from "./internal/tools-runtime.js";
 import type { OpenHarnessOptions } from "./options.js";
 
 const DEFAULT_MAX_TURNS = 20;
@@ -49,9 +50,16 @@ export async function* query(prompt: string, options: OpenHarnessOptions = {}): 
   const argv = [...handle.prefixArgs, ...buildArgv(prompt, options)];
   const env = { ...process.env, ...(options.env ?? {}) };
 
+  let runtime: ToolsRuntime | null = null;
+  let effectiveCwd = options.cwd;
+  if (options.tools && options.tools.length > 0) {
+    runtime = await prepareToolsRuntime({ tools: options.tools, baseCwd: options.cwd });
+    effectiveCwd = runtime.cwd;
+  }
+
   const proc = spawn(handle.command, argv, {
     stdio: ["ignore", "pipe", "pipe"],
-    cwd: options.cwd,
+    cwd: effectiveCwd,
     env,
     windowsHide: true,
   });
@@ -91,6 +99,7 @@ export async function* query(prompt: string, options: OpenHarnessOptions = {}): 
     } else {
       await exitPromise;
     }
+    if (runtime) await runtime.close();
   }
 
   // Only surface a non-zero exit when the stream completed naturally — if the

@@ -6,6 +6,8 @@
  * conversion is needed here.
  */
 
+import type { ToolDefinition } from "./tools.js";
+
 export type PermissionMode = "ask" | "trust" | "deny" | "acceptEdits" | "plan" | "auto" | "bypassPermissions";
 
 export interface OpenHarnessOptions {
@@ -27,4 +29,11 @@ export interface OpenHarnessOptions {
   env?: Record<string, string>;
   /** Optional override for the `oh` binary path. Equivalent to `OH_BINARY=`. */
   ohBinary?: string;
+  /**
+   * TypeScript tools to expose to the agent for the lifetime of this call.
+   * The SDK starts an in-process MCP HTTP server, registers each tool, and
+   * writes an ephemeral `.oh/config.yaml` pointing the spawned `oh` CLI at
+   * it. Use {@link tool} for ergonomic construction.
+   */
+  tools?: ToolDefinition[];
 }

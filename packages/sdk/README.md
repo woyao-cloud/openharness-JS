@@ -72,7 +72,43 @@ The client keeps a single `oh session` subprocess warm across calls. Concurrent 
 
 `client.interrupt()` aborts an in-flight prompt by signalling the subprocess. Today the CLI treats this as termination, so subsequent `send()`s on the same client will fail.
 
-## API (v0.2)
+## Custom TypeScript tools
+
+Expose your own functions to the agent. Each tool needs a name, a Zod input schema, and a handler:
+
+```ts
+import { z } from "zod";
+import { OpenHarnessClient, tool } from "@zhijiewang/openharness-sdk";
+
+const getWeather = tool({
+  name: "get_weather",
+  description: "Fetch the current weather for a city.",
+  inputSchema: z.object({ city: z.string() }),
+  handler: async ({ city }) => `Sunny in ${city}, 22°C`,
+});
+
+await using client = new OpenHarnessClient({
+  model: "ollama/llama3",
+  tools: [getWeather],
+});
+
+for await (const event of client.send("What's the weather in Paris?")) {
+  if (event.type === "tool_end") console.log(event.tool, event.output);
+}
+```
+
+Under the hood the SDK starts an in-process MCP HTTP server on a random `127.0.0.1` port, writes an ephemeral `.oh/config.yaml` pointing at it, and runs `oh` with that temp dir as its `cwd`. Any existing user config at the caller-supplied `cwd` is preserved (model, provider, permissionMode, …); only `mcpServers` and `hooks` are SDK-owned.
+
+Handler return shapes:
+
+- `string` — sent back as text content.
+- plain object — JSON-stringified for text content, plus the original object as `structuredContent`.
+- `undefined` — empty text result.
+- thrown error — surfaced as MCP `isError: true` with the message included.
+
+Requires `@zhijiewang/openharness` v2.11.0+ (HTTP MCP servers).
+
+## API (v0.3)
 
 ### `query(prompt, options?) → AsyncGenerator<Event>`
 
@@ -89,6 +125,7 @@ Run a single prompt through `oh` and stream events as they arrive.
 | `cwd` | `string` | current dir | Working directory for the spawned CLI. |
 | `env` | `Record<string, string>` | — | Env vars merged on top of `process.env`. |
 | `ohBinary` | `string` | from `OH_BINARY` / PATH | Override the `oh` binary path. |
+| `tools` | `ToolDefinition[]` | — | Custom TypeScript tools to expose to the agent. See the section above. |
 
 Breaking out of the iterator early (`break`) terminates the subprocess (graceful `SIGTERM` with a 5 s grace window before `SIGKILL`).
 
@@ -120,8 +157,8 @@ The Python SDK shipped a v0.5 surface in five steps; this TypeScript SDK follows
 | Version | Adds |
 |---|---|
 | 0.1 | `query()`, typed events, error taxonomy |
-| **0.2** *(this release)* | `OpenHarnessClient` stateful sessions (`oh session`) with multi-turn `send()`, `interrupt()`, `Symbol.asyncDispose` |
-| 0.3 | Custom tools via in-process MCP server (`tools: [...]`) |
+| 0.2 | `OpenHarnessClient` stateful sessions (`oh session`) with multi-turn `send()`, `interrupt()`, `Symbol.asyncDispose` |
+| **0.3** *(this release)* | Custom tools via in-process MCP server (`tool()` + `tools: [...]`) |
 | 0.4 | `canUseTool` permission callback + turn-boundary events |
 | 0.5 | `resume`, `settingSources`, `OpenHarnessOptions` typed bundle |
 

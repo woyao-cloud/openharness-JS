@@ -17,6 +17,7 @@ import { findOhBinary } from "./internal/binary.js";
 import { Mutex } from "./internal/mutex.js";
 import { splitNdjson } from "./internal/ndjson.js";
 import { sendInterrupt, sendKill, sendTerminate } from "./internal/signals.js";
+import { prepareToolsRuntime, type ToolsRuntime } from "./internal/tools-runtime.js";
 import type { OpenHarnessOptions } from "./options.js";
 
 const DEFAULT_PERMISSION_MODE = "trust" as const;
@@ -53,6 +54,7 @@ export class OpenHarnessClient {
   private readyReject!: (err: Error) => void;
   private readonly readyPromise: Promise<void>;
   private _sessionId: string | null = null;
+  private toolsRuntime: ToolsRuntime | null = null;
 
   constructor(options: OpenHarnessOptions = {}) {
     this.options = options;
@@ -81,10 +83,18 @@ export class OpenHarnessClient {
     const handle = findOhBinary(this.options.ohBinary);
     const argv = [...handle.prefixArgs, ...buildSessionArgv(this.options)];
     const env = { ...process.env, ...(this.options.env ?? {}) };
+    let effectiveCwd = this.options.cwd;
+    if (this.options.tools && this.options.tools.length > 0) {
+      this.toolsRuntime = await prepareToolsRuntime({
+        tools: this.options.tools,
+        baseCwd: this.options.cwd,
+      });
+      effectiveCwd = this.toolsRuntime.cwd;
+    }
 
     const proc = spawn(handle.command, argv, {
       stdio: ["pipe", "pipe", "pipe"],
-      cwd: this.options.cwd,
+      cwd: effectiveCwd,
       env,
       windowsHide: true,
     });
@@ -268,6 +278,10 @@ export class OpenHarnessClient {
       // End any queues that are still waiting.
       for (const q of this.queues.values()) q.end();
       this.queues.clear();
+      if (this.toolsRuntime) {
+        await this.toolsRuntime.close().catch(() => {});
+        this.toolsRuntime = null;
+      }
     }
   }
 

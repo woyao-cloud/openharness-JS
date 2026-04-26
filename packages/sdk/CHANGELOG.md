@@ -1,5 +1,17 @@
 # @zhijiewang/openharness-sdk — Changelog
 
+## 0.3.0 (unreleased)
+
+Mirrors Python SDK v0.3.0 — custom TypeScript tools via an in-process MCP server.
+
+- `tool({ name, description?, inputSchema, handler })` — define a custom tool with a Zod input schema. Strong typing flows from the schema to the `handler` argument.
+- `tools: [...]` option on both `query()` and `OpenHarnessClient`. The SDK starts an in-process Streamable-HTTP MCP server (built on `@modelcontextprotocol/sdk`), registers each tool with a JSON Schema generated from its Zod schema (via `zod-to-json-schema`), and writes an ephemeral `.oh/config.yaml` pointing the spawned `oh` CLI at the server.
+- Existing user `.oh/config.yaml` at the caller-supplied `cwd` is preserved (model, provider, permissionMode, …); only `mcpServers` and `hooks` are SDK-owned for the lifetime of the runtime.
+- Temp dir + MCP server are torn down when the iterator ends or the client closes.
+- Handler return values are normalized: strings ⇒ text content; objects ⇒ JSON text + structured content; thrown errors ⇒ MCP `isError: true`.
+- New deps: `@modelcontextprotocol/sdk ^1.29.0`, `yaml ^2.7.0`, `zod ^3.24.0` (peer), `zod-to-json-schema ^3.24.0`.
+- Requires the `oh` CLI shipped in `@zhijiewang/openharness` v2.11.0 or newer (the version that introduced HTTP MCP servers).
+
 ## 0.2.0 (unreleased)
 
 Mirrors Python SDK v0.2.0 — long-lived stateful sessions.
