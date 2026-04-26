@@ -241,6 +241,7 @@ OH 注册了 80+ 个斜杠命令；下表只列出最常用的一部分。在会
 | `/memory` | 查看并搜索记忆 |
 | `/doctor` | 运行诊断健康检查 |
 | `/hooks` | 按事件列出已加载的钩子 |
+| `/reload-plugins` | 不重启会话即可热重载插件、技能、钩子和 MCP 服务器连接 |
 
 **设置：**
 | 命令 | 描述 |
@@ -298,7 +299,7 @@ hooks:
     command: "scripts/cleanup.sh"
 ```
 
-**事件类型**（共 17 个）：
+**事件类型**（共 23 个）：
 
 | 事件 | 触发时机 | 是否可阻止 |
 |-------|---------------|------------|
@@ -307,10 +308,13 @@ hooks:
 | `turnStart` | 顶层代理回合开始（用户提示词被接受后） | — |
 | `turnStop` | 顶层代理回合结束（对应 Claude Code 的 `Stop`） | — |
 | `userPromptSubmit` | 用户提示词到达 LLM 之前 | 是 —— `decision: deny` |
+| `userPromptExpansion` | 斜杠命令展开成模型提示词时（用于审计追踪） | — |
 | `preToolUse` | 工具调用之前 | 是 —— 退出码 1 / `decision: deny` |
 | `postToolUse` | 工具成功执行之后 | — |
 | `postToolUseFailure` | 工具抛错或返回 `isError: true` | — |
+| `postToolBatch` | 一个回合内全部工具调用都完成后、下一次模型调用之前 | — |
 | `permissionRequest` | 工具需要授权时（`preToolUse` 与询问之间） | 是 —— `decision: allow\|deny\|ask` |
+| `permissionDenied` | 工具调用被拒绝时（钩子 / 用户 / 无头 / 策略） | — |
 | `fileChanged` | 工具修改文件之后 | — |
 | `cwdChanged` | 工作目录变更之后 | — |
 | `subagentStart` | 子代理被派生 | — |
@@ -319,6 +323,9 @@ hooks:
 | `postCompact` | 对话压缩之后 | — |
 | `configChange` | 会话过程中 `.oh/config.yaml` 被修改 | — |
 | `notification` | 通知被派发 | — |
+| `taskCreated` | `TaskCreate` 持久化新任务后 | — |
+| `taskCompleted` | `TaskUpdate` 将任务状态切换为 `completed` 时 | — |
+| `instructionsLoaded` | `loadRulesAsPrompt` 重新构建系统提示并加载规则之后 | — |
 
 实时查看：在会话中运行 `/hooks` 可以按事件分组查看当前已加载的钩子。
 
@@ -389,6 +396,15 @@ mcpServers:
 ```
 
 MCP 工具会与内置工具并列出现。`/status` 会显示已连接的服务器。
+
+**MCP 服务器提示词作为斜杠命令** —— 实现了 `prompts/list` 的服务器（如 GitHub、Sentry、Linear）会自动把它们的提示词暴露为 `/<server>:<prompt>` 斜杠命令。参数采用 `key=value` 语法，支持加引号：
+
+```
+/github:summarize-pr repo=acme/widget pr=42
+/sentry:triage-issue issue=ABC-123 severity="high priority"
+```
+
+提示词模板声明的 required 参数缺失时会直接报用法错误（不会调用模型）。修改 MCP 配置后运行 `/reload-plugins` 即可重新发现提示词。
 
 ### 远程 MCP 服务器（HTTP / SSE）
 
@@ -535,6 +551,10 @@ oh run "add error handling to api.ts" --json    # JSON 输出
 # 通过 stdin 输入
 cat error.log | oh run "what's wrong here?"
 git diff | oh run "review these changes"
+
+# 会话总成本硬上限 —— 达到阈值时代理会以 reason: "budget_exceeded" 终止
+oh run "review the diff" --model claude-sonnet-4-6 --max-budget-usd 0.50
+oh session --model gpt-4o --max-budget-usd 5
 ```
 
 ### 使用 `--json-schema` 约束结构化输出

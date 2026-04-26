@@ -241,6 +241,7 @@ Over 80 commands are registered. The most-used ones are grouped below; see `/hel
 | `/memory` | View and search memories |
 | `/doctor` | Run diagnostic health checks |
 | `/hooks` | List loaded hooks grouped by event |
+| `/reload-plugins` | Hot-reload plugins, skills, hooks, and MCP server connections without restarting the session |
 
 **Settings:**
 | Command | Description |
@@ -298,7 +299,7 @@ hooks:
     command: "scripts/cleanup.sh"
 ```
 
-**Event types** (17 total):
+**Event types** (23 total):
 
 | Event | When it fires | Can block? |
 |-------|---------------|------------|
@@ -307,10 +308,13 @@ hooks:
 | `turnStart` | Top-level agent turn begins (after user prompt accepted) | — |
 | `turnStop` | Top-level agent turn ends (mirrors Claude Code's `Stop`) | — |
 | `userPromptSubmit` | Before user prompt reaches the LLM | yes — `decision: deny` |
+| `userPromptExpansion` | Slash command produces an expanded prompt (audit trail) | — |
 | `preToolUse` | Before each tool call | yes — exit code 1 / `decision: deny` |
 | `postToolUse` | After successful tool execution | — |
 | `postToolUseFailure` | After tool throws or returns `isError: true` | — |
+| `postToolBatch` | Once after a turn's full set of tool calls all resolve, before the next model call | — |
 | `permissionRequest` | When a tool needs approval (between `preToolUse` and the prompt) | yes — `decision: allow\|deny\|ask` |
+| `permissionDenied` | When a tool call is denied (hook / user / headless / policy) | — |
 | `fileChanged` | After a tool modifies a file | — |
 | `cwdChanged` | After working directory changes | — |
 | `subagentStart` | A sub-agent is spawned | — |
@@ -319,6 +323,9 @@ hooks:
 | `postCompact` | After conversation compaction | — |
 | `configChange` | `.oh/config.yaml` is modified during the session | — |
 | `notification` | A notification is dispatched | — |
+| `taskCreated` | `TaskCreate` persists a new task | — |
+| `taskCompleted` | `TaskUpdate` transitions a task to `completed` | — |
+| `instructionsLoaded` | `loadRulesAsPrompt` rebuilt the system prompt with rules in scope | — |
 
 Live introspection: run `/hooks` in-session to see exactly which hooks are loaded, grouped by event.
 
@@ -389,6 +396,15 @@ mcpServers:
 ```
 
 MCP tools appear alongside built-in tools. `/status` shows connected servers.
+
+**MCP server prompts as slash commands** — servers that expose `prompts/list` (e.g., GitHub, Sentry, Linear) get their prompts surfaced as `/<server>:<prompt>` slash commands automatically. Arguments use a `key=value` syntax with quoting:
+
+```
+/github:summarize-pr repo=acme/widget pr=42
+/sentry:triage-issue issue=ABC-123 severity="high priority"
+```
+
+Required arguments declared by the prompt template surface a usage error if missing (no model call). Run `/reload-plugins` to re-discover prompts after editing your MCP config.
 
 ### Remote MCP servers (HTTP / SSE)
 
@@ -535,6 +551,10 @@ oh run "add error handling to api.ts" --json    # JSON output
 # Pipe stdin
 cat error.log | oh run "what's wrong here?"
 git diff | oh run "review these changes"
+
+# Hard cap on session cost — agent halts at the threshold with reason: "budget_exceeded"
+oh run "review the diff" --model claude-sonnet-4-6 --max-budget-usd 0.50
+oh session --model gpt-4o --max-budget-usd 5
 ```
 
 ### Structured output with `--json-schema`
