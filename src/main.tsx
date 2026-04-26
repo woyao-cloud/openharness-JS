@@ -31,6 +31,7 @@ import { getAllTools } from "./tools.js";
 import type { Message } from "./types/message.js";
 import type { PermissionMode } from "./types/permissions.js";
 import { validateAgainstJsonSchema } from "./utils/json-schema.js";
+import { parseMaxBudgetUsd } from "./utils/parse-budget.js";
 
 const _require = createRequire(import.meta.url);
 const VERSION: string = (_require("../package.json") as { version: string }).version;
@@ -84,6 +85,21 @@ You have access to tools for reading, writing, and searching files, running shel
 - When referencing code, include file_path:line_number.
 - Do not restate what the user said. Do not add trailing summaries unless asked.
 - Keep responses short and direct. If you can say it in one sentence, don't use three.`;
+
+/**
+ * Parse the `--max-budget-usd` CLI argument into a positive USD amount, or
+ * exit 2 with an error message. The pure parser lives in
+ * `src/utils/parse-budget.ts` so it can be unit-tested without spawning the
+ * CLI; this thin wrapper handles the exit-on-failure side effect.
+ */
+function parseMaxBudgetUsdOrExit(raw: string): number {
+  const result = parseMaxBudgetUsd(raw);
+  if (!result.ok) {
+    process.stderr.write(`Error: ${result.message}\n`);
+    process.exit(2);
+  }
+  return result.value;
+}
 
 function buildSystemPrompt(model?: string): string {
   const cfg = readOhConfig();
@@ -159,6 +175,10 @@ program
     "--setting-sources <sources>",
     "Comma-separated list of setting sources to merge (e.g. 'user,project,local'). Mirrors Claude Code's setting_sources.",
   )
+  .option(
+    "--max-budget-usd <amount>",
+    "Hard cap on session cost in USD. The agent halts with reason 'budget_exceeded' once totalCost reaches this amount. Mirrors Claude Code's --max-budget-usd.",
+  )
   .action(async (promptArg: string | undefined, opts: Record<string, unknown>) => {
     // Read from stdin if prompt is "-" or omitted and stdin is not a TTY
     let prompt: string;
@@ -229,6 +249,7 @@ program
       permissionMode,
       maxTurns: parseInt(opts.maxTurns as string, 10),
       model,
+      ...(opts.maxBudgetUsd !== undefined ? { maxCost: parseMaxBudgetUsdOrExit(opts.maxBudgetUsd as string) } : {}),
     };
 
     const outputFormat = opts.json ? "json" : ((opts.outputFormat as string) ?? "text");
@@ -394,6 +415,10 @@ program
     "--setting-sources <sources>",
     "Comma-separated list of setting sources to merge (mirrors Claude Code's setting_sources).",
   )
+  .option(
+    "--max-budget-usd <amount>",
+    "Hard cap on session cost in USD. Each prompt's cost accumulates; the agent halts with reason 'budget_exceeded' once totalCost reaches this amount.",
+  )
   .action(async (opts: Record<string, unknown>) => {
     const settingSources = parseSettingSources(opts.settingSources as string | undefined);
     const savedConfig = readOhConfig(undefined, settingSources);
@@ -432,6 +457,7 @@ program
       permissionMode,
       maxTurns: parseInt(opts.maxTurns as string, 10),
       model,
+      ...(opts.maxBudgetUsd !== undefined ? { maxCost: parseMaxBudgetUsdOrExit(opts.maxBudgetUsd as string) } : {}),
     };
 
     // Conversation history, shared across all prompts for this process.
