@@ -240,26 +240,35 @@ program
     // history into the conversation before the new prompt. If the session can't
     // be loaded (missing file, malformed JSON), fail early with a clear error
     // rather than silently starting fresh.
+    //
+    // When --resume is NOT passed, mint a fresh session record so SDK callers
+    // can capture its id from the session_start event and pass it back as
+    // --resume <id> on a later run. Without this, every fresh `oh run` was
+    // a programmatic dead-end for resumption (issue #60).
+    const { createSession, loadSession, saveSession } = await import("./harness/session.js");
     let priorMessages: Message[] | undefined;
-    let sessionId: string | undefined;
+    let sessionId: string;
+    let sessionRecord: import("./harness/session.js").Session;
     if (opts.resume) {
-      const { loadSession } = await import("./harness/session.js");
       try {
-        const src = loadSession(opts.resume as string);
-        priorMessages = src.messages;
-        sessionId = src.id;
+        sessionRecord = loadSession(opts.resume as string);
+        priorMessages = sessionRecord.messages;
+        sessionId = sessionRecord.id;
       } catch {
         process.stderr.write(`Error: could not load session '${opts.resume as string}'\n`);
         process.exit(1);
       }
+    } else {
+      sessionRecord = createSession(provider.name, model);
+      sessionId = sessionRecord.id;
+      saveSession(sessionRecord);
     }
 
     if (outputFormat === "stream-json") {
       // Emit a session_start event so SDK callers can capture the id for
-      // later resume (fires once, before turnStart).
-      if (sessionId) {
-        console.log(JSON.stringify({ type: "session_start", sessionId }));
-      }
+      // later resume (fires once, before turnStart). Always emitted now —
+      // fresh runs mint a sessionId above.
+      console.log(JSON.stringify({ type: "session_start", sessionId }));
       setHookDecisionObserver((n) => {
         console.log(
           JSON.stringify({
@@ -349,6 +358,21 @@ program
     } else if (outputFormat === "text") {
       process.stdout.write("\n");
     }
+
+    // Persist this run's contribution so a later --resume <sessionId> finds
+    // the user/assistant pair. Tool details are intentionally elided —
+    // they're per-tool ephemerals; the assistant's final text is what
+    // matters for context resumption. Mirrors the REPL's save-on-exit pattern
+    // (src/components/REPL.tsx:120) but at one-shot scope.
+    try {
+      const { createUserMessage, createAssistantMessage } = await import("./types/message.js");
+      const newMessages = [...(priorMessages ?? []), createUserMessage(prompt)];
+      if (fullOutput) newMessages.push(createAssistantMessage(fullOutput));
+      sessionRecord.messages = newMessages;
+      saveSession(sessionRecord);
+    } catch {
+      /* persistence is best-effort — never fail the user's run on a save error */
+    }
   });
 
 // ── `oh session`: long-lived stateful session for the Python SDK ──
@@ -411,19 +435,26 @@ program
     };
 
     // Conversation history, shared across all prompts for this process.
-    // Seeded from a prior session when --resume <id> is passed.
+    // Seeded from a prior session when --resume <id> is passed; otherwise a
+    // fresh session is minted so the SDK can capture the id from the `ready`
+    // event for later resume (issue #60).
     const conversation: import("./types/message.js").Message[] = [];
-    let sessionId: string | undefined;
+    const { createSession, loadSession, saveSession } = await import("./harness/session.js");
+    let sessionId: string;
+    let sessionRecord: import("./harness/session.js").Session;
     if (opts.resume) {
-      const { loadSession } = await import("./harness/session.js");
       try {
-        const src = loadSession(opts.resume as string);
-        conversation.push(...src.messages);
-        sessionId = src.id;
+        sessionRecord = loadSession(opts.resume as string);
+        conversation.push(...sessionRecord.messages);
+        sessionId = sessionRecord.id;
       } catch {
         console.log(JSON.stringify({ type: "error", message: `could not load session '${opts.resume as string}'` }));
         return;
       }
+    } else {
+      sessionRecord = createSession(provider.name, model);
+      sessionId = sessionRecord.id;
+      saveSession(sessionRecord);
     }
     let turnCounter = 0;
     // Will be set to the current prompt id before each turn so hook_decision
@@ -541,6 +572,15 @@ program
       }
       for (const tr of toolResults) {
         conversation.push(createToolResultMessage({ callId: tr.callId, output: tr.output, isError: tr.isError }));
+      }
+
+      // Persist after every completed turn so a later --resume picks up the
+      // history. Best-effort — a save failure shouldn't break the live session.
+      try {
+        sessionRecord.messages = conversation.slice();
+        saveSession(sessionRecord);
+      } catch {
+        /* save errors don't propagate to the client */
       }
     }
   });

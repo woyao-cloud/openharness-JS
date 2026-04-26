@@ -3,14 +3,15 @@
 //
 // What this verifies vs. what it deliberately does NOT:
 //
-// VERIFIES (SDK plumbing + cross-turn context):
+// VERIFIES (SDK plumbing + cross-turn context + resume round-trip):
 //   - PR1: subprocess spawn, stream-json parse, typed events, exit-0 path
 //   - PR2: stateful session — multi-turn context preserved across send()s
 //          (the Ollama-num_ctx fix in #61 makes this reliable now)
 //   - PR3: tools-runtime writes a correct mcpServers entry, MCP server is up
 //   - PR4: tools-runtime writes a correct hooks.permissionRequest entry,
 //          permission server is up
-//   - PR5: argv assembly carries --resume + --setting-sources (unit-tested)
+//   - PR5: end-to-end resume= round-trip across two clients
+//          (the fresh-session-id fix in #60 makes this work)
 //
 // DOES NOT VERIFY (out of scope; CLI behavior, not SDK):
 //   - Whether the model decides to call a custom tool
@@ -18,9 +19,6 @@
 //   - End-to-end canUseTool firing through `oh run`
 //     (CLI gap — permissionRequest hook only fires in interactive TUI mode,
 //     src/query/tools.ts:64 — issue #62)
-//   - End-to-end resume= round-trip
-//     (CLI gap — fresh `oh session` does not emit a sessionId,
-//     src/main.tsx:447 + 416 — issue #60)
 //
 // Set OH_BINARY or OH_SMOKE_MODEL to override defaults. Exits 0 on all-pass.
 
@@ -153,21 +151,43 @@ await step("v0.4 tools-runtime injects a permissionRequest hook pointing at a li
   }
 });
 
-// ── PR 5: argv carries --resume + --setting-sources (unit-tested at the SDK level) ──
-await step("v0.5 buildArgv threads resume + settingSources", async () => {
-  const { buildArgv } = await import(`file://${path.join(sdkRoot, "src", "query.ts")}`);
-  const argv = buildArgv("hi", { resume: "abc-123", settingSources: ["user", "project"] });
-  const i = argv.indexOf("--resume");
-  if (i < 0 || argv[i + 1] !== "abc-123") throw new Error(`--resume not threaded: ${argv.join(" ")}`);
-  const j = argv.indexOf("--setting-sources");
-  if (j < 0 || argv[j + 1] !== "user,project") throw new Error(`--setting-sources not threaded: ${argv.join(" ")}`);
-  return `--resume abc-123 --setting-sources user,project`;
+// ── PR 5: end-to-end resume round-trip across two clients ──
+await step("v0.5 resume= replays prior session history across clients", async () => {
+  let captured = null;
+  {
+    const c1 = new OpenHarnessClient({ ohBinary, model, permissionMode: "trust", maxTurns: 1 });
+    try {
+      await c1.start();
+      for await (const _ of c1.send("Remember the magic word is 'lighthouse'. Reply with 'ok'.")) {
+        void _;
+      }
+      captured = c1.sessionId;
+    } finally {
+      await c1.close();
+    }
+  }
+  if (!captured) throw new Error("no sessionId captured from first client");
+
+  const c2 = new OpenHarnessClient({ ohBinary, model, permissionMode: "trust", maxTurns: 1, resume: captured });
+  try {
+    await c2.start();
+    let text = "";
+    for await (const e of c2.send("What was the magic word I told you? Reply with one word only.")) {
+      if (e.type === "text") text += e.content;
+    }
+    if (!text.toLowerCase().includes("lighthouse")) {
+      throw new Error(`resumed session did not recall 'lighthouse' — got: ${JSON.stringify(text.slice(0, 80))}`);
+    }
+    return `resumed session=${captured.slice(0, 8)}…, recall ok`;
+  } finally {
+    await c2.close();
+  }
 });
 
 console.log("\n--- known CLI gaps (filed) ---");
-console.log("• #60 — `oh session` does not emit a sessionId for fresh sessions (blocks programmatic resume).");
 console.log("• #62 — `permissionRequest` hooks only fire in interactive TUI mode (blocks end-to-end canUseTool through oh run).");
-console.log("• (#61 fixed in this branch — Ollama num_ctx now sized to actual prompt; multi-turn works.)");
+console.log("• (#60 fixed in this branch — `oh session` mints a fresh sessionId on startup; programmatic resume works end-to-end.)");
+console.log("• (#61 fixed previously — Ollama num_ctx now sized to actual prompt; multi-turn works.)");
 
 const failures = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failures.length}/${results.length} passed`);
