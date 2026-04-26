@@ -1,16 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.19.0 (2026-04-26) — SDK End-to-End + Budget Cap
+
+Three CLI fixes that close the loop on the v0.5 TypeScript SDK released to npm earlier this cycle, plus the `--max-budget-usd` audit-B3 item. Each fix was surfaced by the SDK's end-to-end smoke test and breaks an SDK consumer's use case until fixed; together they make `OpenHarnessClient` (TS) and `OpenHarnessClient` (Python) fully functional against `oh run` / `oh session` headless. The TS SDK itself ships separately on its own v0.x.x track (`@zhijiewang/openharness-sdk@0.5.0`, see "TypeScript SDK v0.5.0" section below).
 
 ### Added
-- **`--max-budget-usd <amount>` flag on `oh run` and `oh session`**. Hard cap on session cost in USD; the agent halts with `reason: "budget_exceeded"` once `state.totalCost` reaches the cap. Closes audit B3 from `docs/superpowers/plans/2026-04-24-claude-code-parity-audit.md`. Mirrors Claude Code's `--max-budget-usd`.
+- **`--max-budget-usd <amount>` flag on `oh run` and `oh session` (#67)**. Hard cap on session cost in USD; the agent halts with `reason: "budget_exceeded"` once `state.totalCost` reaches the cap. Closes audit B3 from `docs/superpowers/plans/2026-04-24-claude-code-parity-audit.md`. Mirrors Claude Code's `--max-budget-usd`.
   - Existing budget infrastructure was already in `src/query/index.ts:136` — circuit breaker at the top of every turn, plus 70% / 90% budget warnings auto-injected into the system prompt. This PR is the CLI flag wiring (memory `project_v2_18_0.md` reinforced once more — grep first; the audit's "missing feature" was already half-built).
   - Accepts plain decimals (`5`, `0.50`, `2.5`) and an optional leading `$`. Rejects zero / negative / non-numeric with exit code 2 + a stderr message.
   - Pure parser lives in `src/utils/parse-budget.ts` with 10 unit tests.
-
-## 2.19.0 (2026-04-26) — SDK End-to-End
-
-Three CLI fixes that close the loop on the v0.5 TypeScript SDK released to npm earlier this cycle. Each was surfaced by the SDK's end-to-end smoke test and breaks an SDK consumer's use case until fixed; together they make `OpenHarnessClient` (TS) and `OpenHarnessClient` (Python) fully functional against `oh run` / `oh session` headless. The TS SDK itself ships separately on its own v0.x.x track (`@zhijiewang/openharness-sdk@0.5.0`, see "TypeScript SDK v0.5.0" section below).
 
 ### Fixed
 - **`permissionRequest` hooks now fire in headless mode (#62)**. Previously the hook block at `src/query/tools.ts:64` was gated on `askUser` being provided, so headless callers (`oh run`, `oh session`) bypassed configured `permissionRequest` hooks entirely — every tool call needing approval got a generic "Permission denied: needs-approval" without consulting any hook. SDK consumers using `canUseTool` saw the in-process HTTP server they registered never get called.
