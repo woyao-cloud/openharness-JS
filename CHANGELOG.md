@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## 2.18.0 (2026-04-26) — Personality & Plumbing
+
+Five-feature parity bundle from the 2026-04-24 Claude Code parity audit (`docs/superpowers/plans/2026-04-24-claude-code-parity-audit.md`). Originally scoped at six tasks; one was dropped after post-grep verification revealed it was already shipped.
+
+### Added
+- **Output styles** — new `outputStyle` config key swaps the agent's personality without touching the core system prompt. Three built-ins: `default` (no preface, behavior unchanged), `explanatory` (adds an `## Insights` section between tasks), `learning` (leaves 1–3 `TODO(human)` markers at strategic points so the user writes the instructive parts). Custom styles live as YAML-frontmatter markdown under `.oh/output-styles/<name>.md` (project) or `~/.oh/output-styles/<name>.md` (user); precedence is project > user > built-in. Mirrors Claude Code's `outputStyle`. (#51)
+- **`/hooks` slash command** — lists all hooks loaded from `.oh/config.yaml`, grouped by event, labeled by kind (command / http / prompt), with a 60-character source preview and the `match:` pattern when set. Counterpart to `/doctor` for introspection. (#49)
+- **`language` config key** — when set in `.oh/config.yaml` (e.g., `language: zh-CN`, `language: Japanese`), the model responds in that language for every session while leaving code, shell commands, file paths, and identifiers in their original form. Mirrors Claude Code's `language` setting. (#49)
+- **`ListMcpResources` and `ReadMcpResource` tools** — agent-callable wrappers around `src/mcp/client.ts`'s existing `listResources()` / `readResource()` methods. The model can now enumerate and read MCP resources during a turn (previously only user-triggered `@-mention` resolution could reach them). Both deferred (DeferredTool), low-risk, read-only. New `readMcpResource(uri, server?)` export in `src/mcp/loader.ts`. (#50)
+- **`--json-schema` wiring** in `oh -p` headless mode. The flag was declared in v2.17 but never read. Now parses the supplied schema, parses model output as JSON, validates against the schema with the new minimal validator, and emits **only** the validated JSON on stdout. Exit codes: `0` valid, `2` malformed schema, `3` model output was not JSON, `4` JSON didn't match the schema. Suppresses streaming output in json-schema mode so stdout carries only the final JSON. New zero-dep validator `src/utils/json-schema.ts` covers `type` (incl. union), `properties`, `required`, `items`, `enum` with nested path reporting. (#50)
+
+### Changed
+- `buildSystemPrompt` in `src/main.tsx` now consolidates `readOhConfig()` into a single call per build (previously read twice — once for output style and once for the response-language directive). Output style preface now sits at the very top of the system prompt; language directive remains at the bottom.
+- `getHooks()` in `src/harness/hooks.ts` is now exported (was internal). Used by the new `/hooks` command and available to embedders.
+
+### Verified already-shipped (dropped from bundle)
+- The audit originally listed **six** Tier A tasks. Post-grep verification at audit time and during Task 2 implementation found **five** were already wired and only documentation/discoverability was missing:
+  - `--continue` / `-c` flag (already wired, `src/main.tsx:670–678`)
+  - `--fork <id>` flag (already wired, `src/main.tsx:680–689`)
+  - `@-mention` resolution including line ranges and MCP resources (already wired, `src/harness/submit-handler.ts:145–191`)
+  - Hook `match:` field for all events (already wired, `src/harness/hooks.ts:116–162`)
+  - `/doctor` command (already a full health check, `src/commands/info.ts:244`)
+  - **Token-level partial messages and hook-decision events in stream-json output** — both were already streaming from `oh run` and `oh session` since v2.15/v2.16 (`text` events per chunk, `hook_decision` events via `setHookDecisionObserver`). The Python SDK already parses both. Adding `--include-partial-messages` / `--include-hook-events` would have been no-op surface clutter; the proposed Task 2 was dropped.
+- The audit's hit rate on novel-feature identification was 1/6 (output styles only). Lesson reinforced: grep before designing — every gap-audit cycle so far has found ~half the proposed work already shipped but undocumented.
+
 ## 2.17.0 (2026-04-22) — Session resume + setting_sources
 
 ### Added

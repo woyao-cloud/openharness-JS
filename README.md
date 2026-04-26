@@ -32,7 +32,7 @@ AI coding agent in your terminal. Works with any LLM -- free local models or clo
 - [Quick Start](#quick-start)
 - [Why OpenHarness?](#why-openharness)
 - [Terminal UI](#terminal-ui)
-- [Tools (35)](#tools-35)
+- [Tools (37)](#tools-37)
 - [Slash Commands (33)](#slash-commands-33)
 - [Permission Modes](#permission-modes)
 - [Hooks](#hooks)
@@ -142,7 +142,7 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 
 Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XXXX), `{ctx}` (context usage bar). Empty sections are automatically collapsed.
 
-## Tools (35)
+## Tools (37)
 
 | Tool | Risk | Description |
 |------|------|-------------|

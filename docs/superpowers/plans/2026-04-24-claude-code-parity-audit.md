@@ -29,7 +29,7 @@ Already at ~95% parity on core CLI use cases. Remaining gaps break down as follo
 
 ## Verification pass (post-audit grep)
 
-After drafting this audit, grepped the "unknowns" to avoid redesigning already-built infra. Found four items from the original Tier A were **already shipped** and one was partially built. Corrections:
+After drafting this audit, grepped the "unknowns" to avoid redesigning already-built infra. Found four items from the original Tier A were **already shipped** and one was partially built. A second pass during Task 2 implementation (2026-04-26) found two more items already shipped — total: **5 of the original 6 Tier A "gaps" were illusory.** The audit's hit rate on novel-feature identification was 1/6 (output styles only). Corrections:
 
 - ✅ **`--continue` / `-c`** — FULLY WIRED (`src/main.tsx:549, 670–678`). Calls `getLastSessionId()`, aliases to `--resume`. **Already done — dropped from Tier A.**
 - ✅ **`--fork <id>`** — FULLY WIRED (`src/main.tsx:550, 680–689`). Loads source session messages. **Not a gap.**
@@ -42,7 +42,7 @@ After drafting this audit, grepped the "unknowns" to avoid redesigning already-b
 - ❌ **`language` setting** — genuinely missing.
 - ❌ **`/hooks` command** — not registered in `src/commands/info.ts`. Genuinely missing (distinct from `/doctor`).
 - ❌ **`/reload-plugins`** — genuinely missing.
-- ❌ **`--include-partial-messages` / `--include-hook-events`** — genuinely missing.
+- ✅ **`--include-partial-messages` / `--include-hook-events`** — both event categories ALREADY streaming in `oh run --output-format stream-json` since v2.15/v2.16. `text_delta` events are emitted as `{type: "text", content: chunk}` per streaming chunk (`src/main.tsx:290–292`); `setHookDecisionObserver` is wired up to emit `{type: "hook_decision", event, tool?, decision, reason?}` events (`src/main.tsx:263–273`, mirrored in `oh session` at line 433). Python SDK already parses both via `events.py:HookDecision` and `TextDelta`. Adding flags would be a no-op for OH-native users; CC argspec compat could be added later if a porting user complains, but not worth the surface clutter today. **Task 2 dropped.**
 - ❌ **`--max-budget-usd`** — genuinely missing.
 - ❌ **MCP prompts-as-slash-commands** (JSON-RPC `prompts/list`, `prompts/get`) — genuinely missing.
 
@@ -62,11 +62,9 @@ CC ships **Default / Explanatory / Learning** + user-defined styles via YAML fro
 
 **Effort:** ~1 day. Add `outputStyle` to config schema, build a style loader, inject into `buildSystemPrompt` (`src/main.tsx:697`).
 
-### A2. `--include-partial-messages` / `--include-hook-events` on `oh run --print`
+### ~~A2. `--include-partial-messages` / `--include-hook-events`~~ — already shipped
 
-CC's Agent SDK streams token-level deltas and hook events when asked. OH's `oh run --output-format stream-json` already emits tool boundaries and cost updates (`src/main.tsx:707+`) but not token-level deltas to the NDJSON stream, or hook lifecycle events. Closes a real SDK parity gap — Python consumers who want to stream tokens to a UI currently can't.
-
-**Effort:** ~1 day. `text_delta` events already exist internally (`src/main.tsx:708`); flag guards their inclusion in stream-json mode. Hook fan-out requires reading `ctx` from the existing hook emitter.
+Post-grep verification revealed both event categories are already streaming in `oh run --output-format stream-json` since v2.15 (text deltas) and v2.16 (hook decisions). See the Verification pass above. Dropped from the bundle.
 
 ### A3. New `/hooks` slash command
 
@@ -92,7 +90,7 @@ Flag is declared (`src/main.tsx:553`) but `opts.jsonSchema` is never read. Finis
 
 **Effort:** ~3 hours. Schema parsing via Zod (already a dep), validation hook in the `--print` branch of `main.tsx`.
 
-**Proposed bundle: v2.18.0 "Personality & Plumbing"** (A1 + A2 + A3 + A4 + A5 + A6). Total ~2.5 days of focused work. All six are additive, independent, and low-risk.
+**Shipped bundle: v2.18.0 "Personality & Plumbing"** — five novel features (A1, A3, A4, A5, A6) plus the audit corrections. A2 dropped after post-grep verification confirmed both event categories were already streaming. Cut on 2026-04-26 across PRs #49 (A3+A4), #50 (A5+A6), #51 (A1).
 
 ---
 
