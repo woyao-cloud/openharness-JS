@@ -6,12 +6,15 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { gitBranch, isGitRepo, isInMergeOrRebase } from "../git/index.js";
-import { readOhConfig } from "../harness/config.js";
+import { invalidateConfigCache, readOhConfig } from "../harness/config.js";
 import { estimateMessageTokens } from "../harness/context-warning.js";
 import { getContextWindow } from "../harness/cost.js";
-import { getHooks } from "../harness/hooks.js";
+import { getHooks, invalidateHookCache } from "../harness/hooks.js";
+import { discoverPlugins, discoverSkills } from "../harness/plugins.js";
+import { invalidateSandboxCache } from "../harness/sandbox.js";
+import { invalidateVerificationCache } from "../harness/verification.js";
 import { normalizeMcpConfig } from "../mcp/config-normalize.js";
-import { connectedMcpServers } from "../mcp/loader.js";
+import { connectedMcpServers, disconnectMcpClients, loadMcpTools } from "../mcp/loader.js";
 import { getAuthStatus } from "../mcp/oauth.js";
 import { getRouteSelection } from "../providers/router.js";
 import { formatHooksReport } from "./hooks-report.js";
@@ -773,6 +776,53 @@ export function registerInfoCommands(
     }
     return { output: lines.join("\n"), handled: true };
   });
+
+  register(
+    "reload-plugins",
+    "Hot-reload plugins, skills, hooks, MCP servers and config without restarting the session.",
+    async () => {
+      // Invalidate every cached source — config, hooks, sandbox, verification.
+      // Skills + plugins aren't cached (each discoverSkills/discoverPlugins call
+      // reads fresh) but we still re-run them for the report so the user sees
+      // a count consistent with the new on-disk state.
+      invalidateConfigCache();
+      invalidateHookCache();
+      invalidateSandboxCache();
+      invalidateVerificationCache();
+
+      // Tear down + reconnect MCP servers (the live connections aren't
+      // cache-driven; they're long-lived sockets that need an explicit
+      // disconnect/reconnect). Failures don't block the reload — partial
+      // success is more useful than nothing.
+      disconnectMcpClients();
+      let mcpTools = 0;
+      let mcpError: string | null = null;
+      try {
+        const tools = await loadMcpTools();
+        mcpTools = tools.length;
+      } catch (err) {
+        mcpError = err instanceof Error ? err.message : String(err);
+      }
+
+      const skillsCount = discoverSkills().length;
+      const pluginsCount = discoverPlugins().length;
+      const hookEvents = Object.keys(getHooks() ?? {}).length;
+      const mcpServers = connectedMcpServers().length;
+
+      const lines = [
+        "Hot reload complete:",
+        "  - config + hooks + sandbox + verification: caches invalidated",
+        `  - hook events configured:       ${hookEvents}`,
+        `  - MCP servers connected:        ${mcpServers}${mcpError ? ` (error: ${mcpError})` : ""}`,
+        `  - MCP tools loaded:             ${mcpTools}`,
+        `  - skills discovered:            ${skillsCount}`,
+        `  - plugins discovered:           ${pluginsCount}`,
+        "",
+        "Note: in-flight tool registries (held by the agent loop) refresh on the next prompt.",
+      ];
+      return { output: lines.join("\n"), handled: true };
+    },
+  );
 
   register("benchmark", "Run SWE-bench benchmark suite", (args) => {
     const task = args.trim();

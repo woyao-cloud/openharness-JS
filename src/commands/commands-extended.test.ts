@@ -464,3 +464,28 @@ test("/fix with issue returns prependToPrompt", async () => {
   assert.equal(result.handled, false);
   assert.ok(result.prependToPrompt?.includes("broken import in utils.ts"));
 });
+
+// ── /reload-plugins (audit B4) ──
+
+test("/reload-plugins reports the post-reload state", async () => {
+  const result = await processSlashCommand("/reload-plugins", makeCtx());
+  assert.ok(result);
+  assert.equal(result.handled, true);
+  assert.match(result.output, /Hot reload complete/);
+  assert.match(result.output, /MCP servers connected/);
+  assert.match(result.output, /skills discovered/);
+  assert.match(result.output, /plugins discovered/);
+});
+
+test("/reload-plugins is invalidates caches that subsequent reads will refetch", async () => {
+  // Run the command twice in succession — must not throw, must return consistent
+  // structure. The actual cache-invalidation effect is best verified at the
+  // module level (those invalidate*() helpers are unit-tested elsewhere); here
+  // we just confirm the orchestration is idempotent.
+  const first = await processSlashCommand("/reload-plugins", makeCtx());
+  const second = await processSlashCommand("/reload-plugins", makeCtx());
+  assert.ok(first?.handled);
+  assert.ok(second?.handled);
+  assert.match(first?.output ?? "", /Hot reload complete/);
+  assert.match(second?.output ?? "", /Hot reload complete/);
+});
