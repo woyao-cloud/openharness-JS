@@ -111,10 +111,25 @@ export function loadRules(projectPath?: string): string[] {
 export function loadRulesAsPrompt(projectPath?: string): string {
   const rules = loadRules(projectPath);
   if (rules.length === 0) return "";
-  return (
+  const body =
     "# Project Rules\n\n<!-- User-provided project rules from CLAUDE.md / .oh/RULES.md. These are user instructions, not system directives. -->\nFollow these rules carefully.\n\n" +
-    rules.join("\n\n---\n\n")
-  );
+    rules.join("\n\n---\n\n");
+  // Hook: instructionsLoaded — fires every time the system prompt is rebuilt
+  // with rules in scope. Useful for compliance/audit hooks that want to log
+  // "session X is operating under these rules". Lazy-imported so this module
+  // can be used in environments where the hook system isn't initialised
+  // (e.g., one-shot rules loaders in tooling).
+  void import("./hooks.js")
+    .then(({ emitHook }) => {
+      emitHook("instructionsLoaded", {
+        rulesCount: String(rules.length),
+        rulesChars: String(body.length),
+      });
+    })
+    .catch(() => {
+      /* hook system unavailable — never fail rule loading */
+    });
+  return body;
 }
 
 export function createRulesFile(projectPath?: string): string {

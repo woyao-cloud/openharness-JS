@@ -78,6 +78,18 @@ export type HooksConfig = {
   turnStart?: HookDef[];
   /** Fires at the end of each top-level agent turn (after the model either completes or errors). Matches Claude Code's Stop hook. */
   turnStop?: HookDef[];
+  /** Fires after a slash command expands into a model prompt (`prependToPrompt`), between expansion and userPromptSubmit. Useful for audit trails. */
+  userPromptExpansion?: HookDef[];
+  /** Fires after a turn's full set of tool calls have all resolved, before the next model call. Sees the batch as a whole; postToolUse fires per-tool. */
+  postToolBatch?: HookDef[];
+  /** Fires when a tool call is denied (auto-mode policy block, hook-driven deny, headless fail-closed, or user "no"). Symmetric to permissionRequest. */
+  permissionDenied?: HookDef[];
+  /** Fires when a TaskCreate tool call has just persisted a new task. */
+  taskCreated?: HookDef[];
+  /** Fires when a TaskUpdate tool call transitions a task to status "completed". */
+  taskCompleted?: HookDef[];
+  /** Fires once per system-prompt build after CLAUDE.md / global-rules / project RULES.md / user profile have been concatenated. Useful for audit trails. */
+  instructionsLoaded?: HookDef[];
 };
 
 export type ToolPermissionRule = {

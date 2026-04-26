@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { z } from "zod";
+import { emitHook } from "../../harness/hooks.js";
 import type { Tool, ToolResult } from "../../Tool.js";
 
 const inputSchema = z.object({
@@ -54,6 +55,8 @@ export const TaskUpdateTool: Tool<typeof inputSchema> = {
         return { output: `Error: Task #${input.taskId} not found.`, isError: true };
       }
 
+      const previousStatus = task.status;
+
       // Handle deletion
       if (input.status === "deleted") {
         const idx = tasks.indexOf(task);
@@ -89,6 +92,16 @@ export const TaskUpdateTool: Tool<typeof inputSchema> = {
       }
 
       await fs.writeFile(filePath, JSON.stringify(tasks, null, 2), "utf-8");
+
+      // Hook: taskCompleted — fires only on the pending|in_progress → completed
+      // transition. Re-saving an already-completed task is a no-op for the hook.
+      if (input.status === "completed" && previousStatus !== "completed") {
+        emitHook("taskCompleted", {
+          taskId: String(task.id),
+          taskSubject: task.subject.slice(0, 200),
+          taskPreviousStatus: previousStatus,
+        });
+      }
 
       return { output: `Task #${task.id} updated. Status: ${task.status}`, isError: false };
     } catch (err: any) {

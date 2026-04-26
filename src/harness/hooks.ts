@@ -20,8 +20,11 @@ export type HookEvent =
   | "preToolUse"
   | "postToolUse"
   | "postToolUseFailure"
+  | "postToolBatch"
   | "userPromptSubmit"
+  | "userPromptExpansion"
   | "permissionRequest"
+  | "permissionDenied"
   | "fileChanged"
   | "cwdChanged"
   | "subagentStart"
@@ -31,7 +34,10 @@ export type HookEvent =
   | "configChange"
   | "notification"
   | "turnStart"
-  | "turnStop";
+  | "turnStop"
+  | "taskCreated"
+  | "taskCompleted"
+  | "instructionsLoaded";
 
 export type HookContext = {
   toolName?: string;
@@ -64,6 +70,28 @@ export type HookContext = {
   turnNumber?: string;
   /** For turnStop: reason the turn ended ("completed", "max_turns", "error", "interrupted") */
   turnReason?: string;
+  /** For userPromptExpansion: the slash command that triggered the expansion (e.g. "/plan") */
+  slashCommand?: string;
+  /** For userPromptExpansion: the original user input before expansion */
+  originalInput?: string;
+  /** For postToolBatch: comma-separated list of tool names in the batch */
+  batchTools?: string;
+  /** For postToolBatch: number of tool calls in the batch (as a string for env-var parity) */
+  batchSize?: string;
+  /** For permissionDenied: stage at which the deny happened ("hook", "user", "headless", "policy") */
+  denySource?: string;
+  /** For permissionDenied: human-readable reason */
+  denyReason?: string;
+  /** For taskCreated/taskCompleted: the task id */
+  taskId?: string;
+  /** For taskCreated/taskCompleted: the task subject */
+  taskSubject?: string;
+  /** For taskCompleted: the previous status before completion (usually "in_progress") */
+  taskPreviousStatus?: string;
+  /** For instructionsLoaded: count of rules concatenated (as a string for env-var parity) */
+  rulesCount?: string;
+  /** For instructionsLoaded: total character length of the loaded rules */
+  rulesChars?: string;
 };
 
 let cachedHooks: HooksConfig | null | undefined;

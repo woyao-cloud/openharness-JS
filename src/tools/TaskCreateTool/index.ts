@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { z } from "zod";
+import { emitHook } from "../../harness/hooks.js";
 import type { Tool, ToolResult } from "../../Tool.js";
 
 const inputSchema = z.object({
@@ -64,6 +65,11 @@ export const TaskCreateTool: Tool<typeof inputSchema> = {
 
       tasks.push(newTask);
       await fs.writeFile(filePath, JSON.stringify(tasks, null, 2), "utf-8");
+
+      emitHook("taskCreated", {
+        taskId: String(newTask.id),
+        taskSubject: newTask.subject.slice(0, 200),
+      });
 
       return { output: `Task #${newTask.id} created: ${newTask.subject}`, isError: false };
     } catch (err: any) {

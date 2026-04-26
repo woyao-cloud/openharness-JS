@@ -75,30 +75,49 @@ export async function executeSingleTool(
         permissionAction: "ask",
       });
 
+      const denyAndEmit = (source: string, reason: string, output: string): ToolResult => {
+        emitHook("permissionDenied", {
+          toolName: tool.name,
+          toolArgs: JSON.stringify(toolCall.arguments).slice(0, 1000),
+          permissionMode,
+          denySource: source,
+          denyReason: reason,
+        });
+        return { output, isError: true };
+      };
+
       if (hookOutcome.permissionDecision === "allow") {
         // Hook granted permission — proceed to execution.
       } else if (hookOutcome.permissionDecision === "deny" || !hookOutcome.allowed) {
         const reason = hookOutcome.reason ? `: ${hookOutcome.reason}` : "";
-        return { output: `Permission denied by hook${reason}`, isError: true };
+        return denyAndEmit("hook", hookOutcome.reason ?? "hook denied", `Permission denied by hook${reason}`);
       } else if (askUser) {
         // "ask" or no decision → interactive prompt when available
         const { formatToolArgs } = await import("../utils/tool-summary.js");
         const description = formatToolArgs(tool.name, toolCall.arguments as Record<string, unknown>);
         const allowed = await askUser(tool.name, description, tool.riskLevel);
         if (!allowed) {
-          return { output: "Permission denied by user.", isError: true };
+          return denyAndEmit("user", "user declined", "Permission denied by user.");
         }
       } else {
         // Headless mode with no hook decision and no interactive prompt:
         // fail-closed deny. SDK consumers should configure a permissionRequest
         // hook (or use canUseTool) to make per-call decisions.
-        return {
-          output:
-            "Permission denied: needs-approval (no interactive prompt available; configure a permissionRequest hook to gate this tool)",
-          isError: true,
-        };
+        return denyAndEmit(
+          "headless",
+          "no hook decision and no interactive prompt available",
+          "Permission denied: needs-approval (no interactive prompt available; configure a permissionRequest hook to gate this tool)",
+        );
       }
     } else {
+      // Auto-mode policy block (deny / acceptEdits / etc) — symmetric event.
+      emitHook("permissionDenied", {
+        toolName: tool.name,
+        toolArgs: JSON.stringify(toolCall.arguments).slice(0, 1000),
+        permissionMode,
+        denySource: "policy",
+        denyReason: perm.reason,
+      });
       return { output: `Permission denied: ${perm.reason}`, isError: true };
     }
   }
@@ -233,6 +252,8 @@ export async function* executeToolCalls(
     outputChunks.push({ type: "tool_output_delta", callId, chunk });
   };
 
+  const allToolNames: string[] = toolCalls.map((tc) => tc.toolName);
+
   for (const batch of batches) {
     if (batch.concurrent) {
       const results = await Promise.all(
@@ -265,5 +286,18 @@ export async function* executeToolCalls(
         );
       }
     }
+  }
+
+  // Hook: postToolBatch — fires once after the model's full set of tool
+  // calls for this turn have all resolved (across however many serial /
+  // concurrent batches partitionToolCalls produced), before the next model
+  // call. Per-tool postToolUse / postToolUseFailure still fire as before;
+  // this is the batch-level boundary for hooks that want to act once per
+  // turn instead of once per tool.
+  if (toolCalls.length > 0) {
+    emitHook("postToolBatch", {
+      batchSize: String(toolCalls.length),
+      batchTools: allToolNames.slice(0, 50).join(","),
+    });
   }
 }

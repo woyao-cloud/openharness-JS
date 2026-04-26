@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Six new hook events (audit B2)** bringing the total from 17 to 23. Each fires from its natural source code path and is configurable like every other hook (`command` / `http` / `prompt` modes, optional `match` pattern, optional `jsonIO`).
+  - **`userPromptExpansion`** — fires when a slash command produces a `prependToPrompt`, between the expansion and `userPromptSubmit`. Context: `slashCommand`, `originalInput`, `prompt`. Useful for audit trails that want to see the (input → expanded) boundary that's otherwise hidden from observers.
+  - **`postToolBatch`** — fires once after a turn's full set of tool calls have all resolved, before the next model call. Per-tool `postToolUse` / `postToolUseFailure` still fire as before; this is the batch-level boundary for hooks that want to act once per turn instead of once per tool. Context: `batchSize`, `batchTools`.
+  - **`permissionDenied`** — symmetric to `permissionRequest`. Fires whenever a tool call is denied: by a hook, by the user (interactive "no"), by a headless fail-closed default, or by an auto-mode policy block. Context: `denySource` (`hook` / `user` / `headless` / `policy`), `denyReason`, `toolName`, `toolArgs`, `permissionMode`.
+  - **`taskCreated`** — fires when `TaskCreate` persists a new task. Context: `taskId`, `taskSubject`.
+  - **`taskCompleted`** — fires only on the `pending|in_progress → completed` transition (not on re-saves of an already-completed task). Context: `taskId`, `taskSubject`, `taskPreviousStatus`.
+  - **`instructionsLoaded`** — fires from `loadRulesAsPrompt` whenever the system prompt is rebuilt with rules in scope (CLAUDE.md / global-rules / project RULES.md). Context: `rulesCount`, `rulesChars`. Useful for compliance/audit hooks that want to log "session X is operating under these rules".
+
 ## 2.19.0 (2026-04-26) — SDK End-to-End + Budget Cap
 
 Three CLI fixes that close the loop on the v0.5 TypeScript SDK released to npm earlier this cycle, plus the `--max-budget-usd` audit-B3 item. Each fix was surfaced by the SDK's end-to-end smoke test and breaks an SDK consumer's use case until fixed; together they make `OpenHarnessClient` (TS) and `OpenHarnessClient` (Python) fully functional against `oh run` / `oh session` headless. The TS SDK itself ships separately on its own v0.x.x track (`@zhijiewang/openharness-sdk@0.5.0`, see "TypeScript SDK v0.5.0" section below).

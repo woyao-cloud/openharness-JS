@@ -11,7 +11,7 @@ import type { Message } from "../types/message.js";
 import { createInfoMessage, createUserMessage } from "../types/message.js";
 import type { PermissionMode } from "../types/permissions.js";
 import type { CostTracker } from "./cost.js";
-import { emitHookWithOutcome } from "./hooks.js";
+import { emitHook, emitHookWithOutcome } from "./hooks.js";
 
 export type SubmitContext = {
   messages: Message[];
@@ -112,6 +112,19 @@ export async function handleUserInput(input: string, ctx: SubmitContext): Promis
       if (result.prependToPrompt) {
         messages = [...messages, createUserMessage(input)];
         const prependPrompt = result.prependToPrompt;
+        // Slash command produced an expanded prompt — fire userPromptExpansion
+        // before userPromptSubmit so audit hooks can see the (input → expanded)
+        // boundary that's otherwise hidden from observers.
+        const slashCommand = trimmed.split(/\s/)[0] ?? trimmed;
+        emitHook("userPromptExpansion", {
+          slashCommand,
+          originalInput: input.slice(0, 1000),
+          prompt: prependPrompt.slice(0, 1000),
+          sessionId: ctx.sessionId,
+          model: ctx.currentModel,
+          provider: ctx.providerName,
+          permissionMode: ctx.permissionMode,
+        });
         const prependOutcome = await emitHookWithOutcome("userPromptSubmit", {
           prompt: prependPrompt,
           sessionId: ctx.sessionId,
