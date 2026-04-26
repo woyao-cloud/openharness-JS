@@ -1,9 +1,23 @@
 # Changelog
 
-## Unreleased
+## 2.20.0 (2026-04-26) — Tier B Audit Closure
+
+Closes the entire Tier B lane of the 2026-04-24 Claude Code parity audit (`docs/superpowers/plans/2026-04-24-claude-code-parity-audit.md`). Three independent items shipped as #68 / #69 / #70. After this release the audit only has Tier C remaining — all defer-until-demand items (VS Code extension, agent teams, OS-level sandboxing, …).
 
 ### Added
-- **MCP prompts surface as `/<server>:<prompt>` slash commands (audit B5)**. Closes audit B5; closes the entire Tier B audit lane. Mirrors Claude Code's slash-command bridge for MCP server prompts. Several MCP servers (GitHub, Sentry, Linear) ship canned prompts that are now reachable directly from the REPL.
+- **Six new hook events (audit B2, #68)** bringing the total from 17 to 23. Each fires from its natural source code path and is configurable like every other hook (`command` / `http` / `prompt` modes, optional `match` pattern, optional `jsonIO`).
+  - **`userPromptExpansion`** — fires when a slash command produces a `prependToPrompt`, between the expansion and `userPromptSubmit`. Context: `slashCommand`, `originalInput`, `prompt`. Useful for audit trails that want to see the (input → expanded) boundary that's otherwise hidden from observers.
+  - **`postToolBatch`** — fires once after a turn's full set of tool calls have all resolved, before the next model call. Per-tool `postToolUse` / `postToolUseFailure` still fire as before; this is the batch-level boundary for hooks that want to act once per turn instead of once per tool. Context: `batchSize`, `batchTools`.
+  - **`permissionDenied`** — symmetric to `permissionRequest`. Fires whenever a tool call is denied: by a hook, by the user (interactive "no"), by a headless fail-closed default, or by an auto-mode policy block. Context: `denySource` (`hook` / `user` / `headless` / `policy`), `denyReason`, `toolName`, `toolArgs`, `permissionMode`.
+  - **`taskCreated`** — fires when `TaskCreate` persists a new task. Context: `taskId`, `taskSubject`.
+  - **`taskCompleted`** — fires only on the `pending|in_progress → completed` transition (not on re-saves of an already-completed task). Context: `taskId`, `taskSubject`, `taskPreviousStatus`.
+  - **`instructionsLoaded`** — fires from `loadRulesAsPrompt` whenever the system prompt is rebuilt with rules in scope (CLAUDE.md / global-rules / project RULES.md). Context: `rulesCount`, `rulesChars`. Useful for compliance/audit hooks that want to log "session X is operating under these rules".
+- **`/reload-plugins` slash command (audit B4, #69)**. Hot-reloads plugins, skills, hook configuration, MCP server connections, and the on-disk config without restarting the session. Useful when iterating on a plugin or hook script — edit the file, run `/reload-plugins`, see the effect on the next prompt.
+  - Invalidates `config`, `hooks`, `sandbox`, and `verification` caches.
+  - Disconnects then reconnects every MCP server (loads its tool list fresh).
+  - Reports a count summary: hook events configured, MCP servers + tools, skills discovered, plugins discovered.
+  - Note: in-flight tool registries held by the agent loop refresh on the next prompt, not retroactively.
+- **MCP prompts surface as `/<server>:<prompt>` slash commands (audit B5, #70)**. Mirrors Claude Code's slash-command bridge for MCP server prompts. Several MCP servers (GitHub, Sentry, Linear) ship canned prompts that are now reachable directly from the REPL.
   - `McpClient` gains `listPrompts()` and `getPrompt(name, args)` (defensive — servers without the `prompts/list` capability return `[]` instead of throwing).
   - `loadMcpPrompts()` on the loader enumerates prompts on every connected server after `loadMcpTools()`. Returns `McpPromptHandle[]` with a `render(args)` callback per prompt.
   - `registerMcpPromptCommands(prompts)` in `src/commands/index.ts` adds each as a slash command. The handler invokes `render()` and returns the rendered text as `prependToPrompt` so the next user prompt carries it as context.

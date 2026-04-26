@@ -108,37 +108,25 @@ Flag is declared (`src/main.tsx:553`) but `opts.jsonSchema` is never read. Finis
 
 74 passing tests, separate v0.x.x SemVer track, npm publish workflow on `sdk-v*` tags.
 
-### B2. Missing hook events
+### B2. Missing hook events ✅
 
-CC has 28 hook events; OH has 15. Practical gaps worth closing:
+**Shipped 2026-04-26 in v2.20.0 (#68).** All six events landed: `userPromptExpansion`, `postToolBatch`, `permissionDenied`, `taskCreated`, `taskCompleted`, `instructionsLoaded`. Hook total: 17 → 23. Five new tests in `src/harness/hooks-b2.test.ts` exercise the firing.
 
-- **`userPromptExpansion`** — fires after slash command → prompt expansion (OH currently hides this boundary)
-- **`postToolBatch`** — after parallel tools resolve, before next model call (OH has individual `postToolUse` but no batch boundary)
-- **`permissionDenied`** — fires when auto-mode blocks (OH has `permissionRequest` but no symmetric deny event)
-- **`taskCreated` / `taskCompleted`** — TaskCreate/TaskUpdate already emit internally; just need external hook fan-out
-- **`instructionsLoaded`** — when CLAUDE.md / rules files load; useful for audit trails
+### B3. `--max-budget-usd` hard cap ✅
 
-**Effort:** ~2 days. Plumbing into existing emitter, matcher semantics, docs.
+**Shipped 2026-04-26 in v2.19.0 (#67).** Budget infrastructure in `src/query/index.ts:136` already existed (circuit breaker + 70% / 90% warnings); only the CLI flag wiring was missing. Pure parser at `src/utils/parse-budget.ts` with 10 unit tests; rejects zero / negative / non-numeric with exit 2.
 
-### B3. `--max-budget-usd` hard cap
+### B4. `/reload-plugins` hot reload ✅
 
-OH tracks cost but has no mechanism to stop a runaway session. CC's flag halts the agent loop once the session exceeds a dollar threshold.
+**Shipped 2026-04-26 in v2.20.0 (#69).** Invalidates `config` / `hooks` / `sandbox` / `verification` caches and disconnects+reconnects every MCP server. Reports a count summary. Note: in-flight tool registries held by the agent loop refresh on the next prompt, not retroactively (would need a closure-mutation refactor).
 
-**Effort:** ~3 hours. Check inside the turn loop before each LLM call.
+### B5. MCP prompts-as-slash-commands ✅
 
-### B4. `/reload-plugins` hot reload
-
-Rediscover plugins / skills / hooks / MCP configs without restarting the session. Developer-experience win when iterating on a plugin.
-
-**Effort:** ~1 day. Invalidate the three discovery caches and re-run loaders.
-
-### B5. MCP prompts-as-slash-commands
-
-CC lets MCP servers expose prompts that surface as `/server:prompt` inside the CLI. OH doesn't call `prompts/list` or `prompts/get` on connected servers. Closes another MCP-spec capability gap — several MCP servers (GitHub, Sentry) ship canned prompts.
-
-**Effort:** ~1 day. Add `listPrompts()` / `getPrompt(name)` to `src/mcp/client.ts`, enumerate at connect time, register as `/<server>:<prompt>` slash commands.
+**Shipped 2026-04-26 in v2.20.0 (#70).** `McpClient.listPrompts()` + `getPrompt(name, args)` plus a registrar that adds each as `/<server>:<prompt>`. Argument syntax `key=value key2="value with spaces"`. 13 new tests in `src/commands/mcp-prompts.test.ts`. Re-registration replaces the prior set, composes cleanly with `/reload-plugins`.
 
 *(B6 dropped — hook matcher already works for all events, confirmed in post-audit grep.)*
+
+**Tier B status as of 2026-04-26: closed.** All five originally-scoped items shipped (B6 was already built). Only Tier C remains in the audit.
 
 ---
 
