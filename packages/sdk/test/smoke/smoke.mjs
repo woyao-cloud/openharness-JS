@@ -13,12 +13,12 @@
 //   - PR5: end-to-end resume= round-trip across two clients
 //          (the fresh-session-id fix in #60 makes this work)
 //
-// DOES NOT VERIFY (out of scope; CLI behavior, not SDK):
-//   - Whether the model decides to call a custom tool
-//     (depends on model capability + prompt; flaky for small Ollama models)
-//   - End-to-end canUseTool firing through `oh run`
-//     (CLI gap — permissionRequest hook only fires in interactive TUI mode,
-//     src/query/tools.ts:64 — issue #62)
+// DOES NOT VERIFY (out of scope; deliberately skipped):
+//   - Whether the model decides to call a custom tool end-to-end
+//     (depends on model capability + prompt; flaky for small Ollama models).
+//     Headless `permissionRequest` hook firing is covered by unit tests in
+//     `src/query/tools.test.ts` — see the "headless mode (no askUser)" suite
+//     added with the #62 fix.
 //
 // Set OH_BINARY or OH_SMOKE_MODEL to override defaults. Exits 0 on all-pass.
 
@@ -184,10 +184,10 @@ await step("v0.5 resume= replays prior session history across clients", async ()
   }
 });
 
-console.log("\n--- known CLI gaps (filed) ---");
-console.log("• #62 — `permissionRequest` hooks only fire in interactive TUI mode (blocks end-to-end canUseTool through oh run).");
-console.log("• (#60 fixed in this branch — `oh session` mints a fresh sessionId on startup; programmatic resume works end-to-end.)");
-console.log("• (#61 fixed previously — Ollama num_ctx now sized to actual prompt; multi-turn works.)");
+console.log("\n--- recently-closed CLI gaps from earlier smoke runs ---");
+console.log("• #60 — `oh session` now mints a fresh sessionId on startup; programmatic resume works end-to-end.");
+console.log("• #61 — Ollama num_ctx now sized to the actual prompt; multi-turn no longer truncates server-side.");
+console.log("• #62 — `permissionRequest` hooks now fire in headless mode; canUseTool works through `oh run`/`oh session`.");
 
 const failures = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failures.length}/${results.length} passed`);

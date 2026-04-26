@@ -61,12 +61,12 @@ export async function executeSingleTool(
   // Permission check
   const perm = checkPermission(permissionMode, tool.riskLevel, tool.isReadOnly(parsed.data), tool.name, parsed.data);
   if (!perm.allowed) {
-    if (perm.reason === "needs-approval" && askUser) {
-      const { formatToolArgs } = await import("../utils/tool-summary.js");
-      const description = formatToolArgs(tool.name, toolCall.arguments as Record<string, unknown>);
-
-      // Hook: permissionRequest — fires between preToolUse and the interactive askUser prompt.
-      // Only fires when checkPermission says "needs-approval" AND askUser is provided.
+    if (perm.reason === "needs-approval") {
+      // Hook: permissionRequest — fires whenever checkPermission says
+      // "needs-approval", in both interactive and headless modes. Configured
+      // hooks get first say; if they return "ask" or have no decision, we
+      // fall through to the interactive prompt when one is available, or
+      // fail-closed deny in headless mode (issue #62).
       const hookOutcome = await emitHookWithOutcome("permissionRequest", {
         toolName: tool.name,
         toolArgs: JSON.stringify(toolCall.arguments).slice(0, 1000),
@@ -76,16 +76,27 @@ export async function executeSingleTool(
       });
 
       if (hookOutcome.permissionDecision === "allow") {
-        // Hook granted permission — skip interactive prompt and proceed to execution.
+        // Hook granted permission — proceed to execution.
       } else if (hookOutcome.permissionDecision === "deny" || !hookOutcome.allowed) {
         const reason = hookOutcome.reason ? `: ${hookOutcome.reason}` : "";
         return { output: `Permission denied by hook${reason}`, isError: true };
-      } else {
-        // "ask" or no decision → fall through to interactive prompt
+      } else if (askUser) {
+        // "ask" or no decision → interactive prompt when available
+        const { formatToolArgs } = await import("../utils/tool-summary.js");
+        const description = formatToolArgs(tool.name, toolCall.arguments as Record<string, unknown>);
         const allowed = await askUser(tool.name, description, tool.riskLevel);
         if (!allowed) {
           return { output: "Permission denied by user.", isError: true };
         }
+      } else {
+        // Headless mode with no hook decision and no interactive prompt:
+        // fail-closed deny. SDK consumers should configure a permissionRequest
+        // hook (or use canUseTool) to make per-call decisions.
+        return {
+          output:
+            "Permission denied: needs-approval (no interactive prompt available; configure a permissionRequest hook to gate this tool)",
+          isError: true,
+        };
       }
     } else {
       return { output: `Permission denied: ${perm.reason}`, isError: true };

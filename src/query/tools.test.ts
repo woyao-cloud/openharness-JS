@@ -405,3 +405,59 @@ describe("tools.ts — postToolUse / postToolUseFailure mutual exclusion", () =>
     }
   });
 });
+
+// ── Headless mode (no askUser) — issue #62 ────────────────────────────────
+// Before the fix: the permissionRequest hook block was gated on `askUser`
+// being provided, so headless callers (oh run, oh session) never reached
+// the hook. After the fix: hook fires in both modes; without askUser, an
+// undecided/ask outcome falls through to a fail-closed deny.
+
+describe("tools.ts — permissionRequest hook in headless mode (no askUser)", () => {
+  it("hook 'allow' executes the tool even without an interactive prompt", async () => {
+    const tool = makeNeedsApprovalTool("HeadlessAllow", { output: "executed", isError: false });
+    const toolCall = makeToolCall("HeadlessAllow");
+
+    const { result } = await withPermHook({ hookSpecificOutput: { decision: "allow" } }, () =>
+      // No askUser passed — the headless code path.
+      executeSingleTool(toolCall, [tool], makeContext(), "ask"),
+    );
+
+    assert.equal(result.isError, false, "headless tool should execute when hook approves");
+    assert.ok(result.output.includes("executed"));
+  });
+
+  it("hook 'deny' returns permission-denied with the hook's reason", async () => {
+    const tool = makeNeedsApprovalTool("HeadlessDeny", { output: "executed", isError: false });
+    const toolCall = makeToolCall("HeadlessDeny");
+
+    const { result } = await withPermHook(
+      { hookSpecificOutput: { decision: "deny", reason: "policy violation" } },
+      () => executeSingleTool(toolCall, [tool], makeContext(), "ask"),
+    );
+
+    assert.equal(result.isError, true);
+    assert.ok(/policy violation/.test(result.output), `expected policy reason, got: ${result.output}`);
+  });
+
+  it("hook 'ask' fails closed when no interactive prompt is available", async () => {
+    const tool = makeNeedsApprovalTool("HeadlessAsk", { output: "executed", isError: false });
+    const toolCall = makeToolCall("HeadlessAsk");
+
+    const { result } = await withPermHook({ hookSpecificOutput: { decision: "ask" } }, () =>
+      executeSingleTool(toolCall, [tool], makeContext(), "ask"),
+    );
+
+    assert.equal(result.isError, true, "ask + no prompt must deny (fail-closed)");
+    assert.ok(/needs-approval/.test(result.output), `expected needs-approval reason, got: ${result.output}`);
+  });
+
+  it("no hook configured falls through to a fail-closed deny in headless mode", async () => {
+    const tool = makeNeedsApprovalTool("HeadlessNoHook", { output: "executed", isError: false });
+    const toolCall = makeToolCall("HeadlessNoHook");
+
+    const { result } = await withPermHook(null, () => executeSingleTool(toolCall, [tool], makeContext(), "ask"));
+
+    assert.equal(result.isError, true, "no hook + no prompt must deny");
+    assert.ok(/needs-approval/.test(result.output), `expected needs-approval reason, got: ${result.output}`);
+  });
+});

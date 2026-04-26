@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Fixed
+- **`permissionRequest` hooks now fire in headless mode (#62)**. Previously the hook block at `src/query/tools.ts:64` was gated on `askUser` being provided, so headless callers (`oh run`, `oh session`) bypassed configured `permissionRequest` hooks entirely — every tool call needing approval got a generic "Permission denied: needs-approval" without consulting any hook. SDK consumers using `canUseTool` saw the in-process HTTP server they registered never get called.
+  - The hook now fires whenever `checkPermission` returns `needs-approval`, in both interactive and headless modes. Configured hooks get first say.
+  - If the hook returns `allow` / `deny`, that's honored.
+  - If the hook returns `ask` (or has no decision) and an interactive `askUser` is available, the prompt fires as before.
+  - If no decision and no `askUser` (true headless), the call is denied fail-closed with an explanatory message ("configure a permissionRequest hook to gate this tool").
+  - Behavior for users with no `permissionRequest` hooks configured is unchanged — the deny outcome is the same as before, just routed through the new code path.
+  - Unblocks the SDK `canUseTool` callback (Python `can_use_tool`, TypeScript `canUseTool`) for `oh run`/`oh session` consumers.
 - **`oh session` and `oh run` now mint a fresh `sessionId` on startup (#60)**. Previously a `sessionId` was only present when the run had been started with `--resume <id>`; fresh runs emitted `{"type":"ready"}` with no id, which made programmatic resume from an SDK client impossible (you had nothing to capture for the next call). Both commands now create a session record up-front via `createSession()`, persist after every completed turn, and emit the id in the `ready` (oh session) / `session_start` (oh run) events. Existing `--resume <id>` behavior is unchanged. Mirrors the REPL's save-on-exit pattern at headless scope.
 - **Ollama provider — multi-turn context preservation (#61)**. Ollama's chat API defaults to a 2048-token `num_ctx`; OH's typical system prompt + tool list pushes ~4 K, so prior conversation turns were silently truncated server-side. The model appeared to "forget" what was just said. Reproducible without the SDK by piping two prompts into `oh session` — the second response would ignore everything from the first.
   - The Ollama provider now passes `options.num_ctx` on every request, sized from a char/4 token estimate of `messages + systemPrompt + tools`, padded by 25 % + 1 K headroom, rounded up to the next power of 2 ≥ 8 192, capped at 32 K. Cap exists to bound KV-cache memory; users with bigger models can override via `OLLAMA_NUM_CTX`.
