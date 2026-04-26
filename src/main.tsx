@@ -24,7 +24,13 @@ import { detectProject, projectContextToPrompt } from "./harness/onboarding.js";
 import { discoverSkills, skillsToPrompt } from "./harness/plugins.js";
 import { createRulesFile, loadRules, loadRulesAsPrompt } from "./harness/rules.js";
 import { listSessions } from "./harness/session.js";
-import { connectedMcpServers, disconnectMcpClients, getMcpInstructions, loadMcpTools } from "./mcp/loader.js";
+import {
+  connectedMcpServers,
+  disconnectMcpClients,
+  getMcpInstructions,
+  loadMcpPrompts,
+  loadMcpTools,
+} from "./mcp/loader.js";
 import { loadOutputStyle } from "./outputStyles/index.js";
 import type { Provider, ProviderConfig } from "./providers/base.js";
 import { getAllTools } from "./tools.js";
@@ -705,6 +711,19 @@ program
     const mcpNames = connectedMcpServers();
     if (mcpNames.length > 0) {
       console.log(`[mcp] Connected: ${mcpNames.join(", ")}`);
+    }
+    // Surface MCP-server prompts (`prompts/list`) as `/server:prompt` slash
+    // commands. Errors are swallowed inside loadMcpPrompts — servers that
+    // don't implement the prompts capability return [] without throwing.
+    try {
+      const { registerMcpPromptCommands } = await import("./commands/index.js");
+      const prompts = await loadMcpPrompts();
+      registerMcpPromptCommands(prompts);
+      if (prompts.length > 0) {
+        console.log(`[mcp] Prompts: ${prompts.map((p) => `/${p.qualifiedName}`).join(", ")}`);
+      }
+    } catch {
+      /* prompt registration is best-effort; never block the REPL */
     }
     const tools = [...getAllTools(), ...mcpTools];
 

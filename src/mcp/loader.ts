@@ -91,6 +91,43 @@ export function connectedMcpServers(): string[] {
   return connectedClients.map((c) => c.name);
 }
 
+export type McpPromptHandle = {
+  /** `<server>:<prompt>` qualified name — the slash command is `/<server>:<prompt>`. */
+  qualifiedName: string;
+  description: string;
+  /** List of named arguments the prompt template expects. */
+  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+  /** Render the prompt with the supplied named arguments. */
+  render(args?: Record<string, string>): Promise<string>;
+};
+
+/**
+ * Enumerate prompts on every already-connected MCP server. Servers that don't
+ * implement the `prompts/list` capability return an empty list (handled
+ * inside `client.listPrompts`). Call AFTER `loadMcpTools()` so the client
+ * connections are warm.
+ */
+export async function loadMcpPrompts(): Promise<McpPromptHandle[]> {
+  const handles: McpPromptHandle[] = [];
+  for (const client of connectedClients) {
+    let prompts: Awaited<ReturnType<typeof client.listPrompts>>;
+    try {
+      prompts = await client.listPrompts();
+    } catch {
+      continue; // Defensive — listPrompts already swallows method-not-found
+    }
+    for (const p of prompts) {
+      handles.push({
+        qualifiedName: `${client.name}:${p.name}`,
+        description: p.description ?? `MCP prompt from ${client.name}`,
+        ...(p.arguments ? { arguments: p.arguments } : {}),
+        render: (args = {}) => client.getPrompt(p.name, args),
+      });
+    }
+  }
+  return handles;
+}
+
 const MAX_MCP_INSTRUCTION_LENGTH = 2000;
 
 /** Get MCP server instructions to inject into system prompt (sandboxed with origin markers) */

@@ -3,11 +3,13 @@
 ## Unreleased
 
 ### Added
-- **`/reload-plugins` slash command (audit B4)**. Hot-reloads plugins, skills, hook configuration, MCP server connections, and the on-disk config without restarting the session. Useful when iterating on a plugin or hook script — edit the file, run `/reload-plugins`, see the effect on the next prompt. Closes audit B4.
-  - Invalidates `config`, `hooks`, `sandbox`, and `verification` caches.
-  - Disconnects then reconnects every MCP server (loads its tool list fresh).
-  - Reports a count summary: hook events configured, MCP servers + tools, skills discovered, plugins discovered.
-  - Note: in-flight tool registries held by the agent loop refresh on the next prompt, not retroactively.
+- **MCP prompts surface as `/<server>:<prompt>` slash commands (audit B5)**. Closes audit B5; closes the entire Tier B audit lane. Mirrors Claude Code's slash-command bridge for MCP server prompts. Several MCP servers (GitHub, Sentry, Linear) ship canned prompts that are now reachable directly from the REPL.
+  - `McpClient` gains `listPrompts()` and `getPrompt(name, args)` (defensive — servers without the `prompts/list` capability return `[]` instead of throwing).
+  - `loadMcpPrompts()` on the loader enumerates prompts on every connected server after `loadMcpTools()`. Returns `McpPromptHandle[]` with a `render(args)` callback per prompt.
+  - `registerMcpPromptCommands(prompts)` in `src/commands/index.ts` adds each as a slash command. The handler invokes `render()` and returns the rendered text as `prependToPrompt` so the next user prompt carries it as context.
+  - Argument syntax: `/<server>:<prompt> key=value key2="value with spaces"`. Single and double quotes both supported. Required arguments declared by the prompt template surface a usage error (no model call) when missing.
+  - Re-registering replaces the prior set — safe to call again after `/reload-plugins` (or any future hot-reload trigger).
+  - Render errors are reported in the slash-command output, not thrown.
 
 ## 2.19.0 (2026-04-26) — SDK End-to-End + Budget Cap
 

@@ -121,6 +121,56 @@ export class McpClient {
       .join("\n");
   }
 
+  /**
+   * List the prompts an MCP server exposes. Returns `[]` for servers that
+   * don't implement the `prompts/list` capability — this is a normal case
+   * (most non-prompt-aware MCP servers throw a method-not-found error).
+   *
+   * Each prompt may declare named arguments; surfaced via `arguments`.
+   */
+  async listPrompts(): Promise<
+    Array<{
+      name: string;
+      description?: string;
+      arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+    }>
+  > {
+    try {
+      const res = await (this.sdk as any).listPrompts();
+      return (res?.prompts ?? []) as Array<{
+        name: string;
+        description?: string;
+        arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+      }>;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Get the rendered text of an MCP prompt. Server-side templates are
+   * applied with the supplied arguments. Multiple message turns are
+   * concatenated with double-newline separators — same shape OH uses for
+   * other prepended prompts.
+   */
+  async getPrompt(name: string, args: Record<string, string> = {}): Promise<string> {
+    const res = await (this.sdk as any).getPrompt({ name, arguments: args });
+    const messages = (res?.messages ?? []) as Array<{
+      role: string;
+      content: { type: string; text?: string } | string;
+    }>;
+    const parts: string[] = [];
+    for (const m of messages) {
+      const content = m.content;
+      if (typeof content === "string") {
+        parts.push(content);
+      } else if (content && content.type === "text" && typeof content.text === "string") {
+        parts.push(content.text);
+      }
+    }
+    return parts.join("\n\n");
+  }
+
   async callTool(name: string, args: Record<string, unknown>): Promise<string> {
     // Retry up to 2 times on transport-closed / timeout errors
     let lastErr: Error | null = null;

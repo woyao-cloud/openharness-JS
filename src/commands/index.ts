@@ -81,3 +81,84 @@ export function getCommandNames(): string[] {
 export function getCommandEntries(): Array<{ name: string; description: string }> {
   return [...commands.entries()].map(([name, { description }]) => ({ name, description }));
 }
+
+/**
+ * Register MCP-server prompts as `/server:prompt` slash commands. Called from
+ * main.tsx after `loadMcpTools()` + `loadMcpPrompts()` so the connections are
+ * warm. Each handler invokes the prompt's `render()` and returns the result
+ * as a `prependToPrompt` so the next user prompt carries it as context.
+ *
+ * Argument syntax: `/server:prompt key=value key2=value2 ...`. Quoted values
+ * (`key="value with spaces"`) are supported. Args declared as `required` on
+ * the prompt template that aren't supplied surface as a usage error.
+ *
+ * Re-registering replaces any prior MCP prompt commands — safe to call again
+ * after `/reload-plugins` triggers a re-discover.
+ */
+import type { McpPromptHandle } from "../mcp/loader.js";
+
+let mcpPromptKeys: string[] = [];
+
+export function registerMcpPromptCommands(prompts: readonly McpPromptHandle[]): void {
+  for (const key of mcpPromptKeys) commands.delete(key);
+  mcpPromptKeys = [];
+
+  for (const handle of prompts) {
+    const key = handle.qualifiedName.toLowerCase();
+    const required = (handle.arguments ?? []).filter((a) => a.required).map((a) => a.name);
+    const optional = (handle.arguments ?? []).filter((a) => !a.required).map((a) => a.name);
+    const usageBits = [...required.map((n) => `${n}=<value>`), ...optional.map((n) => `[${n}=<value>]`)].join(" ");
+
+    commands.set(key, {
+      description: handle.description,
+      handler: async (args: string) => {
+        const parsed = parseMcpPromptArgs(args);
+        const missing = required.filter((n) => !(n in parsed));
+        if (missing.length > 0) {
+          return {
+            output: `/${handle.qualifiedName}: missing required argument(s): ${missing.join(", ")}\nUsage: /${handle.qualifiedName}${usageBits ? ` ${usageBits}` : ""}`,
+            handled: true,
+          };
+        }
+        try {
+          const rendered = await handle.render(parsed);
+          if (!rendered.trim()) {
+            return { output: `/${handle.qualifiedName} returned an empty prompt.`, handled: true };
+          }
+          return {
+            output: `[mcp-prompt] ${handle.qualifiedName}`,
+            handled: false,
+            prependToPrompt: rendered,
+          };
+        } catch (err) {
+          return {
+            output: `/${handle.qualifiedName} failed: ${err instanceof Error ? err.message : String(err)}`,
+            handled: true,
+          };
+        }
+      },
+    });
+    mcpPromptKeys.push(key);
+  }
+}
+
+/**
+ * Parse `key=value key2="value with spaces"` style args into a map. Bare
+ * tokens (no `=`) are dropped — MCP prompt arguments are always named.
+ * Exposed for tests.
+ *
+ * @internal
+ */
+export function parseMcpPromptArgs(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw.trim()) return out;
+  // Match key=value or key="value with spaces" or key='value'
+  const re = /(\w[\w.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    const key = m[1]!;
+    const value = m[2] ?? m[3] ?? m[4] ?? "";
+    out[key] = value;
+  }
+  return out;
+}
