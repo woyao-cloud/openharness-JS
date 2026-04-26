@@ -38,7 +38,41 @@ for await (const event of query("Summarize README.md in this directory.", {
 }
 ```
 
-## API (v0.1)
+## Multi-turn sessions
+
+For conversations that span multiple prompts, use `OpenHarnessClient`:
+
+```ts
+import { OpenHarnessClient } from "@zhijiewang/openharness-sdk";
+
+const client = new OpenHarnessClient({ model: "ollama/llama3", permissionMode: "trust" });
+try {
+  for await (const event of client.send("What is 1+1?")) {
+    if (event.type === "text") process.stdout.write(event.content);
+  }
+  for await (const event of client.send("And times 3?")) {
+    // remembers the prior turn
+    if (event.type === "text") process.stdout.write(event.content);
+  }
+  console.log("session:", client.sessionId);
+} finally {
+  await client.close();
+}
+```
+
+In TypeScript 5.2+ on Node 20+, you can use explicit resource management for automatic cleanup:
+
+```ts
+await using client = new OpenHarnessClient({ model: "ollama/llama3" });
+for await (const e of client.send("...")) { /* ... */ }
+// client.close() runs at scope exit, even on throw
+```
+
+The client keeps a single `oh session` subprocess warm across calls. Concurrent `send()` calls on one client are serialized in submission order. Call `close()` (or rely on `Symbol.asyncDispose`) to terminate the subprocess gracefully — graceful exit → `SIGTERM` → `SIGKILL` with 5 s and 3 s grace windows.
+
+`client.interrupt()` aborts an in-flight prompt by signalling the subprocess. Today the CLI treats this as termination, so subsequent `send()`s on the same client will fail.
+
+## API (v0.2)
 
 ### `query(prompt, options?) → AsyncGenerator<Event>`
 
@@ -85,8 +119,8 @@ The Python SDK shipped a v0.5 surface in five steps; this TypeScript SDK follows
 
 | Version | Adds |
 |---|---|
-| **0.1** *(this release)* | `query()`, typed events, error taxonomy |
-| 0.2 | `OpenHarnessClient` stateful sessions (`oh session`) with multi-turn `send()` |
+| 0.1 | `query()`, typed events, error taxonomy |
+| **0.2** *(this release)* | `OpenHarnessClient` stateful sessions (`oh session`) with multi-turn `send()`, `interrupt()`, `Symbol.asyncDispose` |
 | 0.3 | Custom tools via in-process MCP server (`tools: [...]`) |
 | 0.4 | `canUseTool` permission callback + turn-boundary events |
 | 0.5 | `resume`, `settingSources`, `OpenHarnessOptions` typed bundle |

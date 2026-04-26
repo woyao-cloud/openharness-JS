@@ -14,6 +14,7 @@
  * ```
  */
 
+export { OpenHarnessClient } from "./client.js";
 export { OhBinaryNotFoundError, OpenHarnessError } from "./errors.js";
 export type {
   BaseEvent,
@@ -34,4 +35,4 @@ export { parseEvent } from "./events.js";
 export type { OpenHarnessOptions, PermissionMode } from "./options.js";
 export { buildArgv, query } from "./query.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
