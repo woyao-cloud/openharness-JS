@@ -61,6 +61,8 @@ oh
 
 **Python SDK：** 我们还提供了官方的 Python SDK，可以在 Python 程序中驱动 `oh`（笔记本、批处理脚本、ML 流水线）。在 npm 安装之后，使用 `pip install openharness-sdk` 安装（PyPI 分发名为 `openharness-sdk`，因为未加后缀的名称已被占用），然后 `from openharness import query`。详见 [`python/README.md`](python/README.md)。
 
+**TypeScript SDK：** 同样有官方的 TypeScript SDK，可以在 Node.js（VS Code 插件、Electron 应用、构建脚本等）中驱动 `oh`：使用 `@zhijiewang/openharness-sdk` —— 通过 `npm install @zhijiewang/openharness-sdk` 安装，然后 `import { query, OpenHarnessClient, tool } from "@zhijiewang/openharness-sdk"`。功能与 Python SDK 对等（流式事件、有状态会话、自定义工具、权限回调、会话恢复）。详见 [`packages/sdk/README.md`](packages/sdk/README.md)。
+
 ```bash
 oh init                               # 交互式安装向导（模型提供商 + 电子宠物）
 oh                                    # 自动检测本地模型

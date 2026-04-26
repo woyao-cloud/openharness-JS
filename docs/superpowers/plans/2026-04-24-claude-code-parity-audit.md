@@ -96,13 +96,17 @@ Flag is declared (`src/main.tsx:553`) but `opts.jsonSchema` is never read. Finis
 
 ## Tier B — plan after Tier A (medium effort)
 
-### B1. TypeScript / JavaScript SDK
+### B1. TypeScript / JavaScript SDK ✅
 
-openHarness is written in TypeScript but only ships a Python SDK. Biggest ecosystem gap. JS/TS developers who want to embed `oh` in a Node app, a VS Code extension, or an Electron tool have no native SDK — they'd shell out to `oh session` manually.
+**Shipped 2026-04-26 as `@zhijiewang/openharness-sdk` v0.5.0.** Mirrors the Python SDK's v0.5 surface in five stacked PRs (v0.1 → v0.5):
 
-**Parity mirror:** `@anthropic-ai/claude-agent-sdk` on npm. Should expose `query()`, `OpenHarnessClient`, MCP tool helpers, and turn events mirroring the Python SDK.
+- v0.1.0 — `query()` + 11 typed event interfaces + `OpenHarnessError`/`OhBinaryNotFoundError` + binary discovery
+- v0.2.0 — `OpenHarnessClient` stateful sessions (spawns `oh session`), `Symbol.asyncDispose` for `await using`
+- v0.3.0 — `tool()` helper + `tools: [...]` option backed by an in-process Streamable-HTTP MCP server (Zod schemas → JSON Schema via `zod-to-json-schema`)
+- v0.4.0 — `canUseTool` permission callback + in-process HTTP hook server, fail-closed on throw/timeout/unrecognised return
+- v0.5.0 — `resume`, `settingSources`, `OpenHarnessOptionsBundle`
 
-**Effort:** ~1 week. Can reuse the stream-json protocol the Python SDK already drives; most of the work is API shape + typings + tests + packaging under `@zhijiewang/openharness-sdk`.
+74 passing tests, separate v0.x.x SemVer track, npm publish workflow on `sdk-v*` tags.
 
 ### B2. Missing hook events
 

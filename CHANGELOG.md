@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## Unreleased — TypeScript SDK v0.5.0
+
+The CLI itself is unchanged in this cycle. New companion package
+`@zhijiewang/openharness-sdk` ships under `packages/sdk/` on its own
+v0.x.x SemVer track, mirroring the Python SDK arc and closing **B1
+(TypeScript / JavaScript SDK)** from the 2026-04-24 parity audit.
+
+Five stacked PRs:
+
+- **v0.1.0** — `query()` + 11 typed event interfaces + `OpenHarnessError` / `OhBinaryNotFoundError` + binary discovery (env `OH_BINARY` or PATH; auto-prefixes `node` for `.cjs`/`.mjs`/`.js` script targets, useful for development and tests).
+- **v0.2.0** — `OpenHarnessClient` stateful sessions backed by `oh session`, FIFO `send()` serialization, `Symbol.asyncDispose` for `await using`, graceful three-step shutdown.
+- **v0.3.0** — `tool({ name, inputSchema, handler })` helper + `tools: [...]` option backed by an in-process Streamable-HTTP MCP server (Zod schemas → JSON Schema via `zod-to-json-schema`). Existing user `.oh/config.yaml` keys (model, provider, permissionMode, …) are preserved; only `mcpServers` and `hooks` are SDK-owned.
+- **v0.4.0** — `canUseTool` permission callback + in-process HTTP hook server. Sync and async callbacks both work; throw / 30 s timeout / unrecognised return value all surface as `decision: "deny"` (fail-closed).
+- **v0.5.0** — `resume`, `settingSources`, and `OpenHarnessOptionsBundle` typed wrapper closing the v0.x parity arc with `@anthropic-ai/claude-agent-sdk`.
+
+74 passing tests cover NDJSON splitting, event parsing, `query()` happy/error/early-break paths, `OpenHarnessClient` multi-turn / serialization / crash recovery, MCP server roundtrips via the official client SDK, permission server timeouts and shape coercion, and argv assembly for resume + settingSources.
+
+Wiring at the repo level:
+- New `packages/sdk/` workspace declared in root `package.json`.
+- New `.github/workflows/publish-sdk.yml` publishes to npm on `sdk-v*` tags with provenance.
+- `biome.json` includes `packages/sdk/src` and `packages/sdk/test`.
+- Root `npm test`, `npm run typecheck`, `npm run lint` all chain into the SDK workspace; SDK has its own `npm test` / `build` / `typecheck` for isolated runs.
+- README.md and README.zh-CN.md both gain a "TypeScript SDK" mention next to the existing Python SDK note.
 
 ## 2.18.0 (2026-04-26) — Personality & Plumbing
 
