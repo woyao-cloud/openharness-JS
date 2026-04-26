@@ -38,6 +38,10 @@ function buildSessionArgv(options: OpenHarnessOptions): string[] {
   }
   argv.push("--max-turns", String(options.maxTurns ?? DEFAULT_MAX_TURNS));
   if (options.systemPrompt) argv.push("--system-prompt", options.systemPrompt);
+  if (options.resume) argv.push("--resume", options.resume);
+  if (options.settingSources && options.settingSources.length > 0) {
+    argv.push("--setting-sources", options.settingSources.join(","));
+  }
   return argv;
 }
 

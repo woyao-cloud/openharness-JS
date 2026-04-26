@@ -33,6 +33,7 @@ export type {
 } from "./events.js";
 export { parseEvent } from "./events.js";
 export type { OpenHarnessOptions, PermissionMode } from "./options.js";
+export { OpenHarnessOptionsBundle } from "./options.js";
 export type {
   PermissionCallback,
   PermissionContext,
@@ -44,4 +45,4 @@ export { buildArgv, query } from "./query.js";
 export type { ToolDefinition } from "./tools.js";
 export { tool } from "./tools.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";

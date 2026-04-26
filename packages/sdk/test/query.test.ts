@@ -64,6 +64,25 @@ describe("buildArgv", () => {
       "be terse",
     ]);
   });
+
+  test("threads resume and settingSources when provided", () => {
+    const argv = buildArgv("go", { resume: "sid-9", settingSources: ["user", "project"] });
+    assert.ok(argv.includes("--resume"));
+    assert.equal(argv[argv.indexOf("--resume") + 1], "sid-9");
+    assert.ok(argv.includes("--setting-sources"));
+    assert.equal(argv[argv.indexOf("--setting-sources") + 1], "user,project");
+  });
+
+  test("omits resume + settingSources flags when not set", () => {
+    const argv = buildArgv("go", {});
+    assert.equal(argv.includes("--resume"), false);
+    assert.equal(argv.includes("--setting-sources"), false);
+  });
+
+  test("omits --setting-sources when the array is explicitly empty", () => {
+    const argv = buildArgv("go", { settingSources: [] });
+    assert.equal(argv.includes("--setting-sources"), false);
+  });
 });
 
 describe("query()", () => {

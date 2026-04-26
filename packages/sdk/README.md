@@ -138,7 +138,55 @@ Sync and async callbacks both work. Exceptions and timeouts default to `deny` (f
 
 Requires `@zhijiewang/openharness` v2.16.0+ (turn-boundary hooks + richer HTTP hook envelope).
 
-## API (v0.4)
+## Session resume
+
+Capture the session ID from one client, pass it to the next:
+
+```ts
+import { OpenHarnessClient } from "@zhijiewang/openharness-sdk";
+
+let sid: string | null;
+{
+  await using c1 = new OpenHarnessClient({ model: "ollama/llama3" });
+  for await (const _ of c1.send("Remember that my favorite color is teal.")) void _;
+  sid = c1.sessionId;
+}
+
+// Later — possibly in a new process:
+await using c2 = new OpenHarnessClient({ model: "ollama/llama3", resume: sid ?? undefined });
+for await (const e of c2.send("What's my favorite color?")) {
+  if (e.type === "text") process.stdout.write(e.content);
+}
+```
+
+`settingSources` controls which config layers the CLI merges (`"user"` = `~/.oh/config.yaml`, `"project"` = `./.oh/config.yaml`, `"local"` = `./.oh/config.local.yaml`). Omit to use all three; pass a subset to scope the run:
+
+```ts
+const opts = { model: "ollama/llama3", settingSources: ["user", "project"] as const };
+for await (const e of query("What does my project config look like?", opts)) { /* ... */ }
+```
+
+## Typed options bundle
+
+`OpenHarnessOptionsBundle` wraps the option object in a class, useful for test helpers and factory code that needs to share a partial configuration:
+
+```ts
+import { OpenHarnessClient, OpenHarnessOptionsBundle } from "@zhijiewang/openharness-sdk";
+
+const opts = new OpenHarnessOptionsBundle({
+  model: "ollama/llama3",
+  permissionMode: "trust",
+  maxTurns: 5,
+  settingSources: ["user", "project"],
+});
+const client = new OpenHarnessClient(opts.toOptions());
+```
+
+`.toOptions()` returns a plain `OpenHarnessOptions` containing only the fields that were explicitly set, so it's safe to spread.
+
+Both `resume` and `settingSources` require `@zhijiewang/openharness` v2.17.0+.
+
+## API (v0.5)
 
 ### `query(prompt, options?) → AsyncGenerator<Event>`
 
@@ -157,6 +205,8 @@ Run a single prompt through `oh` and stream events as they arrive.
 | `ohBinary` | `string` | from `OH_BINARY` / PATH | Override the `oh` binary path. |
 | `tools` | `ToolDefinition[]` | — | Custom TypeScript tools to expose to the agent. See "Custom TypeScript tools" above. |
 | `canUseTool` | `PermissionCallback` | — | Permission gate. See "Custom permission gate" above. Requires CLI v2.16.0+. |
+| `resume` | `string` | — | Session ID to resume. Capture from `client.sessionId` or a `SessionStart` event. Requires CLI v2.17.0+. |
+| `settingSources` | `ReadonlyArray<"user" \| "project" \| "local">` | all three | Which config layers to merge. Requires CLI v2.17.0+. |
 
 Breaking out of the iterator early (`break`) terminates the subprocess (graceful `SIGTERM` with a 5 s grace window before `SIGKILL`).
 
@@ -190,8 +240,8 @@ The Python SDK shipped a v0.5 surface in five steps; this TypeScript SDK follows
 | 0.1 | `query()`, typed events, error taxonomy |
 | 0.2 | `OpenHarnessClient` stateful sessions (`oh session`) with multi-turn `send()`, `interrupt()`, `Symbol.asyncDispose` |
 | 0.3 | Custom tools via in-process MCP server (`tool()` + `tools: [...]`) |
-| **0.4** *(this release)* | `canUseTool` permission callback + turn-boundary events |
-| 0.5 | `resume`, `settingSources`, `OpenHarnessOptions` typed bundle |
+| 0.4 | `canUseTool` permission callback + turn-boundary events |
+| **0.5** *(this release)* | `resume`, `settingSources`, `OpenHarnessOptionsBundle` typed wrapper |
 
 ## Relationship to `@zhijiewang/openharness`
 

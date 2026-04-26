@@ -1,5 +1,16 @@
 # @zhijiewang/openharness-sdk — Changelog
 
+## 0.5.0 (unreleased)
+
+Mirrors Python SDK v0.5.0 — session resume, setting sources, and a typed options bundle.
+
+- `resume?: string` option on `query()` and `OpenHarnessClient`. When set, the CLI replays the named session's message history before the new prompt. Capture the ID from `client.sessionId` (or a `SessionStart` event yielded by `query()`) on a previous run.
+- `settingSources?: ReadonlyArray<"user" | "project" | "local">` option. Subset of config layers the CLI should merge from `.oh/config.yaml`. Omit to use all three (default precedence: local > project > user).
+- `OpenHarnessOptionsBundle` — a class wrapper bundling every option into one object, with `.toOptions()` returning a plain `OpenHarnessOptions` containing only the explicitly-set fields. Convenient for test helpers and factory functions. Mirrors Python's `OpenHarnessOptions` dataclass + `to_kwargs()`.
+- Argv assembly threads the new flags as `--resume <id>` and `--setting-sources user,project,local` (comma-joined) on both `oh run` and `oh session`.
+- `client.sessionId` continues to populate from either `ready` (always emitted by `oh session`) or a `session_start` event — no behaviour change.
+- Requires the `oh` CLI shipped in `@zhijiewang/openharness` v2.17.0+ (the version that wired `--resume` and `--setting-sources`).
+
 ## 0.4.0 (unreleased)
 
 Mirrors Python SDK v0.4.0 — `canUseTool` permission callback + turn-boundary events.
