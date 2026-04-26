@@ -1,8 +1,50 @@
+import { readFileSync } from "node:fs";
+import type { McpServerConfig } from "../harness/config.js";
 import { readOhConfig } from "../harness/config.js";
 import type { Tool } from "../Tool.js";
 import { McpClient } from "./client.js";
 import { DeferredMcpTool } from "./DeferredMcpTool.js";
 import { McpTool } from "./McpTool.js";
+
+/**
+ * Parse a `--mcp-config <path>` file. Format:
+ *   - `{ "mcpServers": [...] }` — Claude Code convention (preferred)
+ *   - `[ ... ]` — bare array of server configs (also accepted)
+ *   - `{ "name": ..., ... }` — single-server object (also accepted)
+ *
+ * Validation is shape-only: each entry must be an object with a `name`.
+ * Connection-time validation happens in `McpClient.connect`. Throws on
+ * malformed JSON or unrecognised top-level shape.
+ */
+export function parseMcpConfigFile(path: string): McpServerConfig[] {
+  const raw = readFileSync(path, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`--mcp-config '${path}' is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  let servers: unknown[];
+  if (Array.isArray(parsed)) {
+    servers = parsed;
+  } else if (parsed && typeof parsed === "object" && "mcpServers" in parsed) {
+    const list = (parsed as { mcpServers: unknown }).mcpServers;
+    if (!Array.isArray(list)) {
+      throw new Error(`--mcp-config '${path}': mcpServers must be an array`);
+    }
+    servers = list;
+  } else if (parsed && typeof parsed === "object" && "name" in parsed) {
+    servers = [parsed];
+  } else {
+    throw new Error(`--mcp-config '${path}': expected an mcpServers array, a bare array, or a single server object`);
+  }
+  for (const s of servers) {
+    if (!s || typeof s !== "object" || typeof (s as { name?: unknown }).name !== "string") {
+      throw new Error(`--mcp-config '${path}': every server entry must be an object with a 'name' string`);
+    }
+  }
+  return servers as McpServerConfig[];
+}
 
 const connectedClients: McpClient[] = [];
 
@@ -32,11 +74,34 @@ function installExitHandler(): void {
 /** Threshold: servers with more tools than this use deferred loading */
 const DEFERRED_THRESHOLD = 10;
 
-/** Load MCP tools from .oh/config.yaml mcpServers list. Returns empty array if none configured. */
-export async function loadMcpTools(): Promise<Tool[]> {
+export interface LoadMcpOptions {
+  /**
+   * MCP servers loaded from sources outside `.oh/config.yaml` — typically
+   * a `--mcp-config <path>` file. Merged with the config-file servers
+   * unless `strict` is set, in which case these REPLACE the config-file
+   * servers entirely.
+   */
+  extraServers?: import("../harness/config.js").McpServerConfig[];
+  /**
+   * When `true`, ignore `cfg.mcpServers` and use only `extraServers`.
+   * No-op when `extraServers` is undefined (the config-file servers
+   * still load). Mirrors Claude Code's `--strict-mcp-config`.
+   */
+  strict?: boolean;
+}
+
+/** Load MCP tools from .oh/config.yaml mcpServers list (and/or `--mcp-config` overrides). Returns empty array if none configured. */
+export async function loadMcpTools(opts: LoadMcpOptions = {}): Promise<Tool[]> {
   installExitHandler();
   const cfg = readOhConfig();
-  const servers = cfg?.mcpServers ?? [];
+  const fromConfig = opts.strict ? [] : (cfg?.mcpServers ?? []);
+  const fromExtra = opts.extraServers ?? [];
+  // Dedup by name — extras win on conflict so --mcp-config can override a
+  // project-config entry without --strict.
+  const byName = new Map<string, import("../harness/config.js").McpServerConfig>();
+  for (const s of fromConfig) byName.set(s.name, s);
+  for (const s of fromExtra) byName.set(s.name, s);
+  const servers = Array.from(byName.values());
   if (servers.length === 0) return [];
 
   const tools: Tool[] = [];

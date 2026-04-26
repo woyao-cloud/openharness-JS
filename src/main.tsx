@@ -28,8 +28,10 @@ import {
   connectedMcpServers,
   disconnectMcpClients,
   getMcpInstructions,
+  type LoadMcpOptions,
   loadMcpPrompts,
   loadMcpTools,
+  parseMcpConfigFile,
 } from "./mcp/loader.js";
 import { loadOutputStyle } from "./outputStyles/index.js";
 import type { Provider, ProviderConfig } from "./providers/base.js";
@@ -104,6 +106,23 @@ function readSystemPromptFile(path: string, label: string): string {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`Error: ${label} '${path}' could not be read: ${message}\n`);
+    process.exit(2);
+  }
+}
+
+/**
+ * Parse `--mcp-config <path>` (and the optional `--strict-mcp-config` flag)
+ * into a `LoadMcpOptions` shape ready to pass to `loadMcpTools`. Returns
+ * undefined when the user didn't pass `--mcp-config`. Exits 2 with a stderr
+ * message on parse / shape errors.
+ */
+function buildMcpLoadOpts(opts: Record<string, unknown>): LoadMcpOptions | undefined {
+  if (!opts.mcpConfig) return undefined;
+  try {
+    const extraServers = parseMcpConfigFile(opts.mcpConfig as string);
+    return { extraServers, strict: opts.strictMcpConfig === true };
+  } catch (err) {
+    process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(2);
   }
 }
@@ -207,6 +226,11 @@ program
     "--no-session-persistence",
     "Skip writing the session to disk under ~/.oh/sessions/. Useful for ephemeral CI runs that don't need resume.",
   )
+  .option(
+    "--mcp-config <path>",
+    'Load MCP servers from a JSON file (in addition to .oh/config.yaml). File format: {"mcpServers": [...]} or a bare array.',
+  )
+  .option("--strict-mcp-config", "With --mcp-config, ignore .oh/config.yaml mcpServers — use only the file's servers.")
   .action(async (promptArg: string | undefined, opts: Record<string, unknown>) => {
     // Read from stdin if prompt is "-" or omitted and stdin is not a TTY
     let prompt: string;
@@ -248,8 +272,13 @@ program
     );
     const { query } = await import("./query.js");
 
-    // Tool filtering
-    let tools = getAllTools();
+    // Tool list = built-ins + MCP server tools (project config + --mcp-config).
+    // Previously oh run skipped MCP entirely, which silently broke the SDK
+    // `tools=[...]` feature (the SDK injects mcpServers into a temp config but
+    // the CLI never read it back).
+    const mcpLoadOpts = buildMcpLoadOpts(opts);
+    const mcpTools = await loadMcpTools(mcpLoadOpts);
+    let tools = [...getAllTools(), ...mcpTools];
     if (opts.allowedTools) {
       const allowed = new Set((opts.allowedTools as string).split(",").map((s) => s.trim()));
       tools = tools.filter((t) => allowed.has(t.name));
@@ -258,6 +287,7 @@ program
       const disallowed = new Set((opts.disallowedTools as string).split(",").map((s) => s.trim()));
       tools = tools.filter((t) => !disallowed.has(t.name));
     }
+    process.on("exit", () => disconnectMcpClients());
 
     // System prompt — file variants take precedence over inline string variants
     // so callers can override-from-file without removing a stale --system-prompt
@@ -465,6 +495,11 @@ program
     "--no-session-persistence",
     "Skip writing the session to disk under ~/.oh/sessions/. Useful for ephemeral SDK clients that don't need resume.",
   )
+  .option(
+    "--mcp-config <path>",
+    'Load MCP servers from a JSON file (in addition to .oh/config.yaml). File format: {"mcpServers": [...]} or a bare array.',
+  )
+  .option("--strict-mcp-config", "With --mcp-config, ignore .oh/config.yaml mcpServers — use only the file's servers.")
   .action(async (opts: Record<string, unknown>) => {
     const settingSources = parseSettingSources(opts.settingSources as string | undefined);
     const savedConfig = readOhConfig(undefined, settingSources);
@@ -484,7 +519,12 @@ program
     const { query } = await import("./query.js");
     const { createAssistantMessage, createToolResultMessage, createUserMessage } = await import("./types/message.js");
 
-    let tools = getAllTools();
+    // Tool list = built-ins + MCP server tools (project config + --mcp-config).
+    // Same fix as `oh run` — `oh session` previously skipped MCP entirely,
+    // which silently broke the SDK `tools=[...]` feature for stateful clients.
+    const mcpLoadOpts = buildMcpLoadOpts(opts);
+    const mcpTools = await loadMcpTools(mcpLoadOpts);
+    let tools = [...getAllTools(), ...mcpTools];
     if (opts.allowedTools) {
       const allowed = new Set((opts.allowedTools as string).split(",").map((s) => s.trim()));
       tools = tools.filter((t) => allowed.has(t.name));
@@ -493,6 +533,7 @@ program
       const disallowed = new Set((opts.disallowedTools as string).split(",").map((s) => s.trim()));
       tools = tools.filter((t) => !disallowed.has(t.name));
     }
+    process.on("exit", () => disconnectMcpClients());
 
     let systemPrompt: string;
     if (opts.systemPromptFile) {

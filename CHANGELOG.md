@@ -3,9 +3,12 @@
 ## Unreleased
 
 ### Added
-- **`--system-prompt-file <path>` / `--append-system-prompt-file <path>` (audit A1)** on `oh run` and `oh session`. File-path variants of `--system-prompt` / `--append-system-prompt`. Lets CI scripts maintain prompts as version-controlled files instead of stuffing them on the command line. File-not-found exits 2 with a stderr message. File variants take precedence over inline string variants.
-- **`--no-session-persistence` flag (audit A3)** on `oh run` and `oh session`. Skips writing the session record to `~/.oh/sessions/` — useful for ephemeral CI runs that don't need resume. Existing `--resume` flow is unchanged (still loads from disk).
-- **`disableAllHooks` config key (audit A11)**. Global kill switch — when `true` in `.oh/config.yaml`, every `emitHook` / `emitHookAsync` / `emitHookWithOutcome` call short-circuits as if no hooks were configured. Configured hooks remain on disk and stay visible via `/hooks` for auditability. New `areHooksEnabled()` helper in `src/harness/hooks.ts`. Mirrors Claude Code's `disableAllHooks` setting.
+- **`--mcp-config <path>` / `--strict-mcp-config` flags (audit A2)** on `oh run`, `oh session`, and the chat REPL. Loads MCP servers from an external JSON file (in addition to `.oh/config.yaml`). With `--strict-mcp-config`, the file's servers REPLACE `.oh/config.yaml`'s entirely — useful for SDK consumers wanting a sealed environment. Accepts CC-style `{"mcpServers": [...]}`, a bare array, or a single server object. Per-name dedup with extras winning, so the file can override a project entry without `--strict`.
+- **MCP tools now load in `oh run` and `oh session`** (was REPL-only). This fixes a silent bug in the SDK `tools=[...]` feature: the SDK injects `mcpServers` into a temp `.oh/config.yaml` and runs `oh run` against it, but `oh run` previously ignored the config's `mcpServers` entirely. Now both headless commands load MCP tools the same way the chat REPL does, gated through the same `loadMcpTools()` entry point. Built-in tools + MCP tools are merged before `--allowed-tools`/`--disallowed-tools` filtering applies.
+
+### Internal
+- `loadMcpTools()` in `src/mcp/loader.ts` gains a `LoadMcpOptions` parameter (`extraServers`, `strict`) so the same entry point handles both config-file and file-flag-driven loading. Existing callers (chat REPL, `/reload-plugins`) work unchanged.
+- New `parseMcpConfigFile()` helper exported from `src/mcp/loader.ts` — pure parser with shape validation, unit-tested in `src/mcp/mcp-config-flag.test.ts`.
 
 ## 2.20.0 (2026-04-26) — Tier B Audit Closure
 
