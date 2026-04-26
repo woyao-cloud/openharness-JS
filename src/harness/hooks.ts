@@ -11,6 +11,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { debug } from "../utils/debug.js";
 import type { HookDef, HooksConfig } from "./config.js";
 import { readOhConfig } from "./config.js";
 
@@ -518,6 +519,7 @@ export function emitHook(event: HookEvent, ctx: HookContext = {}): boolean {
   if (!hooks) return true;
 
   const defs: HookDef[] = hooks[event] ?? [];
+  if (defs.length > 0) debug("hooks", "fire", { event, count: defs.length, tool: ctx.toolName });
   const env = buildEnv(event, ctx);
 
   if (event === "preToolUse") {

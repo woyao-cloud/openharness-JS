@@ -38,6 +38,7 @@ import type { Provider, ProviderConfig } from "./providers/base.js";
 import { getAllTools } from "./tools.js";
 import type { Message } from "./types/message.js";
 import type { PermissionMode } from "./types/permissions.js";
+import { configureDebug, debug } from "./utils/debug.js";
 import { validateAgainstJsonSchema } from "./utils/json-schema.js";
 import { parseMaxBudgetUsd } from "./utils/parse-budget.js";
 
@@ -142,7 +143,19 @@ function parseMaxBudgetUsdOrExit(raw: string): number {
   return result.value;
 }
 
-function buildSystemPrompt(model?: string): string {
+/**
+ * Build the assembled system prompt for a session.
+ *
+ * In `bare` mode (audit A4 — `--bare`) every optional contributor is skipped:
+ * no project context, no rules, no user profile, no remembered memories, no
+ * skill catalog, no MCP server instructions, no language directive, no output
+ * style. The result is exactly `DEFAULT_SYSTEM_PROMPT`. Used for fast SDK /
+ * CI invocations where the model just needs the tool-use baseline and the
+ * caller will supply its own context.
+ */
+function buildSystemPrompt(model?: string, opts: { bare?: boolean } = {}): string {
+  if (opts.bare) return DEFAULT_SYSTEM_PROMPT;
+
   const cfg = readOhConfig();
 
   // Output-style preface (first — sets personality for everything that follows).
@@ -231,7 +244,22 @@ program
     'Load MCP servers from a JSON file (in addition to .oh/config.yaml). File format: {"mcpServers": [...]} or a bare array.',
   )
   .option("--strict-mcp-config", "With --mcp-config, ignore .oh/config.yaml mcpServers — use only the file's servers.")
+  .option(
+    "--bare",
+    "Skip optional startup work (project detection, plugins, memory, skills, MCP). System prompt is just the tool-use baseline. Useful for fast CI / SDK invocations.",
+  )
+  .option(
+    "--debug [categories]",
+    "Enable categorized debug logs to stderr. Pass comma-separated categories (e.g. 'mcp,hooks') or no value for all. Also reads OH_DEBUG.",
+  )
+  .option("--debug-file <path>", "When --debug is set, append debug lines to this file instead of stderr.")
   .action(async (promptArg: string | undefined, opts: Record<string, unknown>) => {
+    configureDebug({
+      categories: opts.debug as string | boolean | undefined,
+      ...(opts.debugFile ? { file: opts.debugFile as string } : {}),
+    });
+    const bare = opts.bare === true;
+    debug("startup", "oh run", { bare, model: opts.model });
     // Read from stdin if prompt is "-" or omitted and stdin is not a TTY
     let prompt: string;
     if (!promptArg || promptArg === "-" || !process.stdin.isTTY) {
@@ -275,9 +303,10 @@ program
     // Tool list = built-ins + MCP server tools (project config + --mcp-config).
     // Previously oh run skipped MCP entirely, which silently broke the SDK
     // `tools=[...]` feature (the SDK injects mcpServers into a temp config but
-    // the CLI never read it back).
+    // the CLI never read it back). `--bare` opts back out — built-ins only.
     const mcpLoadOpts = buildMcpLoadOpts(opts);
-    const mcpTools = await loadMcpTools(mcpLoadOpts);
+    const mcpTools = bare ? [] : await loadMcpTools(mcpLoadOpts);
+    debug("mcp", "loaded", { count: mcpTools.length, bare });
     let tools = [...getAllTools(), ...mcpTools];
     if (opts.allowedTools) {
       const allowed = new Set((opts.allowedTools as string).split(",").map((s) => s.trim()));
@@ -298,7 +327,7 @@ program
     } else if (opts.systemPrompt) {
       systemPrompt = opts.systemPrompt as string;
     } else {
-      systemPrompt = buildSystemPrompt(model);
+      systemPrompt = buildSystemPrompt(model, { bare });
     }
     if (opts.appendSystemPromptFile) {
       systemPrompt += `\n\n${readSystemPromptFile(opts.appendSystemPromptFile as string, "--append-system-prompt-file")}`;
@@ -500,7 +529,22 @@ program
     'Load MCP servers from a JSON file (in addition to .oh/config.yaml). File format: {"mcpServers": [...]} or a bare array.',
   )
   .option("--strict-mcp-config", "With --mcp-config, ignore .oh/config.yaml mcpServers — use only the file's servers.")
+  .option(
+    "--bare",
+    "Skip optional startup work (project detection, plugins, memory, skills, MCP). System prompt is just the tool-use baseline.",
+  )
+  .option(
+    "--debug [categories]",
+    "Enable categorized debug logs to stderr. Pass comma-separated categories (e.g. 'mcp,hooks') or no value for all. Also reads OH_DEBUG.",
+  )
+  .option("--debug-file <path>", "When --debug is set, append debug lines to this file instead of stderr.")
   .action(async (opts: Record<string, unknown>) => {
+    configureDebug({
+      categories: opts.debug as string | boolean | undefined,
+      ...(opts.debugFile ? { file: opts.debugFile as string } : {}),
+    });
+    const bare = opts.bare === true;
+    debug("startup", "oh session", { bare, model: opts.model });
     const settingSources = parseSettingSources(opts.settingSources as string | undefined);
     const savedConfig = readOhConfig(undefined, settingSources);
     const permissionMode: PermissionMode = (opts.permissionMode ??
@@ -522,8 +566,10 @@ program
     // Tool list = built-ins + MCP server tools (project config + --mcp-config).
     // Same fix as `oh run` — `oh session` previously skipped MCP entirely,
     // which silently broke the SDK `tools=[...]` feature for stateful clients.
+    // `--bare` opts back out — built-ins only.
     const mcpLoadOpts = buildMcpLoadOpts(opts);
-    const mcpTools = await loadMcpTools(mcpLoadOpts);
+    const mcpTools = bare ? [] : await loadMcpTools(mcpLoadOpts);
+    debug("mcp", "loaded", { count: mcpTools.length, bare });
     let tools = [...getAllTools(), ...mcpTools];
     if (opts.allowedTools) {
       const allowed = new Set((opts.allowedTools as string).split(",").map((s) => s.trim()));
@@ -541,7 +587,7 @@ program
     } else if (opts.systemPrompt) {
       systemPrompt = opts.systemPrompt as string;
     } else {
-      systemPrompt = buildSystemPrompt(model);
+      systemPrompt = buildSystemPrompt(model, { bare });
     }
     if (opts.appendSystemPromptFile) {
       systemPrompt += `\n\n${readSystemPromptFile(opts.appendSystemPromptFile as string, "--append-system-prompt-file")}`;
@@ -738,7 +784,22 @@ program
   .option("--json-schema <schema>", "Constrain output to match a JSON schema (headless mode)")
   .option("--input-format <format>", "Input format: text (default) or stream-json (NDJSON on stdin)")
   .option("--replay-user-messages", "Re-emit user messages on stdout (requires stream-json output)")
+  .option(
+    "--bare",
+    "Skip optional startup work (project detection, plugins, memory, skills, MCP). System prompt is just the tool-use baseline.",
+  )
+  .option(
+    "--debug [categories]",
+    "Enable categorized debug logs to stderr. Pass comma-separated categories (e.g. 'mcp,hooks') or no value for all. Also reads OH_DEBUG.",
+  )
+  .option("--debug-file <path>", "When --debug is set, append debug lines to this file instead of stderr.")
   .action(async (opts) => {
+    configureDebug({
+      categories: opts.debug as string | boolean | undefined,
+      ...(opts.debugFile ? { file: opts.debugFile as string } : {}),
+    });
+    const bare = opts.bare === true;
+    debug("startup", "oh chat", { bare, model: opts.model, print: !!opts.print });
     // Load saved config as defaults (env vars + CLI flags override)
     const savedConfig = readOhConfig();
     const effectiveModel = opts.model ?? savedConfig?.model;
@@ -806,24 +867,30 @@ program
       }
     }
 
-    const mcpTools = await loadMcpTools();
-    const mcpNames = connectedMcpServers();
-    if (mcpNames.length > 0) {
-      console.log(`[mcp] Connected: ${mcpNames.join(", ")}`);
-    }
-    // Surface MCP-server prompts (`prompts/list`) as `/server:prompt` slash
-    // commands. Errors are swallowed inside loadMcpPrompts — servers that
-    // don't implement the prompts capability return [] without throwing.
-    try {
-      const { registerMcpPromptCommands } = await import("./commands/index.js");
-      const prompts = await loadMcpPrompts();
-      registerMcpPromptCommands(prompts);
-      if (prompts.length > 0) {
-        console.log(`[mcp] Prompts: ${prompts.map((p) => `/${p.qualifiedName}`).join(", ")}`);
+    // `--bare` skips MCP entirely (servers, prompts, instructions). The
+    // built-in tool set is still loaded — bare is about reducing optional
+    // startup work, not stripping the agent's tool surface.
+    const mcpTools = bare ? [] : await loadMcpTools();
+    if (!bare) {
+      const mcpNames = connectedMcpServers();
+      if (mcpNames.length > 0) {
+        console.log(`[mcp] Connected: ${mcpNames.join(", ")}`);
       }
-    } catch {
-      /* prompt registration is best-effort; never block the REPL */
+      // Surface MCP-server prompts (`prompts/list`) as `/server:prompt` slash
+      // commands. Errors are swallowed inside loadMcpPrompts — servers that
+      // don't implement the prompts capability return [] without throwing.
+      try {
+        const { registerMcpPromptCommands } = await import("./commands/index.js");
+        const prompts = await loadMcpPrompts();
+        registerMcpPromptCommands(prompts);
+        if (prompts.length > 0) {
+          console.log(`[mcp] Prompts: ${prompts.map((p) => `/${p.qualifiedName}`).join(", ")}`);
+        }
+      } catch {
+        /* prompt registration is best-effort; never block the REPL */
+      }
     }
+    debug("mcp", "loaded", { count: mcpTools.length, bare });
     const tools = [...getAllTools(), ...mcpTools];
 
     process.on("exit", () => disconnectMcpClients());
@@ -892,7 +959,7 @@ program
       const qConfig = {
         provider,
         tools,
-        systemPrompt: buildSystemPrompt(resolvedModel),
+        systemPrompt: buildSystemPrompt(resolvedModel, { bare }),
         permissionMode: effectivePermMode,
         maxTurns: 20,
         model: resolvedModel,

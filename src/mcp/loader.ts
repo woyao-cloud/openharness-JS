@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { McpServerConfig } from "../harness/config.js";
 import { readOhConfig } from "../harness/config.js";
 import type { Tool } from "../Tool.js";
+import { debug } from "../utils/debug.js";
 import { McpClient } from "./client.js";
 import { DeferredMcpTool } from "./DeferredMcpTool.js";
 import { McpTool } from "./McpTool.js";
@@ -120,10 +121,12 @@ export async function loadMcpTools(opts: LoadMcpOptions = {}): Promise<Tool[]> {
       console.warn(
         `[mcp] Failed to connect: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
       );
+      debug("mcp", "connect failed", result.reason);
       continue;
     }
     const { client, defs, server } = result.value;
     connectedClients.push(client);
+    debug("mcp", "connected", { server: server.name, tools: defs.length, deferred: defs.length > DEFERRED_THRESHOLD });
 
     if (defs.length > DEFERRED_THRESHOLD) {
       for (const def of defs) {

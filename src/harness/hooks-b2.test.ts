@@ -53,8 +53,11 @@ async function withHooks<T>(
     invalidateHookCache();
 
     const result = await fn(capturePath);
-    // Yield so fire-and-forget async hook processes can flush.
-    await new Promise<void>((r) => setTimeout(r, 200));
+    // Yield so fire-and-forget async hook processes can flush. Windows CI
+    // takes ~1s to spawn + run a node child process, so the wait is generous.
+    // Local runs see the file appear well under 300 ms; this just budgets for
+    // the worst-case CI runner.
+    await new Promise<void>((r) => setTimeout(r, 1500));
     const fired = existsSync(capturePath) ? readFileSync(capturePath, "utf8").split("\n").filter(Boolean) : [];
     return { result, fired };
   } finally {
