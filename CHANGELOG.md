@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`--system-prompt-file <path>` / `--append-system-prompt-file <path>` (audit A1)** on `oh run` and `oh session`. File-path variants of `--system-prompt` / `--append-system-prompt`. Lets CI scripts maintain prompts as version-controlled files instead of stuffing them on the command line. File-not-found exits 2 with a stderr message. File variants take precedence over inline string variants.
+- **`--no-session-persistence` flag (audit A3)** on `oh run` and `oh session`. Skips writing the session record to `~/.oh/sessions/` — useful for ephemeral CI runs that don't need resume. Existing `--resume` flow is unchanged (still loads from disk).
+- **`disableAllHooks` config key (audit A11)**. Global kill switch — when `true` in `.oh/config.yaml`, every `emitHook` / `emitHookAsync` / `emitHookWithOutcome` call short-circuits as if no hooks were configured. Configured hooks remain on disk and stay visible via `/hooks` for auditability. New `areHooksEnabled()` helper in `src/harness/hooks.ts`. Mirrors Claude Code's `disableAllHooks` setting.
+
 ## 2.20.0 (2026-04-26) — Tier B Audit Closure
 
 Closes the entire Tier B lane of the 2026-04-24 Claude Code parity audit (`docs/superpowers/plans/2026-04-24-claude-code-parity-audit.md`). Three independent items shipped as #68 / #69 / #70. After this release the audit only has Tier C remaining — all defer-until-demand items (VS Code extension, agent teams, OS-level sandboxing, …).

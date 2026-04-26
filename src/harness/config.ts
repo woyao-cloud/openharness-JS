@@ -126,6 +126,15 @@ export type OhConfig = {
   baseUrl?: string;
   mcpServers?: McpServerConfig[];
   hooks?: HooksConfig;
+  /**
+   * Global kill switch for the hook system. When `true`, every `emitHook` /
+   * `emitHookAsync` / `emitHookWithOutcome` call short-circuits as if no
+   * hooks were configured — useful for one-off CI runs where the configured
+   * hooks would interfere. Configured hooks remain in `.oh/config.yaml` and
+   * are visible via `/hooks` so the off-state is auditable. Mirrors
+   * Claude Code's `disableAllHooks` setting.
+   */
+  disableAllHooks?: boolean;
   toolPermissions?: ToolPermissionRule[];
   statusLineFormat?: string; // Template: {model} {tokens} {cost} {ctx}
   /** Verification loops — auto-run lint/typecheck after file edits */

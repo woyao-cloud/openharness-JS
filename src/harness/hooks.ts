@@ -106,6 +106,20 @@ export function getHooks(): HooksConfig | null {
 /** Clear hook cache (call after config changes) */
 export function invalidateHookCache(): void {
   cachedHooks = undefined;
+  cachedDisableAllHooks = undefined;
+}
+
+let cachedDisableAllHooks: boolean | undefined;
+
+/**
+ * Whether the configured `disableAllHooks` kill switch is set.
+ * Cached so the per-emit cost is a single boolean read.
+ */
+export function areHooksEnabled(): boolean {
+  if (cachedDisableAllHooks === undefined) {
+    cachedDisableAllHooks = readOhConfig()?.disableAllHooks === true;
+  }
+  return !cachedDisableAllHooks;
 }
 
 function buildEnv(event: HookEvent, ctx: HookContext): Record<string, string> {
@@ -499,6 +513,7 @@ async function executeHookDef(def: HookDef, event: HookEvent, ctx: HookContext):
  * All other hooks run asynchronously to avoid blocking the event loop.
  */
 export function emitHook(event: HookEvent, ctx: HookContext = {}): boolean {
+  if (!areHooksEnabled()) return true;
   const hooks = getHooks();
   if (!hooks) return true;
 
@@ -554,6 +569,7 @@ export function emitHook(event: HookEvent, ctx: HookContext = {}): boolean {
  * Supports all hook types (command, HTTP, prompt).
  */
 export async function emitHookAsync(event: HookEvent, ctx: HookContext = {}): Promise<boolean> {
+  if (!areHooksEnabled()) return true;
   const hooks = getHooks();
   if (!hooks) return true;
 
@@ -686,6 +702,7 @@ async function runHookForOutcome(def: HookDef, event: HookEvent, ctx: HookContex
  *   from hooks is ignored — outcome.allowed is always true. additionalContext is still collected.
  */
 export async function emitHookWithOutcome(event: HookEvent, ctx: HookContext = {}): Promise<HookOutcome> {
+  if (!areHooksEnabled()) return { allowed: true };
   const hooks = getHooks();
   const list = hooks?.[event];
   if (!list || list.length === 0) return { allowed: true };

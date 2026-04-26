@@ -93,6 +93,22 @@ You have access to tools for reading, writing, and searching files, running shel
 - Keep responses short and direct. If you can say it in one sentence, don't use three.`;
 
 /**
+ * Read a system prompt from a file path, or exit 2 with a stderr message.
+ * Used by `--system-prompt-file` / `--append-system-prompt-file` so callers
+ * can keep prompts as version-controlled files instead of stuffing them on
+ * the command line. Trailing newline is stripped (most editors add one).
+ */
+function readSystemPromptFile(path: string, label: string): string {
+  try {
+    return readFileSync(path, "utf8").replace(/\n$/, "");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Error: ${label} '${path}' could not be read: ${message}\n`);
+    process.exit(2);
+  }
+}
+
+/**
  * Parse the `--max-budget-usd` CLI argument into a positive USD amount, or
  * exit 2 with an error message. The pure parser lives in
  * `src/utils/parse-budget.ts` so it can be unit-tested without spawning the
@@ -173,7 +189,9 @@ program
   )
   .option("--max-turns <n>", "Maximum turns", "20")
   .option("--system-prompt <prompt>", "Override the system prompt")
+  .option("--system-prompt-file <path>", "Read the system prompt from a file (overrides --system-prompt)")
   .option("--append-system-prompt <text>", "Append text to the system prompt")
+  .option("--append-system-prompt-file <path>", "Append the contents of a file to the system prompt")
   .option("--allowed-tools <tools>", "Comma-separated list of allowed tools")
   .option("--disallowed-tools <tools>", "Comma-separated list of disallowed tools")
   .option("--resume <id>", "Resume a saved session (replays its message history before this prompt)")
@@ -184,6 +202,10 @@ program
   .option(
     "--max-budget-usd <amount>",
     "Hard cap on session cost in USD. The agent halts with reason 'budget_exceeded' once totalCost reaches this amount. Mirrors Claude Code's --max-budget-usd.",
+  )
+  .option(
+    "--no-session-persistence",
+    "Skip writing the session to disk under ~/.oh/sessions/. Useful for ephemeral CI runs that don't need resume.",
   )
   .action(async (promptArg: string | undefined, opts: Record<string, unknown>) => {
     // Read from stdin if prompt is "-" or omitted and stdin is not a TTY
@@ -237,12 +259,19 @@ program
       tools = tools.filter((t) => !disallowed.has(t.name));
     }
 
-    // System prompt
+    // System prompt — file variants take precedence over inline string variants
+    // so callers can override-from-file without removing a stale --system-prompt
+    // they were previously passing.
     let systemPrompt: string;
-    if (opts.systemPrompt) {
+    if (opts.systemPromptFile) {
+      systemPrompt = readSystemPromptFile(opts.systemPromptFile as string, "--system-prompt-file");
+    } else if (opts.systemPrompt) {
       systemPrompt = opts.systemPrompt as string;
     } else {
       systemPrompt = buildSystemPrompt(model);
+    }
+    if (opts.appendSystemPromptFile) {
+      systemPrompt += `\n\n${readSystemPromptFile(opts.appendSystemPromptFile as string, "--append-system-prompt-file")}`;
     }
     if (opts.appendSystemPrompt) {
       systemPrompt += `\n\n${opts.appendSystemPrompt as string}`;
@@ -273,6 +302,8 @@ program
     // --resume <id> on a later run. Without this, every fresh `oh run` was
     // a programmatic dead-end for resumption (issue #60).
     const { createSession, loadSession, saveSession } = await import("./harness/session.js");
+    // Commander rewrites --no-session-persistence to opts.sessionPersistence === false.
+    const persistSession = opts.sessionPersistence !== false;
     let priorMessages: Message[] | undefined;
     let sessionId: string;
     let sessionRecord: import("./harness/session.js").Session;
@@ -288,7 +319,7 @@ program
     } else {
       sessionRecord = createSession(provider.name, model);
       sessionId = sessionRecord.id;
-      saveSession(sessionRecord);
+      if (persistSession) saveSession(sessionRecord);
     }
 
     if (outputFormat === "stream-json") {
@@ -391,14 +422,16 @@ program
     // they're per-tool ephemerals; the assistant's final text is what
     // matters for context resumption. Mirrors the REPL's save-on-exit pattern
     // (src/components/REPL.tsx:120) but at one-shot scope.
-    try {
-      const { createUserMessage, createAssistantMessage } = await import("./types/message.js");
-      const newMessages = [...(priorMessages ?? []), createUserMessage(prompt)];
-      if (fullOutput) newMessages.push(createAssistantMessage(fullOutput));
-      sessionRecord.messages = newMessages;
-      saveSession(sessionRecord);
-    } catch {
-      /* persistence is best-effort — never fail the user's run on a save error */
+    if (persistSession) {
+      try {
+        const { createUserMessage, createAssistantMessage } = await import("./types/message.js");
+        const newMessages = [...(priorMessages ?? []), createUserMessage(prompt)];
+        if (fullOutput) newMessages.push(createAssistantMessage(fullOutput));
+        sessionRecord.messages = newMessages;
+        saveSession(sessionRecord);
+      } catch {
+        /* persistence is best-effort — never fail the user's run on a save error */
+      }
     }
   });
 
@@ -416,6 +449,9 @@ program
   .option("--disallowed-tools <tools>", "Comma-separated disallowed tool names")
   .option("--max-turns <n>", "Maximum turns per prompt", "20")
   .option("--system-prompt <prompt>", "Override the system prompt")
+  .option("--system-prompt-file <path>", "Read the system prompt from a file (overrides --system-prompt)")
+  .option("--append-system-prompt <text>", "Append text to the system prompt")
+  .option("--append-system-prompt-file <path>", "Append the contents of a file to the system prompt")
   .option("--resume <id>", "Resume a saved session (seeds the conversation with its prior message history)")
   .option(
     "--setting-sources <sources>",
@@ -424,6 +460,10 @@ program
   .option(
     "--max-budget-usd <amount>",
     "Hard cap on session cost in USD. Each prompt's cost accumulates; the agent halts with reason 'budget_exceeded' once totalCost reaches this amount.",
+  )
+  .option(
+    "--no-session-persistence",
+    "Skip writing the session to disk under ~/.oh/sessions/. Useful for ephemeral SDK clients that don't need resume.",
   )
   .action(async (opts: Record<string, unknown>) => {
     const settingSources = parseSettingSources(opts.settingSources as string | undefined);
@@ -454,7 +494,20 @@ program
       tools = tools.filter((t) => !disallowed.has(t.name));
     }
 
-    const systemPrompt = (opts.systemPrompt as string | undefined) ?? buildSystemPrompt(model);
+    let systemPrompt: string;
+    if (opts.systemPromptFile) {
+      systemPrompt = readSystemPromptFile(opts.systemPromptFile as string, "--system-prompt-file");
+    } else if (opts.systemPrompt) {
+      systemPrompt = opts.systemPrompt as string;
+    } else {
+      systemPrompt = buildSystemPrompt(model);
+    }
+    if (opts.appendSystemPromptFile) {
+      systemPrompt += `\n\n${readSystemPromptFile(opts.appendSystemPromptFile as string, "--append-system-prompt-file")}`;
+    }
+    if (opts.appendSystemPrompt) {
+      systemPrompt += `\n\n${opts.appendSystemPrompt as string}`;
+    }
 
     const config = {
       provider,
@@ -472,6 +525,8 @@ program
     // event for later resume (issue #60).
     const conversation: import("./types/message.js").Message[] = [];
     const { createSession, loadSession, saveSession } = await import("./harness/session.js");
+    // Commander rewrites --no-session-persistence to opts.sessionPersistence === false.
+    const persistSession = opts.sessionPersistence !== false;
     let sessionId: string;
     let sessionRecord: import("./harness/session.js").Session;
     if (opts.resume) {
@@ -486,7 +541,7 @@ program
     } else {
       sessionRecord = createSession(provider.name, model);
       sessionId = sessionRecord.id;
-      saveSession(sessionRecord);
+      if (persistSession) saveSession(sessionRecord);
     }
     let turnCounter = 0;
     // Will be set to the current prompt id before each turn so hook_decision
@@ -608,11 +663,14 @@ program
 
       // Persist after every completed turn so a later --resume picks up the
       // history. Best-effort — a save failure shouldn't break the live session.
-      try {
-        sessionRecord.messages = conversation.slice();
-        saveSession(sessionRecord);
-      } catch {
-        /* save errors don't propagate to the client */
+      // Skipped entirely when --no-session-persistence was passed.
+      if (persistSession) {
+        try {
+          sessionRecord.messages = conversation.slice();
+          saveSession(sessionRecord);
+        } catch {
+          /* save errors don't propagate to the client */
+        }
       }
     }
   });
