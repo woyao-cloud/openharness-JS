@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Ollama provider — multi-turn context preservation (#61)**. Ollama's chat API defaults to a 2048-token `num_ctx`; OH's typical system prompt + tool list pushes ~4 K, so prior conversation turns were silently truncated server-side. The model appeared to "forget" what was just said. Reproducible without the SDK by piping two prompts into `oh session` — the second response would ignore everything from the first.
+  - The Ollama provider now passes `options.num_ctx` on every request, sized from a char/4 token estimate of `messages + systemPrompt + tools`, padded by 25 % + 1 K headroom, rounded up to the next power of 2 ≥ 8 192, capped at 32 K. Cap exists to bound KV-cache memory; users with bigger models can override via `OLLAMA_NUM_CTX`.
+  - Same fix applies to both `stream()` and `complete()` code paths.
+  - Affects every multi-turn conversation through Ollama, not just `oh session` — even fresh `oh run -p` calls with long prompts were losing context.
+
 ## Unreleased — TypeScript SDK v0.5.0
 
 The CLI itself is unchanged in this cycle. New companion package

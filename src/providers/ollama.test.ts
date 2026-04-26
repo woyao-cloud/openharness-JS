@@ -61,3 +61,103 @@ test("healthCheck returns false on error", async () => {
 
   globalThis.fetch = originalFetch;
 });
+
+// ── Regression: pass num_ctx so multi-turn doesn't get truncated by Ollama's
+// 2048-token default. See issue #61.
+
+async function captureRequestBody(
+  provider: OllamaProvider,
+  fn: (p: OllamaProvider) => Promise<void>,
+): Promise<Record<string, unknown>> {
+  let captured: Record<string, unknown> | null = null;
+  const ndjsonResponse = ['{"message":{"content":"ok"},"done":false}', '{"done":true}'].join("\n");
+  globalThis.fetch = mock.fn(async (_url: any, init?: RequestInit) => {
+    captured = JSON.parse((init?.body as string) ?? "{}");
+    return new Response(ndjsonResponse, { status: 200 });
+  }) as any;
+  try {
+    await fn(provider);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  if (!captured) throw new Error("no request body captured");
+  return captured;
+}
+
+test("stream() includes options.num_ctx ≥ 8192 by default", async () => {
+  const provider = new OllamaProvider({ name: "ollama", defaultModel: "llama3" });
+  const body = await captureRequestBody(provider, async (p) => {
+    for await (const _ of p.stream(
+      [{ role: "user", content: "hi", uuid: "a", timestamp: 0 }],
+      "you are helpful",
+      undefined,
+      "qwen2.5:7b-instruct",
+    )) {
+      void _;
+    }
+  });
+  const opts = body.options as { num_ctx?: number };
+  assert.ok(opts && typeof opts.num_ctx === "number", "options.num_ctx must be set");
+  assert.ok(opts.num_ctx! >= 8192, `expected ≥ 8192, got ${opts.num_ctx}`);
+  assert.ok(opts.num_ctx! <= 32768, `expected ≤ 32768, got ${opts.num_ctx}`);
+});
+
+test("stream() scales num_ctx up for large prompts", async () => {
+  const provider = new OllamaProvider({ name: "ollama", defaultModel: "llama3" });
+  const bigSystem = "x".repeat(60_000); // ~15 K tokens at char/4 estimate
+  const body = await captureRequestBody(provider, async (p) => {
+    for await (const _ of p.stream(
+      [{ role: "user", content: "hi", uuid: "a", timestamp: 0 }],
+      bigSystem,
+      undefined,
+      "qwen2.5:14b",
+    )) {
+      void _;
+    }
+  });
+  const numCtx = (body.options as { num_ctx?: number }).num_ctx!;
+  assert.ok(numCtx >= 16384, `expected ≥ 16384 for big prompt, got ${numCtx}`);
+});
+
+test("stream() honors OLLAMA_NUM_CTX env override", async () => {
+  const previous = process.env.OLLAMA_NUM_CTX;
+  process.env.OLLAMA_NUM_CTX = "65536";
+  try {
+    const provider = new OllamaProvider({ name: "ollama", defaultModel: "llama3" });
+    const body = await captureRequestBody(provider, async (p) => {
+      for await (const _ of p.stream(
+        [{ role: "user", content: "hi", uuid: "a", timestamp: 0 }],
+        "tiny",
+        undefined,
+        "qwen2.5:14b",
+      )) {
+        void _;
+      }
+    });
+    assert.equal((body.options as { num_ctx?: number }).num_ctx, 65536);
+  } finally {
+    if (previous === undefined) delete process.env.OLLAMA_NUM_CTX;
+    else process.env.OLLAMA_NUM_CTX = previous;
+  }
+});
+
+test("complete() also includes options.num_ctx", async () => {
+  const provider = new OllamaProvider({ name: "ollama", defaultModel: "llama3" });
+  let captured: Record<string, unknown> | null = null;
+  globalThis.fetch = mock.fn(async (_url: any, init?: RequestInit) => {
+    captured = JSON.parse((init?.body as string) ?? "{}");
+    return new Response(JSON.stringify({ message: { content: "ok" } }), { status: 200 });
+  }) as any;
+  try {
+    await provider.complete(
+      [{ role: "user", content: "hi", uuid: "a", timestamp: 0 }],
+      "system",
+      undefined,
+      "qwen2.5:7b-instruct",
+    );
+    const opts = (captured as unknown as { options?: { num_ctx?: number } } | null)?.options;
+    assert.ok(opts && typeof opts.num_ctx === "number" && opts.num_ctx >= 8192);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

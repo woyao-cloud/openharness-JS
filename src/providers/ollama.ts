@@ -17,6 +17,38 @@ export class OllamaProvider implements Provider {
     this.defaultModel = config.defaultModel ?? "llama3.1";
   }
 
+  /**
+   * Estimate the prompt size and pick a `num_ctx` for Ollama. Without this
+   * Ollama defaults to a 2048-token context window — anything bigger gets
+   * silently truncated server-side. OH's typical system prompt + tool list
+   * already pushes ~4 K, so multi-turn chats lose prior turns and the model
+   * appears to "forget" what was just said. See issue #61.
+   *
+   * Strategy: rough char/4 token estimate, +1 K headroom for the response,
+   * then round up to the next power of 2 ≥ 8192. Capped at 32 K to keep KV
+   * cache bounded; users with bigger models can override via
+   * `OLLAMA_NUM_CTX`.
+   */
+  private computeNumCtx(messages: Message[], systemPrompt: string, tools?: APIToolDef[]): number {
+    const override = process.env.OLLAMA_NUM_CTX;
+    if (override) {
+      const parsed = Number(override);
+      if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+    }
+    const estimate = (s: string) => Math.ceil(s.length / 4);
+    let total = systemPrompt ? estimate(systemPrompt) : 0;
+    for (const m of messages) {
+      total += estimate(m.content);
+      if (m.toolCalls) for (const tc of m.toolCalls) total += estimate(JSON.stringify(tc.arguments));
+      if (m.toolResults) for (const tr of m.toolResults) total += estimate(tr.output);
+    }
+    if (tools) for (const t of tools) total += estimate(JSON.stringify(t));
+    const padded = Math.ceil(total * 1.25) + 1024;
+    let nc = 8192;
+    while (nc < padded && nc < 32768) nc *= 2;
+    return Math.min(nc, 32768);
+  }
+
   private convertMessages(messages: Message[], systemPrompt: string): unknown[] {
     const converted: unknown[] = [];
     if (systemPrompt) {
@@ -80,6 +112,7 @@ export class OllamaProvider implements Provider {
       model: m,
       messages: msgs,
       stream: true,
+      options: { num_ctx: this.computeNumCtx(messages, systemPrompt, tools) },
     };
     const ollamaTools = this.convertTools(tools);
     if (ollamaTools) body.tools = ollamaTools;
@@ -233,6 +266,7 @@ export class OllamaProvider implements Provider {
       model: m,
       messages: msgs,
       stream: false,
+      options: { num_ctx: this.computeNumCtx(messages, systemPrompt, tools) },
     };
     const ollamaTools = this.convertTools(tools);
     if (ollamaTools) body.tools = ollamaTools;

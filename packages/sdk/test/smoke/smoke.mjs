@@ -3,26 +3,24 @@
 //
 // What this verifies vs. what it deliberately does NOT:
 //
-// VERIFIES (SDK plumbing):
+// VERIFIES (SDK plumbing + cross-turn context):
 //   - PR1: subprocess spawn, stream-json parse, typed events, exit-0 path
-//   - PR2: stateful session — two send()s each get an id-tagged event stream
+//   - PR2: stateful session — multi-turn context preserved across send()s
+//          (the Ollama-num_ctx fix in #61 makes this reliable now)
 //   - PR3: tools-runtime writes a correct mcpServers entry, MCP server is up
 //   - PR4: tools-runtime writes a correct hooks.permissionRequest entry,
 //          permission server is up
 //   - PR5: argv assembly carries --resume + --setting-sources (unit-tested)
 //
-// DOES NOT VERIFY (out of scope; model + CLI behavior, not SDK):
+// DOES NOT VERIFY (out of scope; CLI behavior, not SDK):
 //   - Whether the model decides to call a custom tool
 //     (depends on model capability + prompt; flaky for small Ollama models)
-//   - Whether `oh session` preserves cross-turn conversation context
-//     (CLI bug — even direct `oh session` shows the second prompt without
-//     context — file as a separate ticket)
 //   - End-to-end canUseTool firing through `oh run`
 //     (CLI gap — permissionRequest hook only fires in interactive TUI mode,
-//     src/query/tools.ts:64 — file as a separate ticket)
+//     src/query/tools.ts:64 — issue #62)
 //   - End-to-end resume= round-trip
 //     (CLI gap — fresh `oh session` does not emit a sessionId,
-//     src/main.tsx:447 + 416 — only resumed sessions do — file as a ticket)
+//     src/main.tsx:447 + 416 — issue #60)
 //
 // Set OH_BINARY or OH_SMOKE_MODEL to override defaults. Exits 0 on all-pass.
 
@@ -78,22 +76,23 @@ await step("v0.1 query() streams events and exits 0", async () => {
   return `${events.length} events, types=${[...types].sort().join(",")}`;
 });
 
-// ── PR 2: OpenHarnessClient — two prompts each get id-tagged streams ──
-await step("v0.2 OpenHarnessClient handles two send()s in one session", async () => {
+// ── PR 2: OpenHarnessClient — multi-turn context preserved across send()s ──
+await step("v0.2 OpenHarnessClient preserves multi-turn context", async () => {
   const client = new OpenHarnessClient({ ohBinary, model, permissionMode: "trust", maxTurns: 1 });
   try {
     await client.start();
-    const firstEvents = [];
-    for await (const e of client.send("Reply with the word 'one'.")) firstEvents.push(e);
-    if (!firstEvents.some((e) => e.type === "text")) throw new Error("first send produced no text");
-    if (!firstEvents.some((e) => e.type === "turn_complete")) throw new Error("first send did not complete");
-
-    const secondEvents = [];
-    for await (const e of client.send("Reply with the word 'two'.")) secondEvents.push(e);
-    if (!secondEvents.some((e) => e.type === "text")) throw new Error("second send produced no text");
-    if (!secondEvents.some((e) => e.type === "turn_complete")) throw new Error("second send did not complete");
-
-    return `1st: ${firstEvents.length} events, 2nd: ${secondEvents.length} events, demux + serialization ok`;
+    let firstText = "";
+    for await (const e of client.send("My favorite color is teal. Reply with just the word 'noted'.")) {
+      if (e.type === "text") firstText += e.content;
+    }
+    let secondText = "";
+    for await (const e of client.send("What color did I just tell you? Reply with one word only.")) {
+      if (e.type === "text") secondText += e.content;
+    }
+    if (!secondText.toLowerCase().includes("teal")) {
+      throw new Error(`second turn did not recall 'teal' — got: ${JSON.stringify(secondText.slice(0, 80))}`);
+    }
+    return `first='${firstText.trim().slice(0, 30)}', recall ok`;
   } finally {
     await client.close();
   }
@@ -165,10 +164,10 @@ await step("v0.5 buildArgv threads resume + settingSources", async () => {
   return `--resume abc-123 --setting-sources user,project`;
 });
 
-console.log("\n--- known CLI gaps (not SDK bugs; file as separate tickets) ---");
-console.log("• `oh session` does not emit a sessionId for fresh sessions (src/main.tsx:447 + 416).");
-console.log("• `oh session` does not appear to preserve conversation context across stdin-multiplexed turns (verified by direct probe).");
-console.log("• `permissionRequest` hooks only fire in interactive TUI mode (src/query/tools.ts:64); `oh run`/`oh session` headless never reach the hook.");
+console.log("\n--- known CLI gaps (filed) ---");
+console.log("• #60 — `oh session` does not emit a sessionId for fresh sessions (blocks programmatic resume).");
+console.log("• #62 — `permissionRequest` hooks only fire in interactive TUI mode (blocks end-to-end canUseTool through oh run).");
+console.log("• (#61 fixed in this branch — Ollama num_ctx now sized to actual prompt; multi-turn works.)");
 
 const failures = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failures.length}/${results.length} passed`);
