@@ -1,0 +1,53 @@
+{
+  "name": "@zhijiewang/openharness-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for openHarness — drive the `oh` terminal coding agent from Node.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "!dist/**/*.test.*",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "sdk",
+    "openharness",
+    "coding-agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhijiewong/openharness",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/zhijiewong/openharness/issues"
+  },
+  "homepage": "https://github.com/zhijiewong/openharness/tree/main/packages/sdk#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

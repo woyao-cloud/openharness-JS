@@ -22,17 +22,23 @@
     "README.md",
     "LICENSE"
   ],
+  "workspaces": [
+    "packages/sdk"
+  ],
   "scripts": {
     "dev": "tsx src/main.tsx",
     "build": "tsc",
+    "build:sdk": "npm --workspace @zhijiewang/openharness-sdk run build",
     "prepare": "husky",
     "prepublishOnly": "npm run build",
-    "test": "node scripts/test.mjs",
+    "test": "node scripts/test.mjs && npm --workspace @zhijiewang/openharness-sdk run test",
+    "test:cli": "node scripts/test.mjs",
+    "test:sdk": "npm --workspace @zhijiewang/openharness-sdk run test",
     "test:coverage": "node scripts/coverage.mjs",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check src/",
-    "lint:fix": "biome check --write src/",
-    "format": "biome format --write src/",
+    "typecheck": "tsc --noEmit && npm --workspace @zhijiewang/openharness-sdk run typecheck",
+    "lint": "biome check src/ packages/sdk/src/",
+    "lint:fix": "biome check --write src/ packages/sdk/src/",
+    "format": "biome format --write src/ packages/sdk/src/",
     "start": "node dist/main.js"
   },
   "dependencies": {
