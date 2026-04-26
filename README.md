@@ -32,8 +32,8 @@ AI coding agent in your terminal. Works with any LLM -- free local models or clo
 - [Quick Start](#quick-start)
 - [Why OpenHarness?](#why-openharness)
 - [Terminal UI](#terminal-ui)
-- [Tools (37)](#tools-37)
-- [Slash Commands (33)](#slash-commands-33)
+- [Tools (43)](#tools-43)
+- [Slash Commands](#slash-commands)
 - [Permission Modes](#permission-modes)
 - [Hooks](#hooks)
 - [Checkpoints & Rewind](#checkpoints--rewind)
@@ -142,12 +142,13 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 
 Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XXXX), `{ctx}` (context usage bar). Empty sections are automatically collapsed.
 
-## Tools (37)
+## Tools (43)
 
 | Tool | Risk | Description |
 |------|------|-------------|
 | **Core** | | |
 | Bash | high | Execute shell commands with live streaming output (AST safety analysis) |
+| PowerShell | high | Execute PowerShell commands (Windows-native scripting) |
 | Read | low | Read files with line ranges, PDF support |
 | ImageRead | low | Read images/PDFs for multimodal analysis |
 | Write | medium | Create or overwrite files |
@@ -167,6 +168,7 @@ Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XX
 | TaskGet | low | Get task details |
 | TaskStop | low | Stop a running task |
 | TaskOutput | low | Get task output |
+| TodoWrite | low | Manage session task checklist (Claude Code-compatible) |
 | **Agents** | | |
 | Agent | medium | Spawn a sub-agent (with role specialization) |
 | ParallelAgent | medium | Dispatch multiple agents with DAG dependencies |
@@ -176,9 +178,12 @@ Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XX
 | CronCreate | medium | Schedule recurring tasks |
 | CronDelete | medium | Remove scheduled tasks |
 | CronList | low | List all scheduled tasks |
+| ScheduleWakeup | low | Self-pace the next /loop iteration (cache-aware) |
 | **Planning** | | |
 | EnterPlanMode | low | Enter structured planning mode |
 | ExitPlanMode | low | Exit planning mode |
+| **Pipelines** | | |
+| Pipeline | medium | Run a sequence of tasks with output passed between steps |
 | **Code Intelligence** | | |
 | Diagnostics | low | LSP-based code diagnostics |
 | NotebookEdit | medium | Edit Jupyter notebooks |
@@ -186,6 +191,7 @@ Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XX
 | Memory | low | Save/list/search persistent memories |
 | Skill | low | Invoke a skill from .oh/skills/ |
 | ToolSearch | low | Find tools by description |
+| SessionSearch | low | Search prior sessions for relevant context |
 | **MCP** | | |
 | ListMcpResources | low | List resources from connected MCP servers |
 | ReadMcpResource | low | Read a specific MCP resource by URI |
@@ -194,12 +200,13 @@ Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XX
 | ExitWorktree | medium | Remove a git worktree |
 | **Process** | | |
 | KillProcess | high | Stop processes by PID or name |
+| Monitor | medium | Run a background command and stream each output line back to the agent |
 
 Low-risk read-only tools auto-approve. Medium and high risk tools require confirmation in `ask` mode. Use `--trust` or `--auto` to skip prompts.
 
-## Slash Commands (33)
+## Slash Commands
 
-Type these during a chat session. Aliases: `/q` exit, `/h` help, `/c` commit, `/m` model, `/s` status.
+Over 80 commands are registered. The most-used ones are grouped below; see `/help` in-session for the full list. Aliases: `/q` exit, `/h` help, `/c` commit, `/m` model, `/s` status.
 
 **Session:**
 | Command | Description |
@@ -289,11 +296,29 @@ hooks:
     command: "scripts/cleanup.sh"
 ```
 
-**Event types:**
-- `sessionStart` — fires once when the session begins
-- `preToolUse` — fires before each tool call; **exit code 1 blocks the tool** and returns an error to the model
-- `postToolUse` — fires after each tool call completes
-- `sessionEnd` — fires when the session ends
+**Event types** (17 total):
+
+| Event | When it fires | Can block? |
+|-------|---------------|------------|
+| `sessionStart` | Session begins | — |
+| `sessionEnd` | Session ends | — |
+| `turnStart` | Top-level agent turn begins (after user prompt accepted) | — |
+| `turnStop` | Top-level agent turn ends (mirrors Claude Code's `Stop`) | — |
+| `userPromptSubmit` | Before user prompt reaches the LLM | yes — `decision: deny` |
+| `preToolUse` | Before each tool call | yes — exit code 1 / `decision: deny` |
+| `postToolUse` | After successful tool execution | — |
+| `postToolUseFailure` | After tool throws or returns `isError: true` | — |
+| `permissionRequest` | When a tool needs approval (between `preToolUse` and the prompt) | yes — `decision: allow\|deny\|ask` |
+| `fileChanged` | After a tool modifies a file | — |
+| `cwdChanged` | After working directory changes | — |
+| `subagentStart` | A sub-agent is spawned | — |
+| `subagentStop` | A sub-agent completes | — |
+| `preCompact` | Before conversation compaction | — |
+| `postCompact` | After conversation compaction | — |
+| `configChange` | `.oh/config.yaml` is modified during the session | — |
+| `notification` | A notification is dispatched | — |
+
+Live introspection: run `/hooks` in-session to see exactly which hooks are loaded, grouped by event.
 
 **Environment variables** available to hook scripts:
 
@@ -303,10 +328,16 @@ hooks:
 | `OH_TOOL_NAME` | Name of the tool being called (tool events only) |
 | `OH_TOOL_ARGS` | JSON-encoded tool arguments (tool events only) |
 | `OH_TOOL_OUTPUT` | JSON-encoded tool output (`postToolUse` only) |
+| `OH_TOOL_INPUT_JSON` | Full JSON tool input (tool events only) |
+| `OH_SESSION_ID` / `OH_MODEL` / `OH_PROVIDER` / `OH_PERMISSION_MODE` | Current session context |
+| `OH_COST` / `OH_TOKENS` | Running cost and token totals |
+| `OH_FILE_PATH` | Path that changed (`fileChanged` only) |
+| `OH_NEW_CWD` | New working directory (`cwdChanged` only) |
+| `OH_TURN_NUMBER` / `OH_TURN_REASON` | Turn boundary context (`turnStart` / `turnStop`) |
 
-Use `match` to restrict a hook to a specific tool name (e.g., `match: Bash` only triggers for the Bash tool).
+Use `match` to restrict a hook to a specific tool name (e.g., `match: Bash` only triggers for the Bash tool). Substring, glob (`Cron*`), and `/regex/flags` patterns are all supported.
 
-See [docs/hooks.md](docs/hooks.md) for the full event reference including the new `userPromptSubmit`, `permissionRequest`, and `postToolUseFailure` events.
+Set `jsonIO: true` on a `command` hook to opt into structured JSON I/O — the harness sends `{event, ...context}` on stdin and reads `{decision, reason, hookSpecificOutput}` from stdout. HTTP hooks accept the same response shape. See [docs/hooks.md](docs/hooks.md) for the full reference.
 
 ## Cybergotchi
 

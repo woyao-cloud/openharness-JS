@@ -32,8 +32,8 @@
 - [快速开始](#快速开始)
 - [为什么选择 OpenHarness？](#为什么选择-openharness)
 - [终端界面](#终端界面)
-- [工具（37 个）](#工具37-个)
-- [斜杠命令（33 个）](#斜杠命令33-个)
+- [工具（43 个）](#工具43-个)
+- [斜杠命令](#斜杠命令)
 - [权限模式](#权限模式)
 - [钩子](#钩子)
 - [检查点与回滚](#检查点与回滚)
@@ -142,12 +142,13 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 
 可用变量：`{model}`、`{tokens}`（输入↑ 输出↓）、`{cost}`（$X.XXXX）、`{ctx}`（上下文占用条）。空片段会自动折叠。
 
-## 工具（37 个）
+## 工具（43 个）
 
 | 工具 | 风险 | 描述 |
 |------|------|-------------|
 | **核心** | | |
 | Bash | 高 | 执行 shell 命令并实时流式输出（AST 安全分析） |
+| PowerShell | 高 | 执行 PowerShell 命令（Windows 原生脚本） |
 | Read | 低 | 按行范围读取文件，支持 PDF |
 | ImageRead | 低 | 读取图片/PDF 以进行多模态分析 |
 | Write | 中 | 创建或覆盖文件 |
@@ -167,6 +168,7 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 | TaskGet | 低 | 获取任务详情 |
 | TaskStop | 低 | 停止正在运行的任务 |
 | TaskOutput | 低 | 获取任务输出 |
+| TodoWrite | 低 | 管理会话级 todo 列表（兼容 Claude Code） |
 | **代理** | | |
 | Agent | 中 | 派生一个子代理（可指定角色） |
 | ParallelAgent | 中 | 派发多个代理并支持 DAG 依赖 |
@@ -176,9 +178,12 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 | CronCreate | 中 | 创建定时任务 |
 | CronDelete | 中 | 删除定时任务 |
 | CronList | 低 | 列出所有定时任务 |
+| ScheduleWakeup | 低 | 在 /loop 中自适应安排下一次触发（缓存感知） |
 | **规划** | | |
 | EnterPlanMode | 低 | 进入结构化规划模式 |
 | ExitPlanMode | 低 | 退出规划模式 |
+| **流水线** | | |
+| Pipeline | 中 | 顺序执行一连串子任务，把每一步的输出作为下一步的输入 |
 | **代码智能** | | |
 | Diagnostics | 低 | 基于 LSP 的代码诊断 |
 | NotebookEdit | 中 | 编辑 Jupyter notebook |
@@ -186,6 +191,7 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 | Memory | 低 | 保存/列出/搜索持久化记忆 |
 | Skill | 低 | 调用 .oh/skills/ 下的技能 |
 | ToolSearch | 低 | 按描述查找工具 |
+| SessionSearch | 低 | 在历史会话中搜索相关上下文 |
 | **MCP** | | |
 | ListMcpResources | 低 | 列出已连接 MCP 服务器上的资源 |
 | ReadMcpResource | 低 | 按 URI 读取指定的 MCP 资源 |
@@ -194,12 +200,13 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 | ExitWorktree | 中 | 移除一个 git worktree |
 | **进程** | | |
 | KillProcess | 高 | 按 PID 或名称停止进程 |
+| Monitor | 中 | 在后台运行命令，并把每一行输出实时反馈给代理 |
 
 低风险只读工具会自动批准。在 `ask` 模式下，中高风险工具需要确认。使用 `--trust` 或 `--auto` 可跳过提示。
 
-## 斜杠命令（33 个）
+## 斜杠命令
 
-在对话中输入这些命令。别名：`/q` 退出、`/h` 帮助、`/c` 提交、`/m` 模型、`/s` 状态。
+OH 注册了 80+ 个斜杠命令；下表只列出最常用的一部分。在会话中运行 `/help` 可以看到完整列表。别名：`/q` 退出、`/h` 帮助、`/c` 提交、`/m` 模型、`/s` 状态。
 
 **会话：**
 | 命令 | 描述 |
@@ -289,11 +296,29 @@ hooks:
     command: "scripts/cleanup.sh"
 ```
 
-**事件类型：**
-- `sessionStart` —— 会话开始时触发一次
-- `preToolUse` —— 每次工具调用前触发；**退出码 1 会阻止该工具**并向模型返回错误
-- `postToolUse` —— 每次工具调用完成后触发
-- `sessionEnd` —— 会话结束时触发
+**事件类型**（共 17 个）：
+
+| 事件 | 触发时机 | 是否可阻止 |
+|-------|---------------|------------|
+| `sessionStart` | 会话开始 | — |
+| `sessionEnd` | 会话结束 | — |
+| `turnStart` | 顶层代理回合开始（用户提示词被接受后） | — |
+| `turnStop` | 顶层代理回合结束（对应 Claude Code 的 `Stop`） | — |
+| `userPromptSubmit` | 用户提示词到达 LLM 之前 | 是 —— `decision: deny` |
+| `preToolUse` | 工具调用之前 | 是 —— 退出码 1 / `decision: deny` |
+| `postToolUse` | 工具成功执行之后 | — |
+| `postToolUseFailure` | 工具抛错或返回 `isError: true` | — |
+| `permissionRequest` | 工具需要授权时（`preToolUse` 与询问之间） | 是 —— `decision: allow\|deny\|ask` |
+| `fileChanged` | 工具修改文件之后 | — |
+| `cwdChanged` | 工作目录变更之后 | — |
+| `subagentStart` | 子代理被派生 | — |
+| `subagentStop` | 子代理完成 | — |
+| `preCompact` | 对话压缩之前 | — |
+| `postCompact` | 对话压缩之后 | — |
+| `configChange` | 会话过程中 `.oh/config.yaml` 被修改 | — |
+| `notification` | 通知被派发 | — |
+
+实时查看：在会话中运行 `/hooks` 可以按事件分组查看当前已加载的钩子。
 
 **环境变量**（钩子脚本可用）：
 
@@ -303,10 +328,16 @@ hooks:
 | `OH_TOOL_NAME` | 正在调用的工具名（仅工具类事件） |
 | `OH_TOOL_ARGS` | JSON 编码的工具参数（仅工具类事件） |
 | `OH_TOOL_OUTPUT` | JSON 编码的工具输出（仅 `postToolUse`） |
+| `OH_TOOL_INPUT_JSON` | 完整的 JSON 工具输入（仅工具类事件） |
+| `OH_SESSION_ID` / `OH_MODEL` / `OH_PROVIDER` / `OH_PERMISSION_MODE` | 当前会话上下文 |
+| `OH_COST` / `OH_TOKENS` | 累计费用与 token 数 |
+| `OH_FILE_PATH` | 变更的文件路径（仅 `fileChanged`） |
+| `OH_NEW_CWD` | 新的工作目录（仅 `cwdChanged`） |
+| `OH_TURN_NUMBER` / `OH_TURN_REASON` | 回合边界上下文（`turnStart` / `turnStop`） |
 
-使用 `match` 将钩子限定到特定工具名（例如 `match: Bash` 仅对 Bash 工具触发）。
+使用 `match` 将钩子限定到特定工具名（例如 `match: Bash` 仅对 Bash 工具触发）。支持子串、glob（如 `Cron*`）和 `/regex/flags` 三种匹配方式。
 
-完整事件参考（包括新增的 `userPromptSubmit`、`permissionRequest`、`postToolUseFailure` 事件）见 [docs/hooks.md](docs/hooks.md)。
+将 `command` 钩子设置 `jsonIO: true` 即可启用结构化 JSON I/O —— 框架在 stdin 上发送 `{event, ...context}`，并从 stdout 读取 `{decision, reason, hookSpecificOutput}`。HTTP 钩子接受同样的响应格式。完整参考见 [docs/hooks.md](docs/hooks.md)。
 
 ## 电子宠物 Cybergotchi
 
