@@ -42,6 +42,8 @@
 - [电子宠物 Cybergotchi](#电子宠物-cybergotchi)
 - [MCP 服务器](#mcp-服务器)
 - [模型提供商](#模型提供商)
+- [鉴权（Auth）](#鉴权auth)
+- [自动更新（Update）](#自动更新update)
 - [常见问题](#常见问题)
 - [安装](#安装)
 - [开发](#开发)
@@ -216,6 +218,7 @@ OH 注册了 80+ 个斜杠命令；下表只列出最常用的一部分。在会
 | `/clear` | 清空对话历史 |
 | `/compact` | 压缩对话以释放上下文 |
 | `/export` | 将对话导出为 markdown |
+| `/copy [n]` | 复制倒数第 N 条助手回复到系统剪贴板 |
 | `/history [n]` | 列出最近的会话；`/history search <term>` 搜索 |
 | `/browse` | 带预览的交互式会话浏览器 |
 | `/resume <id>` | 恢复已保存的会话 |
@@ -249,12 +252,16 @@ OH 注册了 80+ 个斜杠命令；下表只列出最常用的一部分。在会
 | `/theme dark\|light` | 切换主题（自动保存到配置） |
 | `/vim` | 切换 Vim 模式 |
 | `/companion off\|on` | 切换电子宠物可见性 |
+| `/keys` | 显示键盘快捷键 |
+| `/keybindings` | 在 `$EDITOR` 中打开 `~/.oh/keybindings.json`（首次运行会创建初始文件） |
 
 **AI：**
 | 命令 | 描述 |
 |---------|-------------|
 | `/plan <task>` | 进入规划模式 |
 | `/review` | 审查最近的代码变更 |
+| `/summarize` | 总结当前对话 |
+| `/recap` | 一句话回顾本次会话（比 `/summarize` 更轻量） |
 
 **宠物：**
 | 命令 | 描述 |
@@ -299,7 +306,7 @@ hooks:
     command: "scripts/cleanup.sh"
 ```
 
-**事件类型**（共 23 个）：
+**事件类型**（共 27 个 —— 与 Claude Code 稳定版一致）：
 
 | 事件 | 触发时机 | 是否可阻止 |
 |-------|---------------|------------|
@@ -325,7 +332,13 @@ hooks:
 | `notification` | 通知被派发 | — |
 | `taskCreated` | `TaskCreate` 持久化新任务后 | — |
 | `taskCompleted` | `TaskUpdate` 将任务状态切换为 `completed` 时 | — |
+| `worktreeCreate` | `EnterWorktreeTool` 创建隔离的 git worktree 时 | — |
+| `worktreeRemove` | `ExitWorktreeTool` 移除 git worktree 时 | — |
+| `elicitation` | MCP 服务器通过 `elicitation/create` 请求用户输入 | 是 —— `decision: allow\|deny` |
+| `elicitationResult` | elicitation 响应决定之后（用于审计追踪） | — |
 | `instructionsLoaded` | `loadRulesAsPrompt` 重新构建系统提示并加载规则之后 | — |
+
+在 `.oh/config.yaml` 中设置 `disableAllHooks: true` 可全局禁用钩子执行，同时保留磁盘上的定义以便审计。
 
 实时查看：在会话中运行 `/hooks` 可以按事件分组查看当前已加载的钩子。
 
@@ -557,6 +570,23 @@ oh run "review the diff" --model claude-sonnet-4-6 --max-budget-usd 0.50
 oh session --model gpt-4o --max-budget-usd 5
 ```
 
+### CI / SDK 常用 CLI 标志
+
+| 标志 | 作用 |
+|------|------|
+| `--bare` | 跳过启动时的可选工作（项目检测、插件、记忆、技能、MCP）。系统提示仅保留工具使用基线，对包含大量 CLAUDE.md / RULES.md 的仓库启动更快。 |
+| `--debug [类别]` | 启用分类调试日志。`--debug` 启用全部；`--debug mcp,hooks` 仅启用指定类别。也读取 `OH_DEBUG` 环境变量。 |
+| `--debug-file <path>` | 把调试日志追加到文件而非 stderr。也读取 `OH_DEBUG_FILE`。 |
+| `--mcp-config <path>` | 从外部 JSON 文件加载 MCP 服务器（叠加在 `.oh/config.yaml` 之上）。 |
+| `--strict-mcp-config` | 配合 `--mcp-config`，完全忽略 `.oh/config.yaml` 中的 MCP 服务器。 |
+| `--system-prompt-file <path>` / `--append-system-prompt-file <path>` | `--system-prompt` / `--append-system-prompt` 的文件路径变体。 |
+| `--no-session-persistence` | 跳过会话写入 `~/.oh/sessions/`，适合一次性 CI 运行。 |
+| `--fallback-model <model>` | 主模型遇到可重试错误时使用的回退模型。本次运行内会替代 `.oh/config.yaml` 的 `fallbackProviders`。 |
+| `--permission-prompt-tool <mcp_tool>` | 把工具授权决策委托给指定的 MCP 工具（例如 `mcp__myperm__check`）。 |
+| `--init` / `--init-only` | 在执行命令前 / 替代执行命令运行交互式安装向导。 |
+
+所有标志在 `oh run` 与 `oh session` 上都可用。完整列表见 `oh run --help` 与 `oh session --help`。
+
 ### 使用 `--json-schema` 约束结构化输出
 
 按 JSON Schema 约束模型输出。适用于需要以编程方式解析模型输出、避免正则启发式的 CI 脚本：
@@ -647,6 +677,35 @@ permissionMode: ask
 oh
 oh --model llamacpp/my-model
 oh models                    # 列出可用模型
+```
+
+## 鉴权（Auth）
+
+提供商无关的凭据管理。本地 LLM（Ollama / llama.cpp / LM Studio）无需鉴权 —— 通过 `oh init` 配置即可。
+
+```bash
+oh auth login [provider] [--key <value>]   # 存储某个提供商的 API key
+oh auth logout [provider]                   # 清除已存储的 API key
+oh auth status                              # 显示已存储的提供商及环境变量覆盖情况
+```
+
+`[provider]` 默认使用配置好的默认提供商。`--key` 可直接传入；否则 OH 会在 TTY 下交互询问，在管道输入下读到 EOF。
+
+### 脚本化 key 解析（`apiKeyHelper`）
+
+通过插入辅助脚本（1Password、`pass`、vault、云端密钥管理器等）避免把 key 写入纯文本或加密存储。配置好的命令在取 key 时执行，环境变量带 `OH_PROVIDER`，去掉首尾空白的 stdout 即为 key。
+
+```yaml
+# .oh/config.yaml
+apiKeyHelper: 'op read "op://Personal/Anthropic/key"'
+```
+
+解析优先级：环境变量 → 加密存储 → `apiKeyHelper` → 旧版纯文本配置。
+
+## 自动更新（Update）
+
+```bash
+oh update                    # 检测安装方式（npm 全局 / npx / 本地克隆），打印对应的升级命令
 ```
 
 ## 配置层级

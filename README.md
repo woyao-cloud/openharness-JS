@@ -42,6 +42,8 @@ AI coding agent in your terminal. Works with any LLM -- free local models or clo
 - [Cybergotchi](#cybergotchi)
 - [MCP Servers](#mcp-servers)
 - [Providers](#providers)
+- [Auth](#auth)
+- [Update](#update)
 - [FAQ](#faq)
 - [Install](#install)
 - [Development](#development)
@@ -216,6 +218,7 @@ Over 80 commands are registered. The most-used ones are grouped below; see `/hel
 | `/clear` | Clear conversation history |
 | `/compact` | Compress conversation to free context |
 | `/export` | Export conversation to markdown |
+| `/copy [n]` | Copy the Nth-last assistant response to the system clipboard |
 | `/history [n]` | List recent sessions; `/history search <term>` to search |
 | `/browse` | Interactive session browser with preview |
 | `/resume <id>` | Resume a saved session |
@@ -249,12 +252,16 @@ Over 80 commands are registered. The most-used ones are grouped below; see `/hel
 | `/theme dark\|light` | Switch theme (saved to config) |
 | `/vim` | Toggle Vim mode |
 | `/companion off\|on` | Toggle companion visibility |
+| `/keys` | Show keyboard shortcuts |
+| `/keybindings` | Open `~/.oh/keybindings.json` in `$EDITOR` (creates a starter file if missing) |
 
 **AI:**
 | Command | Description |
 |---------|-------------|
 | `/plan <task>` | Enter plan mode |
 | `/review` | Review recent code changes |
+| `/summarize` | Summarize the current conversation |
+| `/recap` | One-sentence recap of the session (lighter than `/summarize`) |
 
 **Pet:**
 | Command | Description |
@@ -299,7 +306,7 @@ hooks:
     command: "scripts/cleanup.sh"
 ```
 
-**Event types** (23 total):
+**Event types** (27 total — matches Claude Code's stable surface):
 
 | Event | When it fires | Can block? |
 |-------|---------------|------------|
@@ -325,7 +332,13 @@ hooks:
 | `notification` | A notification is dispatched | — |
 | `taskCreated` | `TaskCreate` persists a new task | — |
 | `taskCompleted` | `TaskUpdate` transitions a task to `completed` | — |
+| `worktreeCreate` | `EnterWorktreeTool` creates an isolated git worktree | — |
+| `worktreeRemove` | `ExitWorktreeTool` removes a git worktree | — |
+| `elicitation` | An MCP server requests user input via `elicitation/create` | yes — `decision: allow\|deny` |
+| `elicitationResult` | After the elicitation response has been decided (audit trail) | — |
 | `instructionsLoaded` | `loadRulesAsPrompt` rebuilt the system prompt with rules in scope | — |
+
+Set `disableAllHooks: true` in `.oh/config.yaml` to globally disable hook execution while keeping definitions on disk for auditability.
 
 Live introspection: run `/hooks` in-session to see exactly which hooks are loaded, grouped by event.
 
@@ -557,6 +570,23 @@ oh run "review the diff" --model claude-sonnet-4-6 --max-budget-usd 0.50
 oh session --model gpt-4o --max-budget-usd 5
 ```
 
+### CLI flags for CI / SDK use
+
+| Flag | Effect |
+|------|--------|
+| `--bare` | Skip optional startup work (project detection, plugins, memory, skills, MCP). System prompt is just the tool-use baseline. Faster startup on repos with many CLAUDE.md / RULES.md files. |
+| `--debug [categories]` | Enable categorized debug logs. `--debug` alone enables all; `--debug mcp,hooks` filters. Falls back to `OH_DEBUG` env var. |
+| `--debug-file <path>` | Append debug lines to a file instead of stderr. Falls back to `OH_DEBUG_FILE`. |
+| `--mcp-config <path>` | Load MCP servers from an external JSON file (in addition to `.oh/config.yaml`). |
+| `--strict-mcp-config` | With `--mcp-config`, ignore `.oh/config.yaml` MCP servers entirely. |
+| `--system-prompt-file <path>` / `--append-system-prompt-file <path>` | File-path variants of `--system-prompt` / `--append-system-prompt`. |
+| `--no-session-persistence` | Skip writing the session record to `~/.oh/sessions/` for ephemeral CI runs. |
+| `--fallback-model <model>` | Fallback used when the primary fails with a retriable error. REPLACES `.oh/config.yaml` `fallbackProviders` for this run. |
+| `--permission-prompt-tool <mcp_tool>` | Delegate tool-permission decisions to a configured MCP tool (e.g. `mcp__myperm__check`). |
+| `--init` / `--init-only` | Run the interactive setup wizard before / instead of the command. |
+
+All flags work on both `oh run` and `oh session`. See `oh run --help` and `oh session --help` for the full surface.
+
 ### Structured output with `--json-schema`
 
 Constrain the model's output to a JSON Schema. Useful for CI scripts that
@@ -648,6 +678,35 @@ permissionMode: ask
 oh
 oh --model llamacpp/my-model
 oh models                    # list available models
+```
+
+## Auth
+
+Provider-agnostic credential management. Local LLMs (Ollama / llama.cpp / LM Studio) need no auth — configure them via `oh init`.
+
+```bash
+oh auth login [provider] [--key <value>]   # store API key for a provider
+oh auth logout [provider]                   # clear stored API key
+oh auth status                              # show stored providers + env-var overrides
+```
+
+`[provider]` defaults to your configured default. `--key` supplies the value inline; otherwise OH prompts (TTY) or reads from stdin (piped).
+
+### Script-based key resolution (`apiKeyHelper`)
+
+Avoid storing keys in plaintext / the encrypted store by plugging in a helper script (1Password, `pass`, vault, cloud secret manager). The configured command runs at credential-fetch time with `OH_PROVIDER` set, and its trimmed stdout becomes the key.
+
+```yaml
+# .oh/config.yaml
+apiKeyHelper: 'op read "op://Personal/Anthropic/key"'
+```
+
+Resolution priority: env var → encrypted store → `apiKeyHelper` → legacy plaintext config.
+
+## Update
+
+```bash
+oh update                    # detects how OH was installed (npm-global / npx / local clone) and prints the right upgrade command
 ```
 
 ## Configuration Hierarchy
