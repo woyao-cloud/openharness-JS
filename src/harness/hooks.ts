@@ -38,6 +38,8 @@ export type HookEvent =
   | "turnStop"
   | "taskCreated"
   | "taskCompleted"
+  | "worktreeCreate"
+  | "worktreeRemove"
   | "instructionsLoaded";
 
 export type HookContext = {
@@ -89,6 +91,12 @@ export type HookContext = {
   taskSubject?: string;
   /** For taskCompleted: the previous status before completion (usually "in_progress") */
   taskPreviousStatus?: string;
+  /** For worktreeCreate/worktreeRemove: absolute path to the worktree directory */
+  worktreePath?: string;
+  /** For worktreeCreate/worktreeRemove: the parent repo directory the worktree was forked from */
+  worktreeParent?: string;
+  /** For worktreeRemove: whether `force: true` was passed to skip the dirty-state check */
+  worktreeForced?: string;
   /** For instructionsLoaded: count of rules concatenated (as a string for env-var parity) */
   rulesCount?: string;
   /** For instructionsLoaded: total character length of the loaded rules */
@@ -152,6 +160,9 @@ function buildEnv(event: HookEvent, ctx: HookContext): Record<string, string> {
   if (ctx.permissionAction !== undefined) env.OH_PERMISSION_ACTION = ctx.permissionAction;
   if (ctx.turnNumber !== undefined) env.OH_TURN_NUMBER = ctx.turnNumber;
   if (ctx.turnReason !== undefined) env.OH_TURN_REASON = ctx.turnReason;
+  if (ctx.worktreePath !== undefined) env.OH_WORKTREE_PATH = ctx.worktreePath;
+  if (ctx.worktreeParent !== undefined) env.OH_WORKTREE_PARENT = ctx.worktreeParent;
+  if (ctx.worktreeForced !== undefined) env.OH_WORKTREE_FORCED = ctx.worktreeForced;
   return env;
 }
 

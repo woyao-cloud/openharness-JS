@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { hasWorktreeChanges, removeWorktree } from "../../git/index.js";
+import { emitHook } from "../../harness/hooks.js";
 import type { Tool, ToolResult } from "../../Tool.js";
 
 const inputSchema = z.object({
@@ -28,6 +29,12 @@ export const ExitWorktreeTool: Tool<typeof inputSchema> = {
     }
     try {
       removeWorktree(input.path);
+      // Fire after removeWorktree resolves so the hook only sees confirmed
+      // removals — symmetric to worktreeCreate firing on success.
+      emitHook("worktreeRemove", {
+        worktreePath: input.path,
+        worktreeForced: input.force ? "true" : "false",
+      });
       return { output: `Worktree removed: ${input.path}`, isError: false };
     } catch (err) {
       return {

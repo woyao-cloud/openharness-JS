@@ -1,15 +1,59 @@
 /**
- * Session commands — /clear, /compact, /export, /history, /browse, /resume, /fork, /pin, /unpin
+ * Session commands — /clear, /compact, /copy, /export, /history, /browse, /resume, /fork, /pin, /unpin
  */
 
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { getContextWindow } from "../harness/cost.js";
 import { createSession, listSessions, loadSession, saveSession } from "../harness/session.js";
 import { compressMessages } from "../query/index.js";
 import type { Message } from "../types/message.js";
 import type { CommandContext, CommandHandler, CommandResult } from "./types.js";
+
+/**
+ * Copy text to the system clipboard. Picks a platform-specific external tool
+ * — `clip.exe` (Windows / WSL), `pbcopy` (macOS), then `wl-copy` then
+ * `xclip -selection clipboard` (Linux). The first one that exits 0 wins.
+ *
+ * Pure helper exported for tests; everything is synchronous so the slash
+ * command response can include success/failure inline.
+ *
+ * @internal
+ */
+export function copyToClipboard(text: string): { ok: true; tool: string } | { ok: false; reason: string } {
+  const candidates: Array<{ cmd: string; args: string[] }> =
+    platform() === "win32"
+      ? [{ cmd: "clip", args: [] }]
+      : platform() === "darwin"
+        ? [{ cmd: "pbcopy", args: [] }]
+        : [
+            { cmd: "wl-copy", args: [] },
+            { cmd: "xclip", args: ["-selection", "clipboard"] },
+            { cmd: "xsel", args: ["--clipboard", "--input"] },
+            // WSL / generic-Linux-with-clip.exe-on-PATH fallback
+            { cmd: "clip.exe", args: [] },
+          ];
+
+  for (const { cmd, args } of candidates) {
+    try {
+      const result = spawnSync(cmd, args, { input: text, encoding: "utf8", shell: false });
+      if (!result.error && result.status === 0) {
+        return { ok: true, tool: cmd };
+      }
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return {
+    ok: false,
+    reason:
+      platform() === "linux"
+        ? "no clipboard tool found — install one of: wl-copy, xclip, xsel"
+        : `no working clipboard tool found for ${platform()}`,
+  };
+}
 
 function formatMessagesAsMarkdown(messages: readonly Message[]): string {
   const blocks: string[] = [];
@@ -234,6 +278,46 @@ export function registerSessionCommands(
       output: `Truncated ${count} message(s). ${kept.length} remaining.`,
       handled: true,
       compactedMessages: kept,
+    };
+  });
+
+  register("copy", "Copy the Nth-last assistant response to the clipboard (default: most recent)", (args, ctx) => {
+    const raw = args.trim();
+    const n = raw ? parseInt(raw, 10) : 1;
+    if (raw && (Number.isNaN(n) || n < 1)) {
+      return {
+        output: `Usage: /copy [n]\n\nCopies the Nth-last assistant response (default: 1 = most recent).`,
+        handled: true,
+      };
+    }
+    // Walk messages newest-to-oldest, keeping only assistant messages with text.
+    // /export already filters out tool-result messages from rendering — same rule
+    // applies here: we want the model's reply text, not its tool plumbing.
+    const assistantMessages = ctx.messages
+      .filter((m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim().length > 0)
+      .reverse();
+    if (assistantMessages.length === 0) {
+      return { output: "No assistant responses to copy yet.", handled: true };
+    }
+    if (n > assistantMessages.length) {
+      return {
+        output: `Only ${assistantMessages.length} assistant response(s) available; can't copy #${n}.`,
+        handled: true,
+      };
+    }
+    const target = assistantMessages[n - 1]!;
+    const text = target.content;
+    const result = copyToClipboard(text);
+    if (!result.ok) {
+      return {
+        output: `Could not copy to clipboard: ${result.reason}\n\nResponse text (${text.length} chars):\n${text}`,
+        handled: true,
+      };
+    }
+    const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+    return {
+      output: `Copied assistant response #${n} (${text.length} chars) via ${result.tool}: ${preview}`,
+      handled: true,
     };
   });
 

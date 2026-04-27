@@ -274,6 +274,17 @@ export function registerAICommands(register: (name: string, description: string,
     };
   });
 
+  register("recap", "One-sentence recap of the current session (lighter than /summarize)", (_args, ctx) => {
+    if (ctx.messages.length === 0) {
+      return { output: "No messages to recap.", handled: true };
+    }
+    return {
+      output: `[recap] ${ctx.messages.length} messages`,
+      handled: false,
+      prependToPrompt: `In ONE sentence (max ~25 words), recap what this session has accomplished so far. No preamble, no bullet list, no markdown — just the sentence. Skip topics still in progress; lead with what's done.`,
+    };
+  });
+
   register("explain", "Explain a file or concept", (args) => {
     const topic = args.trim();
     if (!topic) {

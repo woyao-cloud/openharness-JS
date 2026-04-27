@@ -88,6 +88,10 @@ export type HooksConfig = {
   taskCreated?: HookDef[];
   /** Fires when a TaskUpdate tool call transitions a task to status "completed". */
   taskCompleted?: HookDef[];
+  /** Fires after EnterWorktreeTool successfully creates an isolated git worktree. */
+  worktreeCreate?: HookDef[];
+  /** Fires after ExitWorktreeTool successfully removes a git worktree. */
+  worktreeRemove?: HookDef[];
   /** Fires once per system-prompt build after CLAUDE.md / global-rules / project RULES.md / user profile have been concatenated. Useful for audit trails. */
   instructionsLoaded?: HookDef[];
 };

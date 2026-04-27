@@ -1,10 +1,50 @@
 /**
- * Settings commands — /theme, /companion, /fast, /keys, /effort, /sandbox, /permissions, /allowed-tools
+ * Settings commands — /theme, /companion, /fast, /keys, /keybindings, /effort, /sandbox, /permissions, /allowed-tools
  */
 
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { homedir, platform } from "node:os";
+import { dirname, join } from "node:path";
 import { readOhConfig } from "../harness/config.js";
 import { loadKeybindings } from "../harness/keybindings.js";
 import type { CommandHandler } from "./types.js";
+
+const KEYBINDINGS_TEMPLATE = `[
+  { "key": "ctrl+d", "action": "/diff" },
+  { "key": "ctrl+l", "action": "/clear" },
+  { "key": "ctrl+u", "action": "/undo" },
+  { "key": "ctrl+s", "action": "/status" },
+  { "key": "ctrl+k ctrl+c", "action": "/cost" },
+  { "key": "ctrl+k ctrl+f", "action": "/fast" },
+  { "key": "ctrl+k ctrl+l", "action": "/log" }
+]
+`;
+
+/**
+ * Open a file in the user's editor — `$VISUAL` → `$EDITOR` → `notepad`
+ * (Windows) → `vi` (POSIX). The child uses `stdio: "ignore"` + `detached: true`
+ * + `unref()` so it is fully decoupled from the REPL and from `node --test`
+ * (which would otherwise hang waiting for the inherited stdio handle to
+ * close). The trade-off: terminal editors like `vi` / `vim` are not usable
+ * here — they need a TTY. That's fine for `/keybindings`, which targets a
+ * GUI-editor flow; an interactive in-REPL edit would be its own command.
+ */
+function openInEditor(filePath: string): { command: string; spawned: boolean } {
+  const editor = process.env.VISUAL || process.env.EDITOR || (platform() === "win32" ? "notepad" : "vi");
+  if (process.env.OH_NO_OPEN_EDITOR === "1") {
+    // Test / CI escape hatch — pretend the editor launched without actually
+    // spawning anything. Used so suite runs don't pop a notepad window.
+    return { command: editor, spawned: true };
+  }
+  try {
+    const child = spawn(editor, [filePath], { stdio: "ignore", shell: true, detached: true });
+    child.unref();
+    return { command: editor, spawned: true };
+  } catch {
+    return { command: editor, spawned: false };
+  }
+}
 
 export function registerSettingsCommands(
   register: (name: string, description: string, handler: CommandHandler) => void,
@@ -64,6 +104,37 @@ export function registerSettingsCommands(
       "    /theme dark|light Switch theme",
     );
     return { output: shortcuts.join("\n"), handled: true };
+  });
+
+  register("keybindings", "Open ~/.oh/keybindings.json in $EDITOR (creates a starter file if missing)", () => {
+    const path = join(homedir(), ".oh", "keybindings.json");
+    let createdNew = false;
+    if (!existsSync(path)) {
+      try {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, KEYBINDINGS_TEMPLATE);
+        createdNew = true;
+      } catch (err) {
+        return {
+          output: `Could not create ${path}: ${err instanceof Error ? err.message : String(err)}`,
+          handled: true,
+        };
+      }
+    }
+    const { command, spawned } = openInEditor(path);
+    if (!spawned) {
+      return {
+        output: `Could not launch ${command}. File path: ${path}\nSet $EDITOR or open it manually.`,
+        handled: true,
+      };
+    }
+    const lines = [
+      createdNew ? `Created starter file at ${path}` : `Opening ${path}`,
+      `Editor: ${command}`,
+      "",
+      "Edits take effect on the next session start. Reload now with /reload-plugins.",
+    ];
+    return { output: lines.join("\n"), handled: true };
   });
 
   register("effort", "Set reasoning effort level (low/medium/high/max)", (args) => {

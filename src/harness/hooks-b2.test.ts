@@ -19,7 +19,7 @@ import { TaskCreateTool } from "../tools/TaskCreateTool/index.js";
 import { TaskUpdateTool } from "../tools/TaskUpdateTool/index.js";
 import { invalidateConfigCache } from "./config.js";
 import type { HookEvent } from "./hooks.js";
-import { invalidateHookCache } from "./hooks.js";
+import { emitHook, invalidateHookCache } from "./hooks.js";
 import { loadRulesAsPrompt } from "./rules.js";
 
 function writeHookConfig(dir: string, capturePath: string, events: HookEvent[]): void {
@@ -150,5 +150,23 @@ describe("audit B2 — new hook events fire from their source code paths", () =>
       assert.ok(out.length > 0, "rules prompt should be non-empty");
     });
     assert.ok(fired.includes("instructionsLoaded"), `expected instructionsLoaded, got ${fired.join(",") || "none"}`);
+  });
+
+  // worktreeCreate / worktreeRemove (audit A12) — exercised directly via
+  // emitHook rather than the real EnterWorktreeTool / ExitWorktreeTool to
+  // keep the test git-free. The tools' emit calls are mechanical (one line
+  // each) and verified at build time by the HookEvent union.
+  it("worktreeCreate fires with worktreePath + worktreeParent in env", async () => {
+    const { fired } = await withHooks(["worktreeCreate"], async () => {
+      emitHook("worktreeCreate", { worktreePath: "/tmp/x", worktreeParent: "/tmp" });
+    });
+    assert.ok(fired.includes("worktreeCreate"), `expected worktreeCreate, got ${fired.join(",") || "none"}`);
+  });
+
+  it("worktreeRemove fires with worktreePath + worktreeForced in env", async () => {
+    const { fired } = await withHooks(["worktreeRemove"], async () => {
+      emitHook("worktreeRemove", { worktreePath: "/tmp/x", worktreeForced: "true" });
+    });
+    assert.ok(fired.includes("worktreeRemove"), `expected worktreeRemove, got ${fired.join(",") || "none"}`);
   });
 });

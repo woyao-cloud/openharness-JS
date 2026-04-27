@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createWorktree, isGitRepo } from "../../git/index.js";
+import { emitHook } from "../../harness/hooks.js";
 import type { Tool, ToolContext, ToolResult } from "../../Tool.js";
 
 const inputSchema = z.object({
@@ -27,6 +28,9 @@ export const EnterWorktreeTool: Tool<typeof inputSchema> = {
     if (!path) {
       return { output: "Failed to create worktree.", isError: true };
     }
+    // Symmetric to taskCreated — fire only on the success path so audit hooks
+    // can react to the new worktree (e.g. set up a per-worktree scratch dir).
+    emitHook("worktreeCreate", { worktreePath: path, worktreeParent: context.workingDir });
     return { output: `Worktree created at: ${path}\nUse ExitWorktree to clean up when done.`, isError: false };
   },
 
