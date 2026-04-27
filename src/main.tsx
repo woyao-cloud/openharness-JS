@@ -1218,6 +1218,116 @@ program
     await runInitWizard({ exitOnDone: true });
   });
 
+// ── auth (audit B6) — provider-agnostic credential management ──
+//
+// `oh auth login [provider] --key <value>`  — set API key for a provider
+// `oh auth logout [provider]`              — clear API key for a provider
+// `oh auth status`                         — show which providers have keys
+//
+// `provider` defaults to the current `cfg.provider` so a bare `oh auth login`
+// works for the just-configured project. Mirrors Claude Code's `claude auth`.
+const authCmd = program.command("auth").description("Manage API keys for any provider (login / logout / status)");
+
+authCmd
+  .command("login [provider]")
+  .description("Set the API key for a provider (defaults to the configured provider)")
+  .option("--key <value>", "API key value (omit to read from stdin)")
+  .action(async (providerArg: string | undefined, opts: { key?: string }) => {
+    const { setCredential } = await import("./harness/credentials.js");
+    const cfg = readOhConfig();
+    const provider = providerArg ?? cfg?.provider;
+    if (!provider) {
+      process.stderr.write("Error: no provider specified and no default in .oh/config.yaml. Run `oh init` first.\n");
+      process.exit(2);
+    }
+    let key = opts.key;
+    if (!key) {
+      // TTY: prompt the user for a key (one line, hidden behavior is OS-dependent
+      // — we don't try to mask, callers wanting silent input should pipe).
+      // Non-TTY: read until EOF so `echo $KEY | oh auth login` works.
+      if (process.stdin.isTTY) {
+        const readline = await import("node:readline");
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        key = await new Promise<string>((resolve) => {
+          rl.question(`Enter API key for ${provider}: `, (answer) => {
+            rl.close();
+            resolve(answer.trim());
+          });
+        });
+      } else {
+        const chunks: Buffer[] = [];
+        for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+        key = Buffer.concat(chunks).toString("utf8").trim();
+      }
+    }
+    if (!key) {
+      process.stderr.write("Error: no API key provided (pass --key <value> or pipe on stdin).\n");
+      process.exit(2);
+    }
+    setCredential(`${provider}-api-key`, key);
+    console.log(`Stored API key for ${provider} in ~/.oh/credentials.enc.`);
+  });
+
+authCmd
+  .command("logout [provider]")
+  .description("Clear the stored API key for a provider")
+  .action(async (providerArg: string | undefined) => {
+    const { deleteCredential, getCredential } = await import("./harness/credentials.js");
+    const cfg = readOhConfig();
+    const provider = providerArg ?? cfg?.provider;
+    if (!provider) {
+      process.stderr.write("Error: no provider specified and no default in .oh/config.yaml.\n");
+      process.exit(2);
+    }
+    const key = `${provider}-api-key`;
+    if (!getCredential(key)) {
+      console.log(`No stored API key for ${provider}.`);
+      return;
+    }
+    deleteCredential(key);
+    console.log(`Cleared stored API key for ${provider}.`);
+  });
+
+authCmd
+  .command("status")
+  .description("Show which providers have stored API keys")
+  .action(async () => {
+    const { listCredentials } = await import("./harness/credentials.js");
+    const keys = listCredentials();
+    const providerKeys = keys.filter((k) => k.endsWith("-api-key"));
+    if (providerKeys.length === 0) {
+      console.log("No stored API keys. Use `oh auth login <provider>` to add one.");
+      return;
+    }
+    console.log("Stored API keys:");
+    for (const k of providerKeys) {
+      const provider = k.replace(/-api-key$/, "");
+      console.log(`  ${provider}`);
+    }
+    // Also show env-var status — useful when debugging which path resolveApiKey takes.
+    const envProviders = ["anthropic", "openai", "openrouter"].filter((p) => process.env[`${p.toUpperCase()}_API_KEY`]);
+    if (envProviders.length > 0) {
+      console.log("");
+      console.log("Env-var keys (override stored):");
+      for (const p of envProviders) console.log(`  ${p} (${p.toUpperCase()}_API_KEY)`);
+    }
+  });
+
+// ── update (audit B7) — provider-agnostic self-update guidance ──
+program
+  .command("update")
+  .description("Show the right upgrade command for how this CLI was installed")
+  .action(async () => {
+    const { detectInstallMethod, getDefaultMainPath } = await import("./utils/install-method.js");
+    const result = detectInstallMethod(getDefaultMainPath());
+    console.log();
+    console.log(`  Current version: ${VERSION}`);
+    console.log(`  Install method: ${result.method}`);
+    console.log();
+    console.log(result.message);
+    console.log();
+  });
+
 // ── sessions ──
 program
   .command("sessions")
@@ -1351,66 +1461,7 @@ program
     });
   });
 
-// ── auth ──
-program
-  .command("auth")
-  .description("Manage API key credentials")
-  .argument("<action>", "login | logout | status")
-  .argument("[provider]", "Provider name (anthropic, openai, openrouter)")
-  .action(async (action: string, providerName?: string) => {
-    const { setCredential, deleteCredential, listCredentials, getCredential } = await import(
-      "./harness/credentials.js"
-    );
-
-    if (action === "status") {
-      const keys = listCredentials();
-      if (keys.length === 0) {
-        console.log("  No stored credentials. API keys come from environment variables or config.yaml.");
-        return;
-      }
-      console.log("\n  Stored credentials:");
-      for (const k of keys) {
-        const val = getCredential(k);
-        console.log(`  ${k}: ${val ? `****${val.slice(-4)}` : "(empty)"}`);
-      }
-      console.log();
-      return;
-    }
-
-    if (action === "login") {
-      if (!providerName) {
-        console.error("  Usage: oh auth login <provider>");
-        process.exit(1);
-      }
-      // Read key from stdin
-      process.stdout.write(`  Enter API key for ${providerName}: `);
-      const chunks: Buffer[] = [];
-      for await (const chunk of process.stdin) {
-        chunks.push(chunk as Buffer);
-        break;
-      }
-      const key = Buffer.concat(chunks).toString("utf-8").trim();
-      if (!key) {
-        console.error("  No key provided.");
-        process.exit(1);
-      }
-      setCredential(`${providerName}-api-key`, key);
-      console.log(`  ✓ API key saved securely for ${providerName}`);
-      return;
-    }
-
-    if (action === "logout") {
-      if (!providerName) {
-        console.error("  Usage: oh auth logout <provider>");
-        process.exit(1);
-      }
-      deleteCredential(`${providerName}-api-key`);
-      console.log(`  ✓ API key removed for ${providerName}`);
-      return;
-    }
-
-    console.error(`  Unknown action: ${action}. Use: login, logout, status`);
-  });
+// (oh auth subcommand is registered above near the init command)
 
 // ── serve (MCP server) ──
 program

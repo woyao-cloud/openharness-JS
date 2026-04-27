@@ -139,6 +139,18 @@ export type OhConfig = {
    * Claude Code's `disableAllHooks` setting.
    */
   disableAllHooks?: boolean;
+  /**
+   * Script invoked at credential-fetch time to produce an API key on stdout.
+   * Avoids storing keys in plaintext config or the encrypted store. Inserted
+   * between the encrypted-store and legacy-config steps in `resolveApiKey`.
+   * Mirrors Claude Code's `apiKeyHelper`.
+   *
+   * The configured command runs through the user's shell with a 5s timeout;
+   * stderr is captured and surfaced on failure. The provider name is passed
+   * via the `OH_PROVIDER` env var so a single helper can dispatch by provider
+   * (`if [ "$OH_PROVIDER" = "anthropic" ]; then ... fi`).
+   */
+  apiKeyHelper?: string;
   toolPermissions?: ToolPermissionRule[];
   statusLineFormat?: string; // Template: {model} {tokens} {cost} {ctx}
   /** Verification loops — auto-run lint/typecheck after file edits */

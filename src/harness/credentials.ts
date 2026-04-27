@@ -11,6 +11,8 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
 import { join } from "node:path";
+import { runApiKeyHelper } from "./api-key-helper.js";
+import { readOhConfig } from "./config.js";
 
 const CRED_DIR = join(homedir(), ".oh");
 const CRED_PATH = join(CRED_DIR, "credentials.enc");
@@ -86,10 +88,12 @@ export function listCredentials(): string[] {
 }
 
 /**
- * Get API key for a provider, checking:
- * 1. Environment variable (highest priority)
- * 2. Encrypted credential store
- * 3. Config file (legacy plaintext, with migration prompt)
+ * Get API key for a provider, checking in priority order:
+ *   1. Environment variable
+ *   2. Encrypted credential store
+ *   3. `apiKeyHelper` config script (audit B8) — runs the configured command
+ *      with `OH_PROVIDER` set; trimmed stdout is the key. Failures fall through.
+ *   4. Config file (legacy plaintext, with migration into the encrypted store)
  */
 export function resolveApiKey(provider: string, configApiKey?: string): string | undefined {
   // Environment variable names by provider
@@ -105,6 +109,13 @@ export function resolveApiKey(provider: string, configApiKey?: string): string |
   // Encrypted store
   const stored = getCredential(`${provider}-api-key`);
   if (stored) return stored;
+
+  // apiKeyHelper script — let users plug in 1Password / pass / vault / etc.
+  const cfg = readOhConfig();
+  if (cfg?.apiKeyHelper) {
+    const fromHelper = runApiKeyHelper(cfg.apiKeyHelper, { provider });
+    if (fromHelper) return fromHelper;
+  }
 
   // Legacy config (migrate on use)
   if (configApiKey) {
