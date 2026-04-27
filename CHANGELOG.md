@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.22.1 (2026-04-27) — LSP Hover Bug Fix + Discoverability
+
+Closes the entire 2026-04-26 audit refresh. B9 (full LSP tool) was already shipped under the `Diagnostics` tool name since v2.x — discovery during scope check, the grep-first lesson hit a fifth time this audit cycle. After this patch, the audit only has Tier C (defer-until-demand) remaining.
 
 ### Changed
-- **`Diagnostics` tool description and prompt promoted to LSP framing (audit B9)**. The tool already supported all four LSP operations (diagnostics, definition, references, hover) since v2.x; the audit's "build an LSP tool" item was already-shipped under the `Diagnostics` name. Description now leads with "Language Server Protocol (LSP) code intelligence — pick action…" so the tool's full capability is discoverable to the model. No behavior change. The `name: "Diagnostics"` is preserved for back-compat with existing config and slash-command references.
+- **`Diagnostics` tool description and prompt promoted to LSP framing (audit B9)**. The tool already supported all four LSP operations (diagnostics, definition, references, hover) since v2.x. Description now leads with "Language Server Protocol (LSP) code intelligence — pick action…" so the tool's full capability is discoverable to the model. No behavior change. The `name: "Diagnostics"` is preserved for back-compat with existing config and slash-command references.
 
 ### Fixed
 - **`hover` action no longer hides real LSP errors as "not supported" (audit B9 polish)**. The prior implementation used `(client as any).send(...)` to bypass the private `send` method and caught any thrown error as "Hover not supported by this language server" — masking timeouts, connection drops, and protocol errors. Replaced with a proper public `LspClient.getHover(filePath, line, character)` method that lets real errors propagate to the tool's outer catch.
