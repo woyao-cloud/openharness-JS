@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 2.22.0 (2026-04-27) — Provider Polish + MCP Maturity
+
+Closes the entire Tier B lane of the 2026-04-26 Claude Code parity audit refresh (`docs/superpowers/plans/2026-04-26-claude-code-parity-audit-refresh.md`). 8 of 9 Tier B items shipped across four stacked PRs (#77 / #78 / #79 / #80) plus a downstream-user-feedback fix (#81). B9 (full LSP tool) is the only Tier B item deferred — it's a 3–4 day scope that warrants its own sprint per the plan. After this release the audit only has Tier C (defer-until-demand: VS Code / JetBrains extensions, agent teams, OS-level sandbox, channels, voice, Chrome) remaining.
+
+OH's hook count moves from 25 → 27, matching Claude Code's stable surface. The provider-agnostic `oh auth` / `oh update` commands give OH parity with `claude auth` / `claude update` without locking into Anthropic-hosted infrastructure.
 
 ### Added
 - **`--fallback-model <model>` flag (audit B2)** on `oh run`, `oh session`, and the chat REPL. One-shot CLI override for the existing `fallbackProviders` config. When set, REPLACES the config entry for this run — so CI scripts can wire a fallback without editing `.oh/config.yaml`. Format mirrors the primary `--model`: `provider/model` or just `model` (provider guessed). The wrapped provider activates on retriable errors (429/5xx/network/timeout). Mirrors Claude Code's `--fallback-model`.
