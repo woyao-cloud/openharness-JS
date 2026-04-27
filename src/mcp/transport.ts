@@ -6,8 +6,9 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ElicitRequestSchema, ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { NormalizedConfig } from "./config-normalize.js";
+import { resolveElicitation } from "./elicitation.js";
 import { getRoots } from "./roots.js";
 
 const pkg = createRequire(import.meta.url)("../../package.json") as { version: string };
@@ -163,11 +164,29 @@ function hasAwaitCallback(
 export async function buildClient(cfg: NormalizedConfig, opts: BuildClientOptions = {}): Promise<Client> {
   const transport = await buildTransport(cfg, opts);
   // Advertise the `roots` capability (audit B3) so MCP servers know they
-  // can ask OH which file system roots are in scope. listChanged: false —
-  // OH doesn't push notifications when the cwd changes; servers re-query
-  // on demand.
-  const client = new Client(CLIENT_INFO, { capabilities: { roots: { listChanged: false } } });
+  // can ask OH which file system roots are in scope, and the `elicitation`
+  // capability (audit B4) so they can request user input. listChanged on
+  // roots is false — OH doesn't push notifications when the cwd changes;
+  // servers re-query on demand.
+  const client = new Client(CLIENT_INFO, {
+    capabilities: { roots: { listChanged: false }, elicitation: {} },
+  });
   client.setRequestHandler(ListRootsRequestSchema, () => ({ roots: getRoots() }));
+  // Elicitation handler — only the form-mode (requestedSchema) variant is
+  // supported. URL-mode elicitations decline by default — we don't open
+  // browsers from the MCP path. Cast `as never` lets the SDK's wide union
+  // accept our narrower response shape.
+  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    const params = request.params as { message: string; requestedSchema?: unknown };
+    if (params.requestedSchema === undefined) {
+      return { action: "decline" } as never;
+    }
+    return (await resolveElicitation({
+      serverName: cfg.name,
+      message: params.message,
+      requestedSchema: params.requestedSchema,
+    })) as never;
+  });
   const timeoutMs = cfg.timeout ?? DEFAULT_TIMEOUT_MS;
 
   async function tryConnect(): Promise<void> {
@@ -205,10 +224,24 @@ export async function buildClient(cfg: NormalizedConfig, opts: BuildClientOption
           // best-effort
         }
         // Build a fresh transport + client for the authenticated retry — same
-        // capabilities + handlers as the initial client (audit B3 roots).
+        // capabilities + handlers as the initial client (audit B3 roots,
+        // audit B4 elicitation).
         const freshTransport = await buildTransport(cfg, opts);
-        const freshClient = new Client(CLIENT_INFO, { capabilities: { roots: { listChanged: false } } });
+        const freshClient = new Client(CLIENT_INFO, {
+          capabilities: { roots: { listChanged: false }, elicitation: {} },
+        });
         freshClient.setRequestHandler(ListRootsRequestSchema, () => ({ roots: getRoots() }));
+        freshClient.setRequestHandler(ElicitRequestSchema, async (request) => {
+          const params = request.params as { message: string; requestedSchema?: unknown };
+          if (params.requestedSchema === undefined) {
+            return { action: "decline" } as never;
+          }
+          return (await resolveElicitation({
+            serverName: cfg.name,
+            message: params.message,
+            requestedSchema: params.requestedSchema,
+          })) as never;
+        });
         let freshTimer: ReturnType<typeof setTimeout> | null = null;
         try {
           await Promise.race([

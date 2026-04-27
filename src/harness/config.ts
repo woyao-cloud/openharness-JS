@@ -92,6 +92,19 @@ export type HooksConfig = {
   worktreeCreate?: HookDef[];
   /** Fires after ExitWorktreeTool successfully removes a git worktree. */
   worktreeRemove?: HookDef[];
+  /**
+   * Fires when an MCP server issues an `elicitation/create` request — before
+   * any decision is made. Hook can return `permissionDecision: "allow"` to
+   * accept (sends `{action: "accept", content: {}}` to the server) or `"deny"`
+   * to decline. No decision falls through to the interactive handler (REPL)
+   * or, if absent, to a fail-safe `decline`.
+   */
+  elicitation?: HookDef[];
+  /**
+   * Fires after the elicitation response has been decided — symmetric to
+   * `elicitation`. Useful for audit trails that want the request/response pair.
+   */
+  elicitationResult?: HookDef[];
   /** Fires once per system-prompt build after CLAUDE.md / global-rules / project RULES.md / user profile have been concatenated. Useful for audit trails. */
   instructionsLoaded?: HookDef[];
 };

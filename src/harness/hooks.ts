@@ -40,6 +40,8 @@ export type HookEvent =
   | "taskCompleted"
   | "worktreeCreate"
   | "worktreeRemove"
+  | "elicitation"
+  | "elicitationResult"
   | "instructionsLoaded";
 
 export type HookContext = {
@@ -97,6 +99,16 @@ export type HookContext = {
   worktreeParent?: string;
   /** For worktreeRemove: whether `force: true` was passed to skip the dirty-state check */
   worktreeForced?: string;
+  /** For elicitation/elicitationResult: the MCP server that issued the elicitation request */
+  elicitationServer?: string;
+  /** For elicitation/elicitationResult: human-readable message the server wants to show (capped at 500 chars) */
+  elicitationMessage?: string;
+  /** For elicitation: JSON-stringified `requestedSchema` from the server (capped at 2000 chars) */
+  elicitationSchema?: string;
+  /** For elicitationResult: the final action ("accept" | "decline" | "cancel") */
+  elicitationAction?: string;
+  /** For elicitationResult: JSON-stringified content payload returned to the server (when action="accept") */
+  elicitationContent?: string;
   /** For instructionsLoaded: count of rules concatenated (as a string for env-var parity) */
   rulesCount?: string;
   /** For instructionsLoaded: total character length of the loaded rules */
@@ -163,6 +175,11 @@ function buildEnv(event: HookEvent, ctx: HookContext): Record<string, string> {
   if (ctx.worktreePath !== undefined) env.OH_WORKTREE_PATH = ctx.worktreePath;
   if (ctx.worktreeParent !== undefined) env.OH_WORKTREE_PARENT = ctx.worktreeParent;
   if (ctx.worktreeForced !== undefined) env.OH_WORKTREE_FORCED = ctx.worktreeForced;
+  if (ctx.elicitationServer !== undefined) env.OH_ELICITATION_SERVER = ctx.elicitationServer;
+  if (ctx.elicitationMessage !== undefined) env.OH_ELICITATION_MESSAGE = ctx.elicitationMessage;
+  if (ctx.elicitationSchema !== undefined) env.OH_ELICITATION_SCHEMA = ctx.elicitationSchema;
+  if (ctx.elicitationAction !== undefined) env.OH_ELICITATION_ACTION = ctx.elicitationAction;
+  if (ctx.elicitationContent !== undefined) env.OH_ELICITATION_CONTENT = ctx.elicitationContent;
   return env;
 }
 
