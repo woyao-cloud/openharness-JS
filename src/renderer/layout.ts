@@ -80,6 +80,14 @@ export type LayoutState = {
   questionPrompt: { question: string; options: string[] | null; input: string; cursor: number } | null;
   autocomplete: string[];
   autocompleteDescriptions: string[];
+  /**
+   * Optional category label per autocomplete entry (audit U-A3). When two
+   * adjacent entries differ in category, the renderer draws a header line
+   * before the second. Empty / missing category strings render flat (the
+   * pre-A3 behavior). Optional so older test fixtures + non-REPL callers
+   * don't need to thread an empty array.
+   */
+  autocompleteCategories?: string[];
   autocompleteIndex: number;
   manualScroll: number;
   codeBlocksExpanded: boolean;
@@ -110,7 +118,11 @@ export function rasterize(state: LayoutState, grid: CellGrid): { cursorRow: numb
   const questionHeight = state.questionPrompt ? 4 + (state.questionPrompt.options?.length ?? 0) : 0;
   const statusLineHeight = state.statusLine ? 1 : 0;
   const contextWarningHeight = state.contextWarning ? 1 : 0;
-  const autocompleteHeight = state.autocomplete.length;
+  // Autocomplete height — each entry is one row, plus one extra row per
+  // distinct category (audit U-A3 header lines). Distinct-category count
+  // is bounded by entry count so this stays cheap.
+  const distinctCategories = new Set((state.autocompleteCategories ?? []).filter((c) => c && c.length > 0));
+  const autocompleteHeight = state.autocomplete.length + distinctCategories.size;
   const inputLineCount = Math.min(5, (state.inputText.match(/\n/g)?.length ?? 0) + 1);
   const rawFooterHeight =
     Math.max(2 + inputLineCount + statusLineHeight + autocompleteHeight, companionHeight + 1) +

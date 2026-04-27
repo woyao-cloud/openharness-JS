@@ -81,6 +81,7 @@ export class TerminalRenderer {
       questionPrompt: null,
       autocomplete: [],
       autocompleteDescriptions: [],
+      autocompleteCategories: [],
       autocompleteIndex: -1,
       manualScroll: 0,
       codeBlocksExpanded: false,
@@ -215,9 +216,10 @@ export class TerminalRenderer {
     this.state.bannerLines = lines;
     this.scheduleRender();
   }
-  setAutocomplete(suggestions: string[], index: number, descriptions?: string[]): void {
+  setAutocomplete(suggestions: string[], index: number, descriptions?: string[], categories?: string[]): void {
     this.state.autocomplete = suggestions;
     this.state.autocompleteDescriptions = descriptions ?? [];
+    this.state.autocompleteCategories = categories ?? [];
     this.state.autocompleteIndex = index;
     this.scheduleRender();
   }
@@ -656,6 +658,8 @@ export class TerminalRenderer {
     rows += Math.min(this.state.notifications.length, 2); // toast notifications
     if (this.state.statusLine) rows += 1;
     rows += this.state.autocomplete.length;
+    // Audit U-A3: one row per distinct category header.
+    rows += new Set((this.state.autocompleteCategories ?? []).filter((c) => c && c.length > 0)).size;
     if (this.state.permissionBox) {
       rows += 3;
       if (this.state.permissionDiffVisible && this.state.permissionDiffInfo) rows += 15;

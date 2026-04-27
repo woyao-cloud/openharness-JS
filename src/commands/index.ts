@@ -25,19 +25,40 @@ import type { CommandContext, CommandHandler, CommandResult } from "./types.js";
 
 // ── Command Registry ──
 
-const commands = new Map<string, { description: string; handler: CommandHandler }>();
+/**
+ * Slash command categories shown in the autocomplete picker (audit U-A3).
+ * Names are user-facing — keep them short. Order here is the grouping
+ * order in the picker: most-frequently-used first.
+ */
+export type CommandCategory = "Session" | "Git" | "Info" | "Settings" | "AI" | "Skills" | "MCP" | "Other";
 
-function register(name: string, description: string, handler: CommandHandler) {
-  commands.set(name, { description, handler });
+interface CommandEntry {
+  description: string;
+  handler: CommandHandler;
+  category: CommandCategory;
 }
 
-// Register all command groups
-registerSessionCommands(register);
-registerGitCommands(register);
-registerInfoCommands(register, () => commands);
-registerSettingsCommands(register);
-registerAICommands(register);
-registerSkillCommands(register);
+const commands = new Map<string, CommandEntry>();
+
+/**
+ * Adapter: each `registerXxx(register)` call is wrapped with a category-bound
+ * register so per-domain command files don't need a 4th argument. Adding a
+ * new category is a one-line change here, not a sweep across the command
+ * files.
+ */
+function registerFor(category: CommandCategory) {
+  return (name: string, description: string, handler: CommandHandler) => {
+    commands.set(name, { description, handler, category });
+  };
+}
+
+// Register all command groups — category derived from the source file split.
+registerSessionCommands(registerFor("Session"));
+registerGitCommands(registerFor("Git"));
+registerInfoCommands(registerFor("Info"), () => commands);
+registerSettingsCommands(registerFor("Settings"));
+registerAICommands(registerFor("AI"));
+registerSkillCommands(registerFor("Skills"));
 
 // ── Command Parser ──
 
@@ -78,8 +99,8 @@ export function getCommandNames(): string[] {
   return [...commands.keys()];
 }
 
-export function getCommandEntries(): Array<{ name: string; description: string }> {
-  return [...commands.entries()].map(([name, { description }]) => ({ name, description }));
+export function getCommandEntries(): Array<{ name: string; description: string; category: CommandCategory }> {
+  return [...commands.entries()].map(([name, { description, category }]) => ({ name, description, category }));
 }
 
 /**
@@ -111,6 +132,7 @@ export function registerMcpPromptCommands(prompts: readonly McpPromptHandle[]): 
 
     commands.set(key, {
       description: handle.description,
+      category: "MCP",
       handler: async (args: string) => {
         const parsed = parseMcpPromptArgs(args);
         const missing = required.filter((n) => !(n in parsed));

@@ -137,6 +137,9 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   let fastMode = s().fastMode;
   let acSuggestions = s().acSuggestions;
   let acDescriptions = s().acDescriptions;
+  // Audit U-A3: parallel category array for the picker. Local-only — no
+  // need to round-trip through `store` since no other consumer reads it.
+  let acCategories: string[] = [];
   let acIndex = s().acIndex;
   let acTokenStart = s().acTokenStart;
   let acIsPath = s().acIsPath;
@@ -162,13 +165,16 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   function updateAutocomplete() {
     acIsPath = false;
     if (inputText.startsWith("/") && inputText.length > 1 && !inputText.includes(" ")) {
-      // Slash command autocomplete
+      // Slash command autocomplete — entries arrive in registration order
+      // (Session → Git → Info → Settings → AI → Skills → MCP), so categories
+      // are naturally contiguous after a startsWith filter (audit U-A3).
       const prefix = inputText.slice(1).toLowerCase();
       const entries = getCommandEntries()
         .filter((e) => e.name.startsWith(prefix))
-        .slice(0, 5);
+        .slice(0, 8);
       acSuggestions = entries.map((e) => e.name);
       acDescriptions = entries.map((e) => e.description);
+      acCategories = entries.map((e) => e.category);
       acTokenStart = 0;
       acIndex = -1;
     } else if (inputText.length > 0 && !inputText.startsWith("/")) {
@@ -209,23 +215,27 @@ export async function startREPL(config: REPLConfig): Promise<void> {
               return "";
             }
           });
+          acCategories = [];
           acIsPath = acSuggestions.length > 0;
         } catch {
           acSuggestions = [];
           acDescriptions = [];
+          acCategories = [];
         }
         acIndex = -1;
       } else {
         acSuggestions = [];
         acDescriptions = [];
+        acCategories = [];
         acIndex = -1;
       }
     } else {
       acSuggestions = [];
       acDescriptions = [];
+      acCategories = [];
       acIndex = -1;
     }
-    renderer.setAutocomplete(acSuggestions, acIndex, acDescriptions);
+    renderer.setAutocomplete(acSuggestions, acIndex, acDescriptions, acCategories);
   }
 
   // Companion
@@ -576,7 +586,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
         }
         renderer.setInputText(inputText);
         renderer.setInputCursor(inputCursor);
-        renderer.setAutocomplete(acSuggestions, acIndex, acDescriptions);
+        renderer.setAutocomplete(acSuggestions, acIndex, acDescriptions, acCategories);
         return;
       }
       renderer.cycleToolCallExpansion();

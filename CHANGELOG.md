@@ -4,10 +4,14 @@
 
 ### Added
 - **Shift+Tab cycles permission mode (audit U-A1)**. Mirrors Claude Code's quick-toggle behavior. Cycles `ask → acceptEdits → plan → trust → ask`. The session permission mode is mutated in-place so every downstream caller (`query()`, `cronExecutor`, status hints) sees the new value without extra plumbing. Other modes (`deny`, `auto`, `bypassPermissions`) stay reachable via `/permissions <mode>` but aren't on the quick-cycle path. A toast info message reflects the new mode.
+- **Categorized slash command picker (audit U-A3)**. The autocomplete dropdown now groups suggestions under `Session / Git / Info / Settings / AI / Skills / MCP / Other` headers — matches Claude Code's grouped picker. Categories are derived from the existing per-domain command files (`session.ts` / `git.ts` / `info.ts` / `settings.ts` / `ai.ts` / `skills.ts` / MCP-prompt registration). Picker now shows up to 8 entries (was 5) so the grouping is actually useful when prefix matches span multiple categories.
 
 ### Internal
 - New `cyclePermissionMode()` helper in `src/repl.ts` — internal closure, mutates `config.permissionMode`. Triggered by the `key.name === "tab" && key.shift` branch added before the existing tab handler.
 - `parseKey` in `src/renderer/input.ts` now recognizes the xterm backtab sequence `\x1b[Z` as `{ name: "tab", shift: true }`. 2 new tests in `src/renderer/input.test.ts` cover the parse + the consumed-byte count when followed by trailing input.
+- `src/commands/index.ts` gains a `CommandCategory` type + `registerFor(category)` adapter so per-domain command files keep their existing 3-arg `register()` signature. `getCommandEntries()` now returns `{ name, description, category }`. `registerMcpPromptCommands` tags MCP prompts with category `"MCP"`.
+- `LayoutState` in `src/renderer/layout.ts` gains an optional `autocompleteCategories?: string[]`. `renderAutocompleteSection` draws `── <Category> ──` header rows whenever the category changes between consecutive entries (and only once per contiguous run). Footer-height calculation in both `rasterize` (`layout.ts`) and `getRenderedRows` (`index.ts`) accounts for the extra header rows.
+- 3 new tests in `src/renderer/ui-ux.test.ts` cover header drawing, flat fallback when categories are absent, and re-headering when the category transitions back (e.g. Info → Session → Info shows two `── Info ──` rows).
 
 ## 2.22.1 (2026-04-27) — LSP Hover Bug Fix + Discoverability
 

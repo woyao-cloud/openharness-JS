@@ -420,7 +420,18 @@ export function renderAutocompleteSection(
 ): number {
   if (state.autocomplete.length === 0) return nextRow;
   const w = grid.width;
+  let lastCategory = "";
   for (let ai = 0; ai < state.autocomplete.length; ai++) {
+    if (nextRow >= limit) break;
+    // Category header — draw whenever the category changes between entries.
+    // First-entry header is drawn when the category is non-empty (audit U-A3).
+    const cat = state.autocompleteCategories?.[ai] ?? "";
+    if (cat && cat !== lastCategory) {
+      if (nextRow >= limit) break;
+      grid.writeText(nextRow, promptWidth, `── ${cat} ──`, S_DIM);
+      nextRow++;
+      lastCategory = cat;
+    }
     if (nextRow >= limit) break;
     const cmd = state.autocomplete[ai]!;
     const desc = state.autocompleteDescriptions[ai] ?? "";

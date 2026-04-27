@@ -426,6 +426,62 @@ describe("Autocomplete rendering", () => {
     assert.ok(all.includes("help"), "Autocomplete suggestion not visible");
     assert.ok(all.includes("history"), "Second suggestion not visible");
   });
+
+  // ── audit U-A3: categorized picker ──
+
+  it("draws a category header before the first entry of each category", () => {
+    const state = makeState({
+      inputText: "/c",
+      autocomplete: ["clear", "compact", "commit", "cybergotchi"],
+      autocompleteDescriptions: [
+        "Clear conversation",
+        "Compact conversation",
+        "Create a git commit",
+        "Manage your companion",
+      ],
+      autocompleteCategories: ["Session", "Session", "Git", "AI"],
+      autocompleteIndex: 0,
+    });
+    const grid = new CellGrid(80, 24);
+    rasterize(state, grid);
+    const all = gridAllText(grid);
+    assert.ok(all.includes("── Session ──"), "Session header missing");
+    assert.ok(all.includes("── Git ──"), "Git header missing — category change must draw a header");
+    assert.ok(all.includes("── AI ──"), "AI header missing");
+    assert.ok(all.includes("clear"));
+    assert.ok(all.includes("commit"));
+  });
+
+  it("renders flat (no headers) when categories are absent / empty", () => {
+    const state = makeState({
+      inputText: "/he",
+      autocomplete: ["help", "history"],
+      autocompleteDescriptions: ["", ""],
+      // categories omitted — pre-A3 callers shouldn't see headers
+      autocompleteIndex: 0,
+    });
+    const grid = new CellGrid(80, 24);
+    rasterize(state, grid);
+    const all = gridAllText(grid);
+    assert.ok(all.includes("help"));
+    assert.ok(!all.includes("── "), "no category header should appear when categories array is missing");
+  });
+
+  it("only draws each header once for repeated same-category entries", () => {
+    const state = makeState({
+      inputText: "/h",
+      autocomplete: ["help", "history", "hooks"],
+      autocompleteDescriptions: ["Help", "History", "Hooks"],
+      autocompleteCategories: ["Info", "Session", "Info"],
+      autocompleteIndex: 0,
+    });
+    const grid = new CellGrid(80, 24);
+    rasterize(state, grid);
+    const all = gridAllText(grid);
+    // Info should appear twice (it changes from Info → Session → Info), not once.
+    const infoCount = (all.match(/── Info ──/g) ?? []).length;
+    assert.equal(infoCount, 2, "category re-header on transition back to Info");
+  });
 });
 
 // ── 11. Error Display ──
