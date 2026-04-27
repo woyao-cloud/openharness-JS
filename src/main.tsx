@@ -1238,6 +1238,11 @@ program
 // works for the just-configured project. Mirrors Claude Code's `claude auth`.
 const authCmd = program.command("auth").description("Manage API keys for any provider (login / logout / status)");
 
+// Providers that run locally and don't use API keys — `oh auth login <local>`
+// is a no-op for these; redirect users to `oh init` which configures the
+// base URL and downloads / launches the model.
+const LOCAL_PROVIDERS = new Set(["ollama", "llamacpp", "llama.cpp", "lmstudio", "lm studio"]);
+
 authCmd
   .command("login [provider]")
   .description("Set the API key for a provider (defaults to the configured provider)")
@@ -1247,8 +1252,24 @@ authCmd
     const cfg = readOhConfig();
     const provider = providerArg ?? cfg?.provider;
     if (!provider) {
-      process.stderr.write("Error: no provider specified and no default in .oh/config.yaml. Run `oh init` first.\n");
+      process.stderr.write(
+        "Error: no provider specified and no default in .oh/config.yaml.\nRun `oh init` first to pick a provider — including local options (Ollama, llama.cpp, LM Studio) that don't need API keys.\n",
+      );
       process.exit(2);
+    }
+    if (LOCAL_PROVIDERS.has(provider.toLowerCase())) {
+      console.log(
+        [
+          `${provider} runs locally and doesn't use an API key — nothing to log in.`,
+          "",
+          "To configure your local model and base URL, run:",
+          "  oh init",
+          "",
+          "Or skip the wizard and run directly:",
+          `  oh --model ${provider}/<model-name>`,
+        ].join("\n"),
+      );
+      return;
     }
     let key = opts.key;
     if (!key) {
@@ -1306,7 +1327,10 @@ authCmd
     const keys = listCredentials();
     const providerKeys = keys.filter((k) => k.endsWith("-api-key"));
     if (providerKeys.length === 0) {
-      console.log("No stored API keys. Use `oh auth login <provider>` to add one.");
+      console.log("No stored API keys.");
+      console.log("");
+      console.log("To add one (cloud providers): oh auth login <provider>");
+      console.log("To use a local LLM (no key):  oh init   — picks Ollama / llama.cpp / LM Studio");
       return;
     }
     console.log("Stored API keys:");
@@ -1321,6 +1345,8 @@ authCmd
       console.log("Env-var keys (override stored):");
       for (const p of envProviders) console.log(`  ${p} (${p.toUpperCase()}_API_KEY)`);
     }
+    console.log("");
+    console.log("Local LLMs (Ollama / llama.cpp / LM Studio) need no auth — configure via `oh init`.");
   });
 
 // ── update (audit B7) — provider-agnostic self-update guidance ──
