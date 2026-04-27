@@ -6,7 +6,9 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { NormalizedConfig } from "./config-normalize.js";
+import { getRoots } from "./roots.js";
 
 const pkg = createRequire(import.meta.url)("../../package.json") as { version: string };
 
@@ -160,7 +162,12 @@ function hasAwaitCallback(
  */
 export async function buildClient(cfg: NormalizedConfig, opts: BuildClientOptions = {}): Promise<Client> {
   const transport = await buildTransport(cfg, opts);
-  const client = new Client(CLIENT_INFO, { capabilities: {} });
+  // Advertise the `roots` capability (audit B3) so MCP servers know they
+  // can ask OH which file system roots are in scope. listChanged: false —
+  // OH doesn't push notifications when the cwd changes; servers re-query
+  // on demand.
+  const client = new Client(CLIENT_INFO, { capabilities: { roots: { listChanged: false } } });
+  client.setRequestHandler(ListRootsRequestSchema, () => ({ roots: getRoots() }));
   const timeoutMs = cfg.timeout ?? DEFAULT_TIMEOUT_MS;
 
   async function tryConnect(): Promise<void> {
@@ -197,9 +204,11 @@ export async function buildClient(cfg: NormalizedConfig, opts: BuildClientOption
         } catch {
           // best-effort
         }
-        // Build a fresh transport + client for the authenticated retry
+        // Build a fresh transport + client for the authenticated retry — same
+        // capabilities + handlers as the initial client (audit B3 roots).
         const freshTransport = await buildTransport(cfg, opts);
-        const freshClient = new Client(CLIENT_INFO, { capabilities: {} });
+        const freshClient = new Client(CLIENT_INFO, { capabilities: { roots: { listChanged: false } } });
+        freshClient.setRequestHandler(ListRootsRequestSchema, () => ({ roots: getRoots() }));
         let freshTimer: ReturnType<typeof setTimeout> | null = null;
         try {
           await Promise.race([

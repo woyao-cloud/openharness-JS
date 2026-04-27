@@ -112,8 +112,11 @@ describe("disableAllHooks (audit A11)", () => {
     );
     await withCwd(dir, async () => {
       emitHook("postToolUse", { toolName: "Read" });
-      // postToolUse runs async; wait for it to flush.
-      await new Promise<void>((r) => setTimeout(r, 200));
+      // postToolUse runs async; wait for the spawned node child to flush.
+      // Windows CI takes ~1s to spawn + run a node child; 1500ms covers
+      // the worst case without slowing local runs meaningfully (matches
+      // the bump in hooks-b2.test.ts).
+      await new Promise<void>((r) => setTimeout(r, 1500));
       assert.ok(existsSync(capturePath), "with disableAllHooks absent, the hook should fire");
       const fired = readFileSync(capturePath, "utf8");
       assert.match(fired, /fired/);

@@ -262,6 +262,10 @@ program
     "Run the interactive `oh init` setup wizard before starting the command. Useful for first-run on a fresh project.",
   )
   .option("--init-only", "Run `oh init` and exit, without proceeding to the run/session.")
+  .option(
+    "--permission-prompt-tool <mcp_tool>",
+    'Delegate per-tool permission decisions to a configured MCP tool (e.g. "mcp__myperm__check"). The tool is invoked when a tool needs approval and no permission hook decided. Mirrors Claude Code\'s --permission-prompt-tool.',
+  )
   .action(async (promptArg: string | undefined, opts: Record<string, unknown>) => {
     configureDebug({
       categories: opts.debug as string | boolean | undefined,
@@ -360,6 +364,7 @@ program
       maxTurns: parseInt(opts.maxTurns as string, 10),
       model,
       ...(opts.maxBudgetUsd !== undefined ? { maxCost: parseMaxBudgetUsdOrExit(opts.maxBudgetUsd as string) } : {}),
+      ...(opts.permissionPromptTool ? { permissionPromptTool: opts.permissionPromptTool as string } : {}),
     };
 
     const outputFormat = opts.json ? "json" : ((opts.outputFormat as string) ?? "text");
@@ -560,6 +565,10 @@ program
   )
   .option("--init", "Run the interactive setup wizard before starting the session.")
   .option("--init-only", "Run `oh init` and exit, without proceeding to the session.")
+  .option(
+    "--permission-prompt-tool <mcp_tool>",
+    'Delegate per-tool permission decisions to a configured MCP tool (e.g. "mcp__myperm__check"). Invoked when a tool needs approval and no permission hook decided.',
+  )
   .action(async (opts: Record<string, unknown>) => {
     configureDebug({
       categories: opts.debug as string | boolean | undefined,
@@ -631,6 +640,7 @@ program
       maxTurns: parseInt(opts.maxTurns as string, 10),
       model,
       ...(opts.maxBudgetUsd !== undefined ? { maxCost: parseMaxBudgetUsdOrExit(opts.maxBudgetUsd as string) } : {}),
+      ...(opts.permissionPromptTool ? { permissionPromptTool: opts.permissionPromptTool as string } : {}),
     };
 
     // Conversation history, shared across all prompts for this process.

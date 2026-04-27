@@ -367,7 +367,15 @@ export async function* query(
     // Execute remaining tools not started during streaming
     const remaining = toolCalls.filter((tc) => !executedIds.has(tc.id));
     if (remaining.length > 0) {
-      yield* executeToolCalls(remaining, config.tools, toolContext, config.permissionMode, config.askUser, state);
+      yield* executeToolCalls(
+        remaining,
+        config.tools,
+        toolContext,
+        config.permissionMode,
+        config.askUser,
+        state,
+        config.permissionPromptTool,
+      );
     }
 
     state.lastTurnHadTools = toolCalls.length > 0;

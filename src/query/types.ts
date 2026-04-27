@@ -24,6 +24,16 @@ export type QueryConfig = {
   gitCommitPerTool?: boolean;
   /** For sub-agent invocations: the agent role name (feeds into the model router). */
   role?: string;
+  /**
+   * MCP tool name (e.g. `mcp__myperm__check`) consulted when a tool needs
+   * approval and no permission hook gave a decision (audit B1). Mirrors
+   * Claude Code's `--permission-prompt-tool`. The tool is invoked with
+   * `{ tool_name, input }` and is expected to return a JSON string with
+   * shape `{ "behavior": "allow" | "deny", "message"?: string }`. Falls
+   * through to the interactive `askUser` prompt (or headless deny) when
+   * the tool is missing, throws, or returns malformed JSON.
+   */
+  permissionPromptTool?: string;
 };
 
 export type TransitionReason = "next_turn" | "retry_network" | "retry_prompt_too_long" | "retry_max_output_tokens";

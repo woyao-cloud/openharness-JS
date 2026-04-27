@@ -18,6 +18,49 @@ const TOOL_TIMEOUT_MS = 120_000;
 
 type Batch = { concurrent: boolean; calls: ToolCall[] };
 
+type PermissionPromptResponse =
+  | { behavior: "allow" }
+  | { behavior: "deny"; message?: string }
+  | { behavior: "fallthrough" }; // tool missing / errored / malformed JSON
+
+/**
+ * Invoke the configured `--permission-prompt-tool` (audit B1). The tool is
+ * looked up by name in the active tool registry (so MCP tools wired through
+ * `loadMcpTools` are reachable). Failure modes — missing tool, exception
+ * during call, malformed JSON, unknown `behavior` — collapse into
+ * `behavior: "fallthrough"` so the caller can try the next branch
+ * (interactive prompt or headless deny). A broken permission tool must
+ * not lock the user out.
+ */
+async function callPermissionPromptTool(
+  toolName: string,
+  tools: Tools,
+  context: ToolContext,
+  permissionedToolName: string,
+  permissionedInput: Record<string, unknown>,
+): Promise<PermissionPromptResponse> {
+  const promptTool = findToolByName(tools, toolName);
+  if (!promptTool) return { behavior: "fallthrough" };
+  let raw: ToolResult;
+  try {
+    raw = await promptTool.call({ tool_name: permissionedToolName, input: permissionedInput }, context);
+  } catch {
+    return { behavior: "fallthrough" };
+  }
+  if (raw.isError) return { behavior: "fallthrough" };
+  let parsed: { behavior?: string; message?: string };
+  try {
+    parsed = JSON.parse(raw.output) as { behavior?: string; message?: string };
+  } catch {
+    return { behavior: "fallthrough" };
+  }
+  if (parsed.behavior === "allow") return { behavior: "allow" };
+  if (parsed.behavior === "deny") {
+    return parsed.message ? { behavior: "deny", message: parsed.message } : { behavior: "deny" };
+  }
+  return { behavior: "fallthrough" };
+}
+
 export function partitionToolCalls(toolCalls: ToolCall[], tools: Tools): Batch[] {
   const batches: Batch[] = [];
   let currentConcurrent: ToolCall[] = [];
@@ -47,6 +90,7 @@ export async function executeSingleTool(
   context: ToolContext,
   permissionMode: PermissionMode,
   askUser?: AskUserFn,
+  permissionPromptTool?: string,
 ): Promise<ToolResult> {
   const tool = findToolByName(tools, toolCall.toolName);
   if (!tool) {
@@ -91,6 +135,44 @@ export async function executeSingleTool(
       } else if (hookOutcome.permissionDecision === "deny" || !hookOutcome.allowed) {
         const reason = hookOutcome.reason ? `: ${hookOutcome.reason}` : "";
         return denyAndEmit("hook", hookOutcome.reason ?? "hook denied", `Permission denied by hook${reason}`);
+      } else if (permissionPromptTool) {
+        // No hook decision → consult the configured MCP permission tool
+        // (audit B1). Mirrors Claude Code's --permission-prompt-tool. The
+        // tool returns JSON: { "behavior": "allow" | "deny", "message"?: string }.
+        // On any failure (tool missing, throws, malformed JSON, unknown
+        // behavior) we fall through to askUser / headless deny so a broken
+        // permission tool doesn't lock the user out.
+        const promptDecision = await callPermissionPromptTool(
+          permissionPromptTool,
+          tools,
+          context,
+          tool.name,
+          parsed.data as Record<string, unknown>,
+        );
+        if (promptDecision.behavior === "allow") {
+          // Permission tool granted — proceed.
+        } else if (promptDecision.behavior === "deny") {
+          return denyAndEmit(
+            "permission-prompt-tool",
+            promptDecision.message ?? "denied",
+            `Permission denied by ${permissionPromptTool}${promptDecision.message ? `: ${promptDecision.message}` : ""}`,
+          );
+        } else if (askUser) {
+          // promptDecision.behavior === "fallthrough" — tool was unavailable
+          // or its response was malformed. Try the interactive prompt next.
+          const { formatToolArgs } = await import("../utils/tool-summary.js");
+          const description = formatToolArgs(tool.name, toolCall.arguments as Record<string, unknown>);
+          const allowed = await askUser(tool.name, description, tool.riskLevel);
+          if (!allowed) {
+            return denyAndEmit("user", "user declined", "Permission denied by user.");
+          }
+        } else {
+          return denyAndEmit(
+            "headless",
+            "permission-prompt-tool unavailable and no interactive prompt",
+            `Permission denied: ${permissionPromptTool} did not produce a usable decision and no interactive prompt is available.`,
+          );
+        }
       } else if (askUser) {
         // "ask" or no decision → interactive prompt when available
         const { formatToolArgs } = await import("../utils/tool-summary.js");
@@ -245,6 +327,7 @@ export async function* executeToolCalls(
   permissionMode: PermissionMode,
   askUser?: AskUserFn,
   state?: QueryLoopState,
+  permissionPromptTool?: string,
 ): AsyncGenerator<StreamEvent, void> {
   const batches = partitionToolCalls(toolCalls, tools);
   const outputChunks: StreamEvent[] = [];
@@ -258,7 +341,14 @@ export async function* executeToolCalls(
     if (batch.concurrent) {
       const results = await Promise.all(
         batch.calls.map((tc) =>
-          executeSingleTool(tc, tools, { ...context, callId: tc.id, onOutputChunk }, permissionMode, askUser),
+          executeSingleTool(
+            tc,
+            tools,
+            { ...context, callId: tc.id, onOutputChunk },
+            permissionMode,
+            askUser,
+            permissionPromptTool,
+          ),
         ),
       );
       for (const chunk of outputChunks.splice(0)) yield chunk;
@@ -278,6 +368,7 @@ export async function* executeToolCalls(
           { ...context, callId: tc.id, onOutputChunk },
           permissionMode,
           askUser,
+          permissionPromptTool,
         );
         for (const chunk of outputChunks.splice(0)) yield chunk;
         yield { type: "tool_call_end", callId: tc.id, output: result.output, isError: result.isError };
