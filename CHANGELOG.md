@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`--fallback-model <model>` flag (audit B2)** on `oh run`, `oh session`, and the chat REPL. One-shot CLI override for the existing `fallbackProviders` config. When set, REPLACES the config entry for this run — so CI scripts can wire a fallback without editing `.oh/config.yaml`. Format mirrors the primary `--model`: `provider/model` or just `model` (provider guessed). The wrapped provider activates on retriable errors (429/5xx/network/timeout). Mirrors Claude Code's `--fallback-model`.
+- **`--init` and `--init-only` flags (audit B5)** on `oh run`, `oh session`, and the chat REPL. `--init` runs the interactive setup wizard (same as `oh init`) before proceeding to the command — useful for first-run on a fresh project. `--init-only` runs the wizard then exits. Reuses the existing `oh init` action body via the new `runInitWizard({ exitOnDone })` helper.
+
+### Internal
+- `createProvider(modelArg, overrides, opts)` in `src/providers/index.ts` gains a third optional argument `opts.fallbackModel`. When set, it REPLACES the config-file `fallbackProviders` for that call. Existing call sites that don't pass it work unchanged. Tests in `src/providers/index.test.ts`.
+- New `parseFallbackModel(raw)` exported from `src/providers/index.ts` — pure parser shared with `createProvider`. Returns the same shape as a `fallbackProviders[]` config entry. Unit-tested.
+- New `runInitWizard({ exitOnDone })` helper in `src/main.tsx` — extracts the body of the `oh init` subcommand action so it can be invoked from the `--init` / `--init-only` flag paths. `exitOnDone: true` matches the standalone `oh init` behavior; `exitOnDone: false` resolves so the caller can continue.
+
 ## 2.21.0 (2026-04-27) — Tier A Surface Polish
 
 Closes the entire Tier A lane of the 2026-04-26 Claude Code parity audit refresh (`docs/superpowers/plans/2026-04-26-claude-code-parity-audit-refresh.md`). 11 items from the plan's A1–A12 list shipped across four stacked PRs (#73 / #74 / #75 / #76); A6 and A7 are deferred (the plan flagged them as already-built-but-unwired stubs that need their own scope check). After this release, every Claude Code stable CLI flag, slash command, and hook event has a parity equivalent in OH except for the IDE / hosted-Anthropic surface left to Tier C.

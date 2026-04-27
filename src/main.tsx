@@ -253,6 +253,15 @@ program
     "Enable categorized debug logs to stderr. Pass comma-separated categories (e.g. 'mcp,hooks') or no value for all. Also reads OH_DEBUG.",
   )
   .option("--debug-file <path>", "When --debug is set, append debug lines to this file instead of stderr.")
+  .option(
+    "--fallback-model <model>",
+    "One-shot fallback model used when the primary fails with a retriable error (429/5xx/network/timeout). Format: provider/model or just model. REPLACES .oh/config.yaml fallbackProviders for this run. Mirrors Claude Code's --fallback-model.",
+  )
+  .option(
+    "--init",
+    "Run the interactive `oh init` setup wizard before starting the command. Useful for first-run on a fresh project.",
+  )
+  .option("--init-only", "Run `oh init` and exit, without proceeding to the run/session.")
   .action(async (promptArg: string | undefined, opts: Record<string, unknown>) => {
     configureDebug({
       categories: opts.debug as string | boolean | undefined,
@@ -260,6 +269,12 @@ program
     });
     const bare = opts.bare === true;
     debug("startup", "oh run", { bare, model: opts.model });
+
+    // --init / --init-only run the setup wizard before (or instead of) the
+    // actual run. --init-only exits after the wizard; --init falls through.
+    if (opts.init === true || opts.initOnly === true) {
+      await runInitWizard({ exitOnDone: opts.initOnly === true });
+    }
     // Read from stdin if prompt is "-" or omitted and stdin is not a TTY
     let prompt: string;
     if (!promptArg || promptArg === "-" || !process.stdin.isTTY) {
@@ -297,6 +312,7 @@ program
     const { provider, model } = await createProvider(
       effectiveModel,
       Object.keys(overrides).length ? overrides : undefined,
+      opts.fallbackModel ? { fallbackModel: opts.fallbackModel as string } : {},
     );
     const { query } = await import("./query.js");
 
@@ -538,6 +554,12 @@ program
     "Enable categorized debug logs to stderr. Pass comma-separated categories (e.g. 'mcp,hooks') or no value for all. Also reads OH_DEBUG.",
   )
   .option("--debug-file <path>", "When --debug is set, append debug lines to this file instead of stderr.")
+  .option(
+    "--fallback-model <model>",
+    "One-shot fallback model used when the primary fails with a retriable error. Format: provider/model or just model. REPLACES .oh/config.yaml fallbackProviders for this run.",
+  )
+  .option("--init", "Run the interactive setup wizard before starting the session.")
+  .option("--init-only", "Run `oh init` and exit, without proceeding to the session.")
   .action(async (opts: Record<string, unknown>) => {
     configureDebug({
       categories: opts.debug as string | boolean | undefined,
@@ -545,6 +567,10 @@ program
     });
     const bare = opts.bare === true;
     debug("startup", "oh session", { bare, model: opts.model });
+
+    if (opts.init === true || opts.initOnly === true) {
+      await runInitWizard({ exitOnDone: opts.initOnly === true });
+    }
     const settingSources = parseSettingSources(opts.settingSources as string | undefined);
     const savedConfig = readOhConfig(undefined, settingSources);
     const permissionMode: PermissionMode = (opts.permissionMode ??
@@ -559,6 +585,7 @@ program
     const { provider, model } = await createProvider(
       effectiveModel,
       Object.keys(overrides).length ? overrides : undefined,
+      opts.fallbackModel ? { fallbackModel: opts.fallbackModel as string } : {},
     );
     const { query } = await import("./query.js");
     const { createAssistantMessage, createToolResultMessage, createUserMessage } = await import("./types/message.js");
@@ -793,6 +820,12 @@ program
     "Enable categorized debug logs to stderr. Pass comma-separated categories (e.g. 'mcp,hooks') or no value for all. Also reads OH_DEBUG.",
   )
   .option("--debug-file <path>", "When --debug is set, append debug lines to this file instead of stderr.")
+  .option(
+    "--fallback-model <model>",
+    "One-shot fallback model used when the primary fails with a retriable error. Format: provider/model or just model. REPLACES .oh/config.yaml fallbackProviders for this run.",
+  )
+  .option("--init", "Run the interactive setup wizard before starting the chat session.")
+  .option("--init-only", "Run `oh init` and exit, without proceeding to the chat session.")
   .action(async (opts) => {
     configureDebug({
       categories: opts.debug as string | boolean | undefined,
@@ -800,6 +833,11 @@ program
     });
     const bare = opts.bare === true;
     debug("startup", "oh chat", { bare, model: opts.model, print: !!opts.print });
+
+    if (opts.init === true || opts.initOnly === true) {
+      await runInitWizard({ exitOnDone: opts.initOnly === true });
+    }
+
     // Load saved config as defaults (env vars + CLI flags override)
     const savedConfig = readOhConfig();
     const effectiveModel = opts.model ?? savedConfig?.model;
@@ -823,7 +861,11 @@ program
       if (fresh?.apiKey) overrides.apiKey = fresh.apiKey;
       if (fresh?.baseUrl) overrides.baseUrl = fresh.baseUrl;
       const targetModel = fresh?.model ?? effectiveModel;
-      return createProvider(targetModel, Object.keys(overrides).length ? overrides : undefined);
+      return createProvider(
+        targetModel,
+        Object.keys(overrides).length ? overrides : undefined,
+        opts.fallbackModel ? { fallbackModel: opts.fallbackModel as string } : {},
+      );
     };
 
     try {
@@ -1141,25 +1183,39 @@ program
     console.log();
   });
 
+/**
+ * Run the interactive setup wizard. Used by both the `oh init` subcommand and
+ * the `--init` / `--init-only` flag added to chat / run / session (audit B5).
+ *
+ * `exitOnDone` controls the wizard's `onDone` behavior:
+ *   - true  → wizard exits the process when the user finishes (the standalone
+ *             `oh init` command path)
+ *   - false → wizard resolves and the caller continues (the `--init` flag path,
+ *             where the wizard is just a setup step before running the command)
+ */
+async function runInitWizard(opts: { exitOnDone: boolean }): Promise<void> {
+  const { default: InitWizard } = await import("./components/InitWizard.js");
+  const rulesPath = createRulesFile();
+  const ctx = detectProject();
+  console.log();
+  if (ctx.language !== "unknown") {
+    console.log(`  Detected: ${ctx.language}${ctx.framework ? ` (${ctx.framework})` : ""}`);
+  }
+  if (ctx.hasGit) {
+    console.log(`  Git branch: ${ctx.gitBranch}`);
+  }
+  console.log(`  Rules file: ${rulesPath}`);
+  console.log();
+  const { waitUntilExit } = render(<InitWizard onDone={() => (opts.exitOnDone ? process.exit(0) : undefined)} />);
+  await waitUntilExit();
+}
+
 // ── init ──
 program
   .command("init")
   .description("Initialize OpenHarness for the current project (interactive setup wizard)")
   .action(async () => {
-    const { default: InitWizard } = await import("./components/InitWizard.js");
-    const rulesPath = createRulesFile();
-    const ctx = detectProject();
-    console.log();
-    if (ctx.language !== "unknown") {
-      console.log(`  Detected: ${ctx.language}${ctx.framework ? ` (${ctx.framework})` : ""}`);
-    }
-    if (ctx.hasGit) {
-      console.log(`  Git branch: ${ctx.gitBranch}`);
-    }
-    console.log(`  Rules file: ${rulesPath}`);
-    console.log();
-    const { waitUntilExit } = render(<InitWizard onDone={() => process.exit(0)} />);
-    await waitUntilExit();
+    await runInitWizard({ exitOnDone: true });
   });
 
 // ── sessions ──

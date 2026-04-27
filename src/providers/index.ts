@@ -13,10 +13,19 @@ import { OpenRouterProvider } from "./openrouter.js";
 
 /**
  * Create a provider from a model string like "ollama/llama3" or "gpt-4o".
+ *
+ * `opts.fallbackModel` (audit B2) is the CLI override path for the existing
+ * `fallbackProviders` config — when set, REPLACES the config-file fallbacks
+ * with a single entry derived from the model string. Mirrors Claude Code's
+ * `--fallback-model <model>` for one-shot CI runs that want a fallback
+ * without editing `.oh/config.yaml`. Format matches `modelArg`:
+ * `provider/model` or just `model` (provider guessed). When unset, the
+ * existing config-file path is unchanged.
  */
 export async function createProvider(
   modelArg?: string,
   overrides?: Partial<ProviderConfig>,
+  opts: { fallbackModel?: string } = {},
 ): Promise<{ provider: Provider; model: string }> {
   let providerName = "ollama";
   let model = "llama3";
@@ -41,7 +50,9 @@ export async function createProvider(
 
   const primary = createProviderInstance(providerName, config);
 
-  const fallbackCfgs = readOhConfig()?.fallbackProviders ?? [];
+  const fallbackCfgs = opts.fallbackModel
+    ? [parseFallbackModel(opts.fallbackModel)]
+    : (readOhConfig()?.fallbackProviders ?? []);
   if (fallbackCfgs.length === 0) {
     return { provider: primary, model };
   }
@@ -58,6 +69,27 @@ export async function createProvider(
 
   const wrapped = createFallbackProvider(primary, fallbacks);
   return { provider: wrapped, model };
+}
+
+/**
+ * Parse `--fallback-model <value>` into the same shape as a `fallbackProviders[]`
+ * entry. Accepts `provider/model` (explicit) or just `model` (provider guessed
+ * via `guessProviderFromModel`, same as the primary modelArg). Exposed for
+ * tests.
+ *
+ * @internal
+ */
+export function parseFallbackModel(raw: string): {
+  provider: string;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+} {
+  if (raw.includes("/")) {
+    const [p, m] = raw.split("/", 2);
+    return { provider: p!, model: m! };
+  }
+  return { provider: guessProviderFromModel(raw), model: raw };
 }
 
 export { createProviderInstance, guessProviderFromModel };
