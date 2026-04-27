@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **`Diagnostics` tool description and prompt promoted to LSP framing (audit B9)**. The tool already supported all four LSP operations (diagnostics, definition, references, hover) since v2.x; the audit's "build an LSP tool" item was already-shipped under the `Diagnostics` name. Description now leads with "Language Server Protocol (LSP) code intelligence — pick action…" so the tool's full capability is discoverable to the model. No behavior change. The `name: "Diagnostics"` is preserved for back-compat with existing config and slash-command references.
+
+### Fixed
+- **`hover` action no longer hides real LSP errors as "not supported" (audit B9 polish)**. The prior implementation used `(client as any).send(...)` to bypass the private `send` method and caught any thrown error as "Hover not supported by this language server" — masking timeouts, connection drops, and protocol errors. Replaced with a proper public `LspClient.getHover(filePath, line, character)` method that lets real errors propagate to the tool's outer catch.
+
+### Internal
+- New `unwrapHoverContents(result)` pure helper in `src/lsp/client.ts` — handles all three valid LSP `contents` shapes (string, `{ kind, value }` MarkupContent envelope, array of either). Exposed via `LspClient.unwrapHoverContents` for unit testing without spawning a real language server. 5 new tests in `src/lsp/client.test.ts` cover all branches plus null-ish edge cases.
+
 ## 2.22.0 (2026-04-27) — Provider Polish + MCP Maturity
 
 Closes the entire Tier B lane of the 2026-04-26 Claude Code parity audit refresh (`docs/superpowers/plans/2026-04-26-claude-code-parity-audit-refresh.md`). 8 of 9 Tier B items shipped across four stacked PRs (#77 / #78 / #79 / #80) plus a downstream-user-feedback fix (#81). B9 (full LSP tool) is the only Tier B item deferred — it's a 3–4 day scope that warrants its own sprint per the plan. After this release the audit only has Tier C (defer-until-demand: VS Code / JetBrains extensions, agent teams, OS-level sandbox, channels, voice, Chrome) remaining.

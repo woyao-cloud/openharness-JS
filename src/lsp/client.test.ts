@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { LspClient } from "./client.js";
 
 // The LspClient uses subprocess communication, which is hard to test
 // without a real language server. Test the message framing logic instead.
@@ -52,4 +53,42 @@ test("LSP: file URI conversion", () => {
   const winPath = "C:\\Users\\test\\project\\src\\index.ts";
   const winUri = `file://${winPath.replace(/\\/g, "/")}`;
   assert.equal(winUri, "file://C:/Users/test/project/src/index.ts");
+});
+
+// ── Hover content unwrap (audit B9 polish) ───────────────────────────────────
+// LSP `textDocument/hover` returns three valid shapes for `contents`:
+//   bare string, { kind, value }, or array of either. The unwrapper needs
+//   to handle all three plus the null-ish cases (server returned no info,
+//   server doesn't support hover) without throwing.
+
+test("LSP: hover unwraps a bare string contents", () => {
+  const result = LspClient.unwrapHoverContents({ contents: "type: number" });
+  assert.equal(result, "type: number");
+});
+
+test("LSP: hover unwraps a { kind, value } MarkupContent envelope", () => {
+  const result = LspClient.unwrapHoverContents({
+    contents: { kind: "markdown", value: "**foo**: number" },
+  });
+  assert.equal(result, "**foo**: number");
+});
+
+test("LSP: hover unwraps an array of mixed strings and envelopes", () => {
+  const result = LspClient.unwrapHoverContents({
+    contents: ["foo: number", { kind: "markdown", value: "*defined in module*" }, ""],
+  });
+  assert.equal(result, "foo: number\n*defined in module*");
+});
+
+test("LSP: hover returns null on no contents / unsupported / non-object", () => {
+  assert.equal(LspClient.unwrapHoverContents(null), null);
+  assert.equal(LspClient.unwrapHoverContents(undefined), null);
+  assert.equal(LspClient.unwrapHoverContents({}), null);
+  assert.equal(LspClient.unwrapHoverContents({ contents: null }), null);
+  assert.equal(LspClient.unwrapHoverContents("just a string"), null);
+});
+
+test("LSP: hover returns null when array has only empty entries", () => {
+  const result = LspClient.unwrapHoverContents({ contents: ["", { value: "" }] });
+  assert.equal(result, null, "all-empty array shouldn't return an empty string");
 });

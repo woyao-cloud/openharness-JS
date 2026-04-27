@@ -27,6 +27,35 @@ type Location = {
   range: { start: { line: number; character: number }; end: { line: number; character: number } };
 };
 
+/**
+ * Unwrap a `textDocument/hover` result into a plain string. LSP allows three
+ * `contents` shapes: a bare string, a `{ kind, value }` envelope, or an
+ * array of either. Returns null when nothing is hoverable. Pure — exposed
+ * via `LspClient.unwrapHoverContents` for unit tests.
+ */
+function unwrapHoverContents(result: unknown): string | null {
+  if (!result || typeof result !== "object") return null;
+  const r = result as { contents?: unknown };
+  if (!r.contents) return null;
+  const c = r.contents;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) {
+    const parts = c.map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object" && typeof (item as { value?: unknown }).value === "string") {
+        return (item as { value: string }).value;
+      }
+      return "";
+    });
+    const joined = parts.filter(Boolean).join("\n");
+    return joined || null;
+  }
+  if (typeof c === "object" && typeof (c as { value?: unknown }).value === "string") {
+    return (c as { value: string }).value;
+  }
+  return null;
+}
+
 export class LspClient {
   private proc: ChildProcess;
   private nextId = 1;
@@ -191,6 +220,21 @@ export class LspClient {
     return result ?? [];
   }
 
+  /**
+   * Hover at a position — returns the text content of the LSP hover response,
+   * or `null` if the server returned no hover information / doesn't support
+   * the `textDocument/hover` capability. The LSP `MarkupContent` envelope is
+   * unwrapped so callers see plain text or markdown.
+   */
+  async getHover(filePath: string, line: number, character: number): Promise<string | null> {
+    const uri = `file://${filePath.replace(/\\/g, "/")}`;
+    const result = await this.send("textDocument/hover", {
+      textDocument: { uri },
+      position: { line, character },
+    });
+    return unwrapHoverContents(result);
+  }
+
   private guessLanguage(path: string): string {
     if (path.endsWith(".ts") || path.endsWith(".tsx")) return "typescript";
     if (path.endsWith(".js") || path.endsWith(".jsx")) return "javascript";
@@ -199,6 +243,11 @@ export class LspClient {
     if (path.endsWith(".go")) return "go";
     if (path.endsWith(".java")) return "java";
     return "plaintext";
+  }
+
+  /** @internal Exposed for unit tests of the hover-content unwrapper. */
+  static unwrapHoverContents(result: unknown): string | null {
+    return unwrapHoverContents(result);
   }
 
   disconnect(): void {

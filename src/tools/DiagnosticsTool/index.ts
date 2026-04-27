@@ -52,7 +52,7 @@ async function getClient(filePath: string, workingDir: string): Promise<LspClien
 export const DiagnosticsTool: Tool<typeof inputSchema> = {
   name: "Diagnostics",
   description:
-    "Get code diagnostics (errors, warnings), go-to-definition, or find-references using the language server.",
+    "Language Server Protocol (LSP) code intelligence — pick action: diagnostics (errors/warnings), definition (go-to-def), references (find-refs), or hover (type info / docs). Supports TypeScript, JavaScript, Python, Go, Rust.",
   inputSchema,
   riskLevel: "low",
 
@@ -117,21 +117,9 @@ export const DiagnosticsTool: Tool<typeof inputSchema> = {
           return { output: "line and character are required for hover.", isError: true };
         }
         await client.openFile(input.file_path);
-        // Hover uses textDocument/hover which returns MarkupContent
-        try {
-          const result = await (client as any).send("textDocument/hover", {
-            textDocument: { uri: `file://${input.file_path.replace(/\\/g, "/")}` },
-            position: { line: input.line, character: input.character },
-          });
-          if (!result?.contents) return { output: "No hover information.", isError: false };
-          const content =
-            typeof result.contents === "string"
-              ? result.contents
-              : (result.contents.value ?? JSON.stringify(result.contents));
-          return { output: content, isError: false };
-        } catch {
-          return { output: "Hover not supported by this language server.", isError: false };
-        }
+        const content = await client.getHover(input.file_path, input.line, input.character);
+        if (!content) return { output: "No hover information.", isError: false };
+        return { output: content, isError: false };
       }
 
       return { output: `Unknown action: ${input.action}`, isError: true };
@@ -144,11 +132,11 @@ export const DiagnosticsTool: Tool<typeof inputSchema> = {
   },
 
   prompt() {
-    return `Get code intelligence from the language server. Supports TypeScript, JavaScript, Python, Go, and Rust. Actions:
-- diagnostics: Get errors and warnings for a file
-- definition: Go to definition of a symbol at a given position
-- references: Find all references to a symbol at a given position
-- hover: Get type information and documentation for a symbol
+    return `LSP code intelligence — diagnostics, go-to-definition, find-references, hover. Supports TypeScript, JavaScript, Python, Go, Rust (a language server must be installed: typescript-language-server / pylsp / gopls / rust-analyzer). Actions:
+- diagnostics: Errors and warnings for the file
+- definition: Resolve the symbol at (line, character) to its declaration
+- references: Find all references to the symbol at (line, character)
+- hover: Type information and documentation for the symbol at (line, character)
 Parameters:
 - file_path (string, required): Absolute path to the file
 - action (string): "diagnostics" | "definition" | "references" | "hover" (default: diagnostics)
