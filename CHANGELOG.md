@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Shift+Tab cycles permission mode (audit U-A1)**. Mirrors Claude Code's quick-toggle behavior. Cycles `ask → acceptEdits → plan → trust → ask`. The session permission mode is mutated in-place so every downstream caller (`query()`, `cronExecutor`, status hints) sees the new value without extra plumbing. Other modes (`deny`, `auto`, `bypassPermissions`) stay reachable via `/permissions <mode>` but aren't on the quick-cycle path. A toast info message reflects the new mode.
+
+### Internal
+- New `cyclePermissionMode()` helper in `src/repl.ts` — internal closure, mutates `config.permissionMode`. Triggered by the `key.name === "tab" && key.shift` branch added before the existing tab handler.
+- `parseKey` in `src/renderer/input.ts` now recognizes the xterm backtab sequence `\x1b[Z` as `{ name: "tab", shift: true }`. 2 new tests in `src/renderer/input.test.ts` cover the parse + the consumed-byte count when followed by trailing input.
+
 ## 2.22.1 (2026-04-27) — LSP Hover Bug Fix + Discoverability
 
 Closes the entire 2026-04-26 audit refresh. B9 (full LSP tool) was already shipped under the `Diagnostics` tool name since v2.x — discovery during scope check, the grep-first lesson hit a fifth time this audit cycle. After this patch, the audit only has Tier C (defer-until-demand) remaining.

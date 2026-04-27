@@ -88,6 +88,13 @@ export function parseKey(data: string, offset: number): { event: KeyEvent; consu
     // Page Up/Down: ESC [ 5 ~ / ESC [ 6 ~
     if (seq.startsWith("\x1b[5~")) return { event: key("", "pageup", seq.slice(0, 4)), consumed: 4 };
     if (seq.startsWith("\x1b[6~")) return { event: key("", "pagedown", seq.slice(0, 4)), consumed: 4 };
+    // Shift+Tab (xterm "backtab"): ESC [ Z. Used as a quick-toggle for
+    // permission mode (mirrors Claude Code's Shift+Tab cycler).
+    if (seq.startsWith("\x1b[Z"))
+      return {
+        event: { char: "", name: "tab", ctrl: false, meta: false, shift: true, sequence: seq.slice(0, 3) },
+        consumed: 3,
+      };
     // Shift+Arrow: ESC [ 1 ; 2 A/B/C/D
     if (seq.startsWith("\x1b[1;2A"))
       return {

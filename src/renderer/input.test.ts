@@ -126,6 +126,22 @@ describe("parseKey", () => {
     assert.strictEqual(consumed, 6);
   });
 
+  // ── Shift+Tab (xterm backtab, audit U-A1) ──
+
+  it("parses Shift+Tab as { name: 'tab', shift: true }", () => {
+    const { event, consumed } = parseKey("\x1b[Z", 0);
+    assert.strictEqual(event.name, "tab");
+    assert.strictEqual(event.shift, true);
+    assert.strictEqual(event.ctrl, false);
+    assert.strictEqual(event.meta, false);
+    assert.strictEqual(consumed, 3);
+  });
+
+  it("does not consume more than 3 bytes for backtab even with trailing input", () => {
+    const { consumed } = parseKey("\x1b[Zhello", 0);
+    assert.strictEqual(consumed, 3, "the parser should leave 'hello' for the next call");
+  });
+
   // ── Alt+char ──
 
   it("parses Alt+x", () => {

@@ -551,6 +551,15 @@ export async function startREPL(config: REPLConfig): Promise<void> {
     }
     if (key.name === "pageup" || key.name === "pagedown" || key.name === "mouse") return;
 
+    // Shift+Tab: cycle permission mode (audit U-A1). Mirrors Claude Code's
+    // quick-toggle. Cycles ask → acceptEdits → plan → trust → ask. The
+    // session-level mode is mutated on `config` so all downstream callers
+    // (`query()`, `cronExecutor`, status line) read the new value.
+    if (key.name === "tab" && key.shift) {
+      cyclePermissionMode();
+      return;
+    }
+
     // Tab: autocomplete slash commands or file paths, or cycle tool call expansion
     if (key.name === "tab" && !loading) {
       if (acSuggestions.length > 0) {
@@ -653,6 +662,27 @@ export async function startREPL(config: REPLConfig): Promise<void> {
       acIsPath,
     });
   });
+
+  /**
+   * Cycle the session permission mode (audit U-A1, Shift+Tab). The cycle
+   * intentionally covers the four interactive modes a user is likely to
+   * toggle between — `ask`, `acceptEdits`, `plan`, `trust`. The other modes
+   * (`deny`, `auto`, `bypassPermissions`) stay reachable via `/permissions
+   * <mode>` but aren't on the quick-cycle path because they're either
+   * destructive (`bypassPermissions`) or seldom-used.
+   *
+   * Mutates `config.permissionMode` directly so every existing read site
+   * (the `query()` call sites, `cronExecutor`, status hints) sees the new
+   * value without extra plumbing.
+   */
+  function cyclePermissionMode(): void {
+    const cycle: PermissionMode[] = ["ask", "acceptEdits", "plan", "trust"];
+    const idx = cycle.indexOf(config.permissionMode);
+    const next = cycle[(idx === -1 ? 0 : idx + 1) % cycle.length]!;
+    config.permissionMode = next;
+    messages.push(createInfoMessage(`Permission mode → ${next}`));
+    syncRenderer();
+  }
 
   function navigateHistory(dir: number) {
     if (dir < 0 && historyIndex < inputHistory.length - 1) {
