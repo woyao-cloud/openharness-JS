@@ -1147,4 +1147,40 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   renderer.start();
   // Banner is already printed to stdout by main.tsx (visible in terminal scrollback)
   syncRenderer();
+
+  // Workspace-trust prompt (audit U-A4). Fires once per session when:
+  //   - the cwd isn't already on the trust list, AND
+  //   - `.oh/config.yaml` defines at least one shell-executing hook
+  //     (command/http) — `prompt` hooks don't trip the gate.
+  // Untrusted cwd silently skips command/http hooks via the gate in
+  // `harness/hooks.ts`. The prompt is non-blocking: we fire-and-forget
+  // the askQuestion so the REPL stays responsive while the question is
+  // displayed.
+  void (async () => {
+    try {
+      const { isTrusted, trust } = await import("./harness/trust.js");
+      if (isTrusted(process.cwd())) return;
+      const cfgWithHooks = readOhConfig();
+      const hooks = cfgWithHooks?.hooks;
+      if (!hooks) return;
+      const hasShellHook = Object.values(hooks).some(
+        (defs) => Array.isArray(defs) && defs.some((d) => d.command || d.http),
+      );
+      if (!hasShellHook) return;
+      const answer = await renderer.askQuestion(
+        `Trust this workspace? Shell hooks are configured in ${process.cwd()}. (yes/no)`,
+      );
+      if (answer.toLowerCase().startsWith("y")) {
+        trust(process.cwd());
+        messages.push(createInfoMessage(`Trusted ${process.cwd()} — shell hooks will now execute.`));
+      } else {
+        messages.push(
+          createInfoMessage(`Workspace not trusted — shell hooks are silently skipped. Run /trust to grant.`),
+        );
+      }
+      syncRenderer();
+    } catch {
+      /* trust prompt is best-effort; never block the REPL */
+    }
+  })();
 }

@@ -14,6 +14,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { debug } from "../utils/debug.js";
 import type { HookDef, HooksConfig } from "./config.js";
 import { readOhConfig } from "./config.js";
+import { isTrusted, trustSystemActive } from "./trust.js";
 
 export type HookEvent =
   | "sessionStart"
@@ -512,6 +513,23 @@ async function runPromptHook(promptText: string, ctx: HookContext, timeoutMs = 1
 async function executeHookDef(def: HookDef, event: HookEvent, ctx: HookContext): Promise<boolean> {
   const timeout = def.timeout ?? 10_000;
 
+  // Workspace-trust gate (audit U-A4). Shell-executing hook types
+  // (`command`, `http`) require the cwd to be on the trust list — a fresh
+  // clone of a hostile repo can't auto-execute on first launch. Allowed by
+  // default for `prompt` hooks (LLM-only, no shell).
+  //
+  // Soft rollout: the gate is only enforced once the user has interacted
+  // with the trust system (i.e., `~/.oh/trusted-dirs.json` exists). Until
+  // then, existing behavior is preserved. The first session in a hooked
+  // workspace fires a startup prompt that creates the file — from that
+  // point on every other dir requires explicit trust.
+  if ((def.command || def.http) && trustSystemActive() && !isTrusted(process.cwd())) {
+    // Allow as if the hook didn't exist. The REPL surfaces a one-time
+    // prompt at session start when hooks are configured but the dir is
+    // untrusted; the user can also grant trust via `/trust`.
+    return true;
+  }
+
   if (def.command) {
     const env = buildEnv(event, ctx);
     // JSON-mode (Claude Code convention): send `{event, ...ctx}` on stdin,
@@ -551,9 +569,15 @@ export function emitHook(event: HookEvent, ctx: HookContext = {}): boolean {
   const env = buildEnv(event, ctx);
 
   if (event === "preToolUse") {
-    // preToolUse command hooks must be synchronous — they gate tool execution
+    // preToolUse command hooks must be synchronous — they gate tool execution.
+    // Workspace-trust gate (audit U-A4): once the trust system is active
+    // (file exists), shell-executing hooks in untrusted dirs act as absent.
+    // Soft rollout: when no trust file exists at all, treat as legacy mode
+    // and run all hooks normally.
+    const enforceTrust = trustSystemActive() && !isTrusted(process.cwd());
     for (const def of defs) {
       if (!matchesHook(def, ctx)) continue;
+      if ((def.command || def.http) && enforceTrust) continue;
 
       if (def.command) {
         const input = def.jsonIO ? JSON.stringify({ event, ...ctx }) : undefined;

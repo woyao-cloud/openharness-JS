@@ -1,5 +1,5 @@
 /**
- * Settings commands — /theme, /companion, /fast, /keys, /keybindings, /effort, /sandbox, /permissions, /allowed-tools
+ * Settings commands — /theme, /companion, /fast, /keys, /keybindings, /effort, /sandbox, /permissions, /allowed-tools, /trust
  */
 
 import { spawn } from "node:child_process";
@@ -8,6 +8,7 @@ import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { readOhConfig } from "../harness/config.js";
 import { loadKeybindings } from "../harness/keybindings.js";
+import { isTrusted, listTrusted, trust } from "../harness/trust.js";
 import type { CommandHandler } from "./types.js";
 
 const KEYBINDINGS_TEMPLATE = `[
@@ -192,6 +193,26 @@ export function registerSettingsCommands(
 
   register("vim", "Toggle Vim mode", () => {
     return { output: "__TOGGLE_VIM__", handled: true };
+  });
+
+  register("trust", "Trust this workspace for shell hooks / status-line scripts (or list / add a path)", (args) => {
+    const arg = args.trim();
+    if (arg === "list") {
+      const trusted = listTrusted();
+      if (trusted.length === 0) {
+        return { output: "No trusted workspaces yet.\nRun `/trust` to add the current directory.", handled: true };
+      }
+      return { output: `Trusted workspaces:\n${trusted.map((d) => `  ${d}`).join("\n")}`, handled: true };
+    }
+    const target = arg || process.cwd();
+    if (isTrusted(target)) {
+      return { output: `Already trusted: ${target}`, handled: true };
+    }
+    trust(target);
+    return {
+      output: `Trusted: ${target}\nShell hooks and status-line scripts will now execute in this directory.`,
+      handled: true,
+    };
   });
 
   register("login", "Set API key for current provider", (args, ctx) => {

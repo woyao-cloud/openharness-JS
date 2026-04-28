@@ -199,9 +199,12 @@ export function registerSessionCommands(
     return { output: "__OPEN_SESSION_BROWSER__", handled: true };
   });
 
-  register("resume", "Resume a saved session by ID", (args) => {
+  register("resume", "Resume a saved session — opens a picker if no ID given", (args) => {
     const id = args.trim();
-    if (!id) return { output: "Usage: /resume <session-id>", handled: true };
+    // Audit U-A6: with no id, open the interactive session browser instead
+    // of erroring with a usage hint. Mirrors Claude Code's `/resume`
+    // picker. The browser already supports Enter-to-resume.
+    if (!id) return { output: "__OPEN_SESSION_BROWSER__", handled: true };
     const sessionDir = join(homedir(), ".oh", "sessions");
     try {
       loadSession(id, sessionDir);

@@ -398,19 +398,44 @@ export class TerminalRenderer {
 
   // ── Input routing ──
 
-  /** Handle permission prompt keys (Y/N/D). Returns true if key was consumed. */
+  /**
+   * Handle permission prompt keys (Y/N/A/D).
+   * - Y / N: approve or deny this single call.
+   * - A: approve AND persist a `toolPermissions: { tool, action: "allow" }`
+   *   rule to `.oh/config.yaml` so future calls to this tool skip the prompt
+   *   entirely (audit U-A2). Mirrors Claude Code's "yes, don't ask again".
+   * - D: toggle inline diff (when available).
+   *
+   * Returns true if key was consumed.
+   */
   private handlePermissionKey(key: KeyEvent): boolean {
     if (!this.permissionResolve) return false;
     const k = key.char.toLowerCase();
-    if (k === "y" || k === "n") {
+    if (k === "y" || k === "n" || k === "a") {
       const resolve = this.permissionResolve;
+      const toolName = this.state.permissionBox?.toolName;
       this.permissionResolve = null;
       this.permissionPrompt = null;
       this.state.permissionBox = null;
       this.state.permissionDiffVisible = false;
       this.state.permissionDiffInfo = null;
+      // Persist before resolving — any error in the write should not block
+      // the resolution. The persist call itself is no-op when no .oh/config.yaml
+      // exists (we don't auto-create on first interaction).
+      if (k === "a" && toolName) {
+        try {
+          // Lazy import to avoid pulling config into the renderer bundle
+          // for callers that don't trip the permission path.
+          const { appendToolPermission } = require("../harness/config.js") as {
+            appendToolPermission: (n: string) => boolean;
+          };
+          appendToolPermission(toolName);
+        } catch {
+          /* persistence failure must not block the agent */
+        }
+      }
       this.scheduleRender();
-      resolve(k === "y");
+      resolve(k === "y" || k === "a");
     } else if (k === "d" && this.state.permissionDiffInfo) {
       this.state.permissionDiffVisible = !this.state.permissionDiffVisible;
       this.scheduleRender();

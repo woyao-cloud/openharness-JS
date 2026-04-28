@@ -330,6 +330,30 @@ export function parseSettingSources(raw: string | undefined): SettingSource[] | 
   return out.length > 0 ? out : undefined;
 }
 
+/**
+ * Persist a single tool-allow rule (audit U-A2). Used by the "[A]lways"
+ * keypress in the permission prompt — the user has just approved a tool
+ * call and wants future calls to that tool to skip the prompt.
+ *
+ * No-ops when no project config exists (user is running on auto-detected
+ * settings; we don't auto-create `.oh/config.yaml` just to add a rule).
+ * De-dupes against an exact-tool rule with no pattern.
+ *
+ * Returns `true` if a rule was written, `false` if already present or
+ * skipped because no config exists.
+ */
+export function appendToolPermission(toolName: string, action: "allow" | "deny" = "allow", root?: string): boolean {
+  const cfg = readOhConfig(root);
+  if (!cfg) return false;
+  const existing = cfg.toolPermissions ?? [];
+  if (existing.some((r) => r.tool === toolName && !r.pattern && r.action === action)) {
+    return false;
+  }
+  cfg.toolPermissions = [...existing, { tool: toolName, action }];
+  writeOhConfig(cfg, root);
+  return true;
+}
+
 export function writeOhConfig(cfg: OhConfig, root?: string): void {
   invalidateConfigCache();
   // Emit configChange hook (lazy import to avoid circular dependency)

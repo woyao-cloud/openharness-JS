@@ -311,6 +311,13 @@ export function renderPermissionBoxSection(
     kc += 1;
     grid.writeText(nextRow, kc, "o", S_DIM);
     kc += 1;
+    grid.writeText(nextRow, kc, "  ", S_DIM);
+    kc += 2;
+    // Audit U-A2: "always allow this tool" — persists toolPermissions rule.
+    grid.writeText(nextRow, kc, "A", S_KEY_GREEN);
+    kc += 1;
+    grid.writeText(nextRow, kc, "lways", S_DIM);
+    kc += 5;
     if (state.permissionDiffInfo) {
       grid.writeText(nextRow, kc, "  ", S_DIM);
       kc += 2;
@@ -330,10 +337,12 @@ export function renderPermissionBoxSection(
     grid.writeText(nextRow, 1, "Y", S_KEY_GREEN);
     grid.writeText(nextRow, 2, "es  ", S_DIM);
     grid.writeText(nextRow, 6, "N", S_KEY_RED);
-    grid.writeText(nextRow, 7, "o", S_DIM);
+    grid.writeText(nextRow, 7, "o  ", S_DIM);
+    grid.writeText(nextRow, 10, "A", S_KEY_GREEN);
+    grid.writeText(nextRow, 11, "lways", S_DIM);
     if (state.permissionDiffInfo) {
-      grid.writeText(nextRow, 10, "D", S_KEY_CYAN);
-      grid.writeText(nextRow, 11, "iff", S_DIM);
+      grid.writeText(nextRow, 18, "D", S_KEY_CYAN);
+      grid.writeText(nextRow, 19, "iff", S_DIM);
     }
     nextRow++;
     if (state.permissionDiffVisible && state.permissionDiffInfo && nextRow + 3 < h) {
