@@ -166,6 +166,27 @@ export type OhConfig = {
   apiKeyHelper?: string;
   toolPermissions?: ToolPermissionRule[];
   statusLineFormat?: string; // Template: {model} {tokens} {cost} {ctx}
+  /**
+   * JSON-envelope status line script (audit U-B1). When set, OH spawns
+   * `command` through the user's shell on each refresh, pipes a JSON
+   * envelope `{ model, tokens, cost, ctx, sessionId, cwd, gitBranch }` to
+   * stdin, and uses the trimmed stdout as the status line. Mirrors Claude
+   * Code's `statusLine` config. Gated through the workspace-trust system —
+   * scripts only run in trusted dirs.
+   *
+   * Output is cached for `refreshMs` (default 1000) so the script doesn't
+   * re-spawn on every keypress. Multi-line output is truncated to the
+   * first line.
+   *
+   * Coexists with `statusLineFormat` — when both are set, the script wins.
+   */
+  statusLine?: {
+    command: string;
+    /** Cache window in ms. Default: 1000. Min: 100. */
+    refreshMs?: number;
+    /** Spawn timeout in ms. Default: 2000. */
+    timeoutMs?: number;
+  };
   /** Verification loops — auto-run lint/typecheck after file edits */
   verification?: {
     enabled?: boolean; // default true (auto-detect)

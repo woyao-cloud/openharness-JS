@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **JSON-envelope `statusLine` script (audit U-B1)**. Mirrors Claude Code's `statusLine` config. New `statusLine: { command, refreshMs?, timeoutMs? }` config block. On each REPL refresh, OH spawns the configured shell command, pipes a JSON envelope `{ model, tokens, cost, contextPercent, sessionId, cwd, gitBranch }` on stdin, and uses the trimmed first line of stdout as the status line. Output is cached per envelope-hash for `refreshMs` (default 1000, min 100) so the script doesn't re-spawn on every keypress. Multi-line output truncates to the first line (multi-line would corrupt the row). Failures (non-zero exit, timeout, spawn error, missing command, empty stdout) silently fall through to the existing `statusLineFormat` template / default rendering. Gated through the workspace-trust system (audit U-A4) — scripts only execute in trusted dirs.
+
+### Internal
+- New `src/harness/status-line-script.ts` — `runStatusLineScript(envelope, cfg)` plus `_resetStatusLineCacheForTest`. Synchronous `spawnSync` so the renderer doesn't need an async path; trade-off documented in the file header. Module-level cache keyed on `JSON.stringify` of the relevant envelope fields (excludes `sessionId` since the script's output shouldn't depend on it). 8 unit tests in `src/harness/status-line-script.test.ts` cover the envelope-on-stdin path, multi-line truncation, non-zero exit, empty stdout, cache hit, cache miss on envelope change, missing-command no-throw, and whitespace trimming.
+- `src/repl.ts:syncRenderer` gains a script branch with priority: script (when configured + trusted) → existing `statusLineFormat` template → default. Uses static imports (`isTrusted`, `trustSystemActive` from `harness/trust.js`) — never `require()` from this ESM file (lesson from v2.23.0 where the hidden `require()` throw broke 31 hook tests).
+
 ## 2.23.0 (2026-04-28) — Interaction Polish
 
 First release of the Tier U-A bundle from the 2026-04-27 UI/UX-parity plan (`~/.claude/plans/2-typescript-sdk-moonlit-hinton.md`). Six small interaction wins that bring OH's REPL closer to Claude Code's quick-toggle / quick-pick / quick-trust UX. A5 (effort-level visible indicator) was dropped during implementation — grep-first caught that the `effortLevel` config has zero consumers; the `/effort` slash command doesn't even persist. Lesson reinforced for the 6th time.

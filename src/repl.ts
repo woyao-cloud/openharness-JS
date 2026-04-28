@@ -15,8 +15,10 @@ import { readOhConfig, writeOhConfig } from "./harness/config.js";
 import { estimateMessageTokens, getContextWarning } from "./harness/context-warning.js";
 import { CostTracker, estimateCost, getContextWindow } from "./harness/cost.js";
 import { createSession, loadSession, type Session, saveSession } from "./harness/session.js";
+import { runStatusLineScript } from "./harness/status-line-script.js";
 import { createStore } from "./harness/store.js";
 import { handleUserInput } from "./harness/submit-handler.js";
+import { isTrusted, trustSystemActive } from "./harness/trust.js";
 import type { Provider } from "./providers/base.js";
 import { query } from "./query/index.js";
 import { resetDiffStyleCache } from "./renderer/diff.js";
@@ -308,8 +310,39 @@ export async function startREPL(config: REPLConfig): Promise<void> {
       ctxStr = `ctx [${bar}] ${pct}%`;
     }
 
-    // Use template if configured, otherwise default format
-    if (cachedConfig?.statusLineFormat) {
+    // Resolution priority: script (audit U-B1) → template → default.
+    //
+    // Script path: spawn user-configured shell with a JSON envelope on
+    // stdin; gated through the workspace-trust system from audit U-A4 so
+    // a hostile project can't auto-execute on first launch. Cached for
+    // `refreshMs` (default 1s) inside `status-line-script.ts` so the
+    // script doesn't run on every keypress. Failure → fall through to
+    // the template / default below.
+    let scriptLine: string | null = null;
+    const sl = cachedConfig?.statusLine;
+    if (sl?.command) {
+      const cwd = process.cwd();
+      if (trustSystemActive() && !isTrusted(cwd)) {
+        scriptLine = null; // untrusted — silently skip; user can /trust
+      } else {
+        const ctxPct = ctxWindow > 0 && estimatedTokenCount > 0 ? estimatedTokenCount / ctxWindow : 0;
+        scriptLine = runStatusLineScript(
+          {
+            model: currentModel || "",
+            tokens: { input: inTok, output: outTok },
+            cost: totalCostVal,
+            contextPercent: ctxPct,
+            sessionId: session.id,
+            cwd,
+            gitBranch: session.gitBranch,
+          },
+          sl,
+        );
+      }
+    }
+    if (scriptLine !== null) {
+      renderer.setStatusLine(scriptLine);
+    } else if (cachedConfig?.statusLineFormat) {
       const line = cachedConfig.statusLineFormat
         .replace("{model}", currentModel || "")
         .replace("{tokens}", tokensStr)
