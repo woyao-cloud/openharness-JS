@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.23.0 (2026-04-28) — Interaction Polish
+
+First release of the Tier U-A bundle from the 2026-04-27 UI/UX-parity plan (`~/.claude/plans/2-typescript-sdk-moonlit-hinton.md`). Six small interaction wins that bring OH's REPL closer to Claude Code's quick-toggle / quick-pick / quick-trust UX. A5 (effort-level visible indicator) was dropped during implementation — grep-first caught that the `effortLevel` config has zero consumers; the `/effort` slash command doesn't even persist. Lesson reinforced for the 6th time.
 
 ### Added
 - **"Always allow this tool" in the permission prompt (audit U-A2)**. New `[A]lways` key in the Y/N/D prompt. On press, OH approves the current call AND persists a `toolPermissions: { tool, action: "allow" }` rule to `.oh/config.yaml` so future calls to the same tool skip the prompt entirely. Mirrors Claude Code's "yes, don't ask again". No-op when there's no project config (we don't auto-create just to add a rule). De-dupes against existing exact-tool/no-pattern rules. Prompt key bar updated to show `Yes  No  Always  Diff` (boxed and unboxed renderings).
