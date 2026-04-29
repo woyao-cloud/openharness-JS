@@ -16,6 +16,7 @@ import { CronCreateTool, CronDeleteTool, CronListTool } from "./tools/CronTool/i
 import { DiagnosticsTool } from "./tools/DiagnosticsTool/index.js";
 import { EnterPlanModeTool } from "./tools/EnterPlanModeTool/index.js";
 import { EnterWorktreeTool } from "./tools/EnterWorktreeTool/index.js";
+import { ExaSearchTool } from "./tools/ExaSearchTool/index.js";
 import { ExitPlanModeTool } from "./tools/ExitPlanModeTool/index.js";
 import { ExitWorktreeTool } from "./tools/ExitWorktreeTool/index.js";
 import { FileEditTool } from "./tools/FileEditTool/index.js";
@@ -91,6 +92,7 @@ export function getAllTools(): Tools {
   const extended: Tools = [
     WebFetchTool,
     WebSearchTool,
+    ExaSearchTool,
     TaskGetTool,
     TaskStopTool,
     TaskOutputTool,

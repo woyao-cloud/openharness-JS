@@ -164,6 +164,7 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 | **Web** | | |
 | WebFetch | 中 | 获取 URL 内容（防 SSRF） |
 | WebSearch | 中 | 网络搜索 |
+| ExaSearch | 中 | 通过 Exa 进行神经网络搜索（需要 `EXA_API_KEY`） |
 | RemoteTrigger | 高 | 向 webhook/API 发送 HTTP 请求 |
 | **任务** | | |
 | TaskCreate | 低 | 创建结构化任务 |

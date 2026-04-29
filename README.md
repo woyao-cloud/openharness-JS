@@ -164,6 +164,7 @@ Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XX
 | **Web** | | |
 | WebFetch | medium | Fetch URL content (SSRF-protected) |
 | WebSearch | medium | Search the web |
+| ExaSearch | medium | Neural web search via Exa (requires `EXA_API_KEY`) |
 | RemoteTrigger | high | HTTP requests to webhooks/APIs |
 | **Tasks** | | |
 | TaskCreate | low | Create structured tasks |
