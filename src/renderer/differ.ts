@@ -17,6 +17,12 @@ export function styleToSGR(style: Style): string {
   return `\x1b[${codes.join(";")}m`;
 }
 
+/** OSC 8 hyperlink open/close sequences (ST = ESC \). */
+function osc8Open(url: string): string {
+  return `\x1b]8;;${url}\x1b\\`;
+}
+const OSC8_CLOSE = "\x1b]8;;\x1b\\";
+
 /**
  * Compare two grids and return the ANSI string that transforms prev into next.
  * Only emits escape sequences for changed cells.
@@ -24,6 +30,7 @@ export function styleToSGR(style: Style): string {
 export function diff(prev: CellGrid, next: CellGrid, rowOffset = 0): string {
   const parts: string[] = [];
   let lastStyle: string | null = null;
+  let lastHyperlink: string | null = null;
   let expectedRow = -1;
   let expectedCol = -1;
 
@@ -46,14 +53,23 @@ export function diff(prev: CellGrid, next: CellGrid, rowOffset = 0): string {
         lastStyle = sgr;
       }
 
+      // Apply OSC 8 hyperlink transitions independently of SGR
+      const nextHyperlink = nextCell.style.hyperlink ?? null;
+      if (nextHyperlink !== lastHyperlink) {
+        if (lastHyperlink !== null) parts.push(OSC8_CLOSE);
+        if (nextHyperlink !== null) parts.push(osc8Open(nextHyperlink));
+        lastHyperlink = nextHyperlink;
+      }
+
       parts.push(nextCell.char);
       expectedRow = r;
       expectedCol = c + 1;
     }
   }
 
-  // Reset style at end
+  // Close any open hyperlink and reset style at end
   if (parts.length > 0) {
+    if (lastHyperlink !== null) parts.push(OSC8_CLOSE);
     parts.push("\x1b[0m");
   }
 

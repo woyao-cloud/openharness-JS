@@ -285,7 +285,10 @@ function parseInline(text: string, baseStyle: Style): Segment[] {
     // Link: [text](url)
     const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
     if (linkMatch) {
-      segments.push({ text: linkMatch[1]!, style: { ...baseStyle, underline: true, fg: "cyan" } });
+      segments.push({
+        text: linkMatch[1]!,
+        style: { ...baseStyle, underline: true, fg: "cyan", hyperlink: linkMatch[2]! },
+      });
       segments.push({ text: ` (${linkMatch[2]!})`, style: { ...baseStyle, dim: true } });
       remaining = remaining.slice(linkMatch[0]!.length);
       continue;

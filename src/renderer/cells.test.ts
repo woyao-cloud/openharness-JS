@@ -75,4 +75,59 @@ describe("cellsEqual", () => {
     const b = { char: "A", style: { ...EMPTY_STYLE, underline: true } };
     assert.strictEqual(cellsEqual(a, b), false);
   });
+
+  it("returns false for different hyperlink", () => {
+    const a = { char: "A", style: { ...EMPTY_STYLE, hyperlink: "https://a.example" } };
+    const b = { char: "A", style: { ...EMPTY_STYLE, hyperlink: "https://b.example" } };
+    assert.strictEqual(cellsEqual(a, b), false);
+  });
+
+  it("treats undefined and null hyperlink as equal", () => {
+    const a = { char: "A", style: { ...EMPTY_STYLE, hyperlink: null } };
+    const b = { char: "A", style: { ...EMPTY_STYLE, hyperlink: undefined } };
+    assert.strictEqual(cellsEqual(a, b), true);
+  });
+});
+
+describe("CellGrid.writeTextWithLinks", () => {
+  it("tags http(s):// runs with hyperlink + cyan + underline", () => {
+    const grid = new CellGrid(80, 1);
+    grid.writeTextWithLinks(0, 0, "see https://example.com now", EMPTY_STYLE);
+    // 'h' of https://example.com starts at col 4
+    const linkCell = grid.cells[0]![4]!;
+    assert.strictEqual(linkCell.char, "h");
+    assert.strictEqual(linkCell.style.hyperlink, "https://example.com");
+    assert.strictEqual(linkCell.style.fg, "cyan");
+    assert.strictEqual(linkCell.style.underline, true);
+
+    // surrounding 'see ' and ' now' are NOT linked
+    assert.strictEqual(grid.cells[0]![0]!.style.hyperlink ?? null, null);
+    const lastUrlChar = grid.cells[0]![4 + "https://example.com".length - 1]!;
+    assert.strictEqual(lastUrlChar.style.hyperlink, "https://example.com");
+    const afterUrl = grid.cells[0]![4 + "https://example.com".length]!;
+    assert.strictEqual(afterUrl.style.hyperlink ?? null, null);
+  });
+
+  it("strips trailing punctuation from URL", () => {
+    const grid = new CellGrid(80, 1);
+    grid.writeTextWithLinks(0, 0, "see https://example.com.", EMPTY_STYLE);
+    // The trailing '.' should NOT be part of the link
+    const dotCell = grid.cells[0]![4 + "https://example.com.".length - 1]!;
+    assert.strictEqual(dotCell.char, ".");
+    assert.strictEqual(dotCell.style.hyperlink ?? null, null);
+  });
+
+  it("tags file:// URLs", () => {
+    const grid = new CellGrid(80, 1);
+    grid.writeTextWithLinks(0, 0, "open file:///tmp/foo.log please", EMPTY_STYLE);
+    const linkCell = grid.cells[0]![5]!;
+    assert.strictEqual(linkCell.style.hyperlink, "file:///tmp/foo.log");
+  });
+
+  it("does not exceed maxCol", () => {
+    const grid = new CellGrid(80, 1);
+    grid.writeTextWithLinks(0, 0, "https://very-long-url.example.com/path", EMPTY_STYLE, 10);
+    // Only first 10 cols should be written; col 10+ stays default
+    assert.strictEqual(grid.cells[0]![10]!.char, " ");
+  });
 });

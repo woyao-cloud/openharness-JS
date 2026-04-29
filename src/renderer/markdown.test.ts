@@ -89,4 +89,17 @@ describe("renderMarkdown", () => {
     const rows = renderMarkdown(grid, 0, 0, "", 80);
     assert.strictEqual(rows, 1);
   });
+
+  it("attaches OSC 8 hyperlink attribute to markdown link text", () => {
+    const grid = new CellGrid(80, 5);
+    renderMarkdown(grid, 0, 0, "[click](https://example.com)", 80);
+    // 'c' at col 0 should be linked
+    assert.strictEqual(grid.cells[0]![0]!.char, "c");
+    assert.strictEqual(grid.cells[0]![0]!.style.hyperlink, "https://example.com");
+    assert.strictEqual(grid.cells[0]![0]!.style.fg, "cyan");
+    // The trailing " (https://example.com)" is dim and NOT linked (legacy fallback for non-OSC8 terminals)
+    const parenStart = "click ".length;
+    assert.strictEqual(grid.cells[0]![parenStart]!.char, "(");
+    assert.strictEqual(grid.cells[0]![parenStart]!.style.hyperlink ?? null, null);
+  });
 });

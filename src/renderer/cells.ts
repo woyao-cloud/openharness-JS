@@ -8,6 +8,7 @@ export type Style = {
   bold: boolean;
   dim: boolean;
   underline: boolean;
+  hyperlink?: string | null; // OSC 8 URL target. Optional so existing literal Style objects compile unchanged.
 };
 
 export type Cell = {
@@ -15,7 +16,7 @@ export type Cell = {
   style: Style;
 };
 
-export const EMPTY_STYLE: Style = { fg: null, bg: null, bold: false, dim: false, underline: false };
+export const EMPTY_STYLE: Style = { fg: null, bg: null, bold: false, dim: false, underline: false, hyperlink: null };
 export const EMPTY_CELL: Cell = { char: " ", style: { ...EMPTY_STYLE } };
 
 export function cellsEqual(a: Cell, b: Cell): boolean {
@@ -25,7 +26,8 @@ export function cellsEqual(a: Cell, b: Cell): boolean {
     a.style.bg === b.style.bg &&
     a.style.bold === b.style.bold &&
     a.style.dim === b.style.dim &&
-    a.style.underline === b.style.underline
+    a.style.underline === b.style.underline &&
+    (a.style.hyperlink ?? null) === (b.style.hyperlink ?? null)
   );
 }
 
@@ -57,6 +59,7 @@ export class CellGrid {
         cell.style.bold = false;
         cell.style.dim = false;
         cell.style.underline = false;
+        cell.style.hyperlink = null;
       }
     }
   }
@@ -71,6 +74,7 @@ export class CellGrid {
     cell.style.bold = s.bold;
     cell.style.dim = s.dim;
     cell.style.underline = s.underline;
+    cell.style.hyperlink = s.hyperlink ?? null;
   }
 
   /**
@@ -138,6 +142,47 @@ export class CellGrid {
       r++;
     }
     return r - row;
+  }
+
+  /**
+   * Write text on a single row (no wrapping), tagging http(s):// and file:// runs
+   * with the OSC 8 hyperlink attribute (cyan + underline). Stops at maxCol or grid width.
+   */
+  writeTextWithLinks(row: number, col: number, text: string, baseStyle: Style, maxCol?: number): void {
+    const limit = Math.min(maxCol ?? this.width, this.width);
+    if (row < 0 || row >= this.height) return;
+    const linkRegex = /(https?:\/\/[^\s)\]'"<>]+|file:\/\/[^\s)\]'"<>]+)/g;
+    let cursor = 0;
+    let c = col;
+    while (true) {
+      const m: RegExpExecArray | null = linkRegex.exec(text);
+      if (m === null) break;
+      const before = text.slice(cursor, m.index);
+      for (let i = 0; i < before.length && c < limit; i++) {
+        this.setCell(row, c, before[i]!, baseStyle);
+        c++;
+      }
+      if (c >= limit) return;
+      // Strip trailing punctuation that's almost never part of the URL.
+      let url = m[0]!;
+      while (url.length > 0 && /[.,;:!?]/.test(url[url.length - 1]!)) {
+        url = url.slice(0, -1);
+      }
+      if (url.length === 0) {
+        cursor = m.index + m[0]!.length;
+        continue;
+      }
+      const linkStyle: Style = { ...baseStyle, fg: "cyan", underline: true, hyperlink: url };
+      for (let i = 0; i < url.length && c < limit; i++) {
+        this.setCell(row, c, url[i]!, linkStyle);
+        c++;
+      }
+      cursor = m.index + url.length;
+    }
+    for (let i = cursor; i < text.length && c < limit; i++) {
+      this.setCell(row, c, text[i]!, baseStyle);
+      c++;
+    }
   }
 
   clone(): CellGrid {

@@ -207,7 +207,7 @@ export function renderToolCallsSection(
       const visible = overflow > 0 ? tc.liveOutput.slice(-opts.maxLiveLines) : tc.liveOutput;
       for (const line of visible) {
         if (r >= limit) break;
-        grid.writeText(r, 6, line.slice(0, w - 8), S_DIM);
+        grid.writeTextWithLinks(r, 6, line.slice(0, w - 8), S_DIM, w - 2);
         r++;
       }
     }
@@ -225,7 +225,7 @@ export function renderToolCallsSection(
       for (const line of showLines) {
         if (r >= limit) break;
         const lineStyle = tc.status === "error" ? S_ERROR : S_DIM;
-        grid.writeText(r, 6, line.slice(0, w - 8), lineStyle);
+        grid.writeTextWithLinks(r, 6, line.slice(0, w - 8), lineStyle, w - 2);
         r++;
       }
       if (outLines.length > maxOut && r < limit) {
