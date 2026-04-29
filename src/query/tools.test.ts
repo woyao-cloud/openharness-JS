@@ -121,7 +121,11 @@ async function withHookCapture<T>(
     const result = await fn();
 
     // Yield so fire-and-forget async hook processes can write to the capture file.
-    await new Promise<void>((r) => setTimeout(r, 150));
+    // Windows CI takes ~1s to spawn + run a node child process; bumped from
+    // 150ms to 1500ms to match the prior fixes in hooks-b2.test.ts and
+    // disable-all-hooks.test.ts. Local runs see the file appear well under
+    // 200ms; this just budgets for the worst-case CI runner.
+    await new Promise<void>((r) => setTimeout(r, 1500));
 
     const fired = existsSync(capturePath) ? readFileSync(capturePath, "utf8").split("\n").filter(Boolean) : [];
 
