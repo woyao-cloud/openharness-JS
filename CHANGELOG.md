@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.25.0 (2026-04-30) — Visibility
+
+Closes Tier U-C1/U-C2/U-C3 of the 2026-04-27 UI/UX-parity plan (`~/.claude/plans/2-typescript-sdk-moonlit-hinton.md`). Three pure-renderer polish items in one PR (#92): differentiated spinner stage labels, multi-line input continuation glyph, and tool-type color coding. After this release, OH's interactive REPL surface matches Claude Code's stable surface where parity is meaningful — only Tier U-C4 (rich tables/JSON tree) and U-C5 (nested tool-call display) remain, both deferred to v2.26+ pending UX spec. Two real bugs were caught during code review and fixed in the same PR: a shimmer-period regression that pre-existed in the spinner formula but only became user-visible with the new longer labels, and a continuation-line alignment regression where the implementation plan accidentally diverged from the original column-base used by `computeCursorPosition`.
 
 ### Added
 - **Differentiated spinner stage label (audit U-C1)**. The "Thinking…" spinner now reflects which phase the agent is in: `Thinking` while waiting on the LLM, `Running <ToolName>` when a single tool is executing (e.g., `Running Bash`, `Running Edit`), `Calling <server>:<tool>` when an MCP tool is active (e.g., `Calling filesystem:read_file` for `mcp__filesystem__read_file`), and `Running N tools` for parallel fan-out. Pure-render derivation from `state.toolCalls` — no new query events. Mirrors Claude Code's verb-form spinner labels. Elapsed-time color staging (primary → stall → error) is unchanged.
