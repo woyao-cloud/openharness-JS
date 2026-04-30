@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
+import { readApprovalLog } from "../harness/approvals.js";
 import { readOhConfig } from "../harness/config.js";
 import { loadKeybindings } from "../harness/keybindings.js";
 import { isTrusted, listTrusted, trust } from "../harness/trust.js";
@@ -155,17 +156,37 @@ export function registerSettingsCommands(
     return { output: `${sandboxStatus()}\n\nConfigure in .oh/config.yaml under sandbox:`, handled: true };
   });
 
-  register("permissions", "View or change permission mode", (args, ctx) => {
-    const mode = args.trim().toLowerCase();
-    if (!mode) {
+  register("permissions", "View or change permission mode (or 'log' for approval history)", (args, ctx) => {
+    const trimmed = args.trim();
+    if (!trimmed) {
       return {
-        output: `Current permission mode: ${ctx.permissionMode}\n\nAvailable modes:\n  ask            Prompt for medium/high risk (default)\n  trust          Auto-approve everything\n  deny           Only low-risk read-only\n  acceptEdits    Auto-approve file edits\n  plan           Read-only mode\n  auto           Auto-approve, block dangerous bash\n  bypassPermissions  CI/CD only`,
+        output: `Current permission mode: ${ctx.permissionMode}\n\nAvailable modes:\n  ask            Prompt for medium/high risk (default)\n  trust          Auto-approve everything\n  deny           Only low-risk read-only\n  acceptEdits    Auto-approve file edits\n  plan           Read-only mode\n  auto           Auto-approve, block dangerous bash\n  bypassPermissions  CI/CD only\n\nApproval history:\n  /permissions log [n]   Show last n approval decisions (default 50)`,
         handled: true,
       };
     }
+    // Audit U-B5: /permissions log [n] — show approval history from
+    // ~/.oh/approvals.log. Subcommand check happens before the mode-name
+    // validation so "log" doesn't collide with the mode list.
+    const [head, ...tail] = trimmed.split(/\s+/);
+    if (head?.toLowerCase() === "log") {
+      const n = Math.max(1, Math.min(500, Number.parseInt(tail[0] ?? "50", 10) || 50));
+      const records = readApprovalLog(n);
+      if (records.length === 0) {
+        return { output: "No approval decisions logged yet.", handled: true };
+      }
+      const lines = records.map((r) => {
+        const time = r.ts.slice(11, 19); // HH:MM:SS from ISO
+        const date = r.ts.slice(0, 10);
+        const decision = r.decision === "allow" ? "✓" : r.decision === "always" ? "★" : "✗";
+        const reason = r.reason ? ` (${r.reason})` : "";
+        return `${date} ${time}  ${decision} ${r.decision.padEnd(7)} ${r.tool.padEnd(14)} ${r.source}${reason}`;
+      });
+      return { output: `Last ${records.length} approval decisions:\n${lines.join("\n")}`, handled: true };
+    }
+    const mode = trimmed.toLowerCase();
     const valid = ["ask", "trust", "deny", "acceptedits", "plan", "auto", "bypasspermissions"];
     if (!valid.includes(mode)) {
-      return { output: `Unknown mode: ${mode}. Valid: ${valid.join(", ")}`, handled: true };
+      return { output: `Unknown mode: ${mode}. Valid: ${valid.join(", ")} | log`, handled: true };
     }
     return {
       output: `Permission mode set to: ${mode}\n(Note: takes effect for new tool calls in this session)`,

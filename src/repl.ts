@@ -30,6 +30,7 @@ import type { Message } from "./types/message.js";
 import { createAssistantMessage, createInfoMessage, createMessage } from "./types/message.js";
 import type { PermissionMode } from "./types/permissions.js";
 import { formatTokenCount } from "./utils/format.js";
+import { fuzzyFilter } from "./utils/fuzzy.js";
 import { setActiveTheme } from "./utils/theme-data.js";
 import { formatToolArgs, summarizeToolOutput } from "./utils/tool-summary.js";
 
@@ -167,16 +168,15 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   function updateAutocomplete() {
     acIsPath = false;
     if (inputText.startsWith("/") && inputText.length > 1 && !inputText.includes(" ")) {
-      // Slash command autocomplete — entries arrive in registration order
-      // (Session → Git → Info → Settings → AI → Skills → MCP), so categories
-      // are naturally contiguous after a startsWith filter (audit U-A3).
-      const prefix = inputText.slice(1).toLowerCase();
-      const entries = getCommandEntries()
-        .filter((e) => e.name.startsWith(prefix))
-        .slice(0, 8);
-      acSuggestions = entries.map((e) => e.name);
-      acDescriptions = entries.map((e) => e.description);
-      acCategories = entries.map((e) => e.category);
+      // Slash command autocomplete (audit U-B3): subsequence-match scoring,
+      // not a startsWith filter. Prefix matches still rank first via the
+      // bonus in `fuzzyScore`, but the user can type "gst" to surface
+      // "/git-status" or "perm" to surface "/permissions".
+      const query = inputText.slice(1);
+      const ranked = fuzzyFilter(query, getCommandEntries()).slice(0, 8);
+      acSuggestions = ranked.map((r) => r.entry.name);
+      acDescriptions = ranked.map((r) => r.entry.description);
+      acCategories = ranked.map((r) => r.entry.category);
       acTokenStart = 0;
       acIndex = -1;
     } else if (inputText.length > 0 && !inputText.startsWith("/")) {

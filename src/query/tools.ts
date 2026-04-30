@@ -2,6 +2,7 @@
  * Tool execution — permission checking, batching, output capping.
  */
 
+import { previewArgs, recordApproval } from "../harness/approvals.js";
 import { createCheckpoint, getAffectedFiles } from "../harness/checkpoints.js";
 import { emitHook, emitHookWithOutcome } from "../harness/hooks.js";
 import type { ToolContext, ToolResult, Tools } from "../Tool.js";
@@ -119,6 +120,7 @@ export async function executeSingleTool(
         permissionAction: "ask",
       });
 
+      const argsPreview = previewArgs(JSON.stringify(toolCall.arguments));
       const denyAndEmit = (source: string, reason: string, output: string): ToolResult => {
         emitHook("permissionDenied", {
           toolName: tool.name,
@@ -127,11 +129,32 @@ export async function executeSingleTool(
           denySource: source,
           denyReason: reason,
         });
+        // Audit U-B5: persist denial to ~/.oh/approvals.log so /permissions log
+        // can replay the session's approval history. The cast is safe — the
+        // four call sites below pass exact string literals matching ApprovalSource.
+        recordApproval({
+          tool: tool.name,
+          decision: "deny",
+          source: source as "user" | "hook" | "permission-prompt-tool" | "headless",
+          argsPreview,
+          reason,
+          cwd: process.cwd(),
+        });
         return { output, isError: true };
+      };
+      const recordAllow = (source: "hook" | "permission-prompt-tool" | "user"): void => {
+        recordApproval({
+          tool: tool.name,
+          decision: "allow",
+          source,
+          argsPreview,
+          cwd: process.cwd(),
+        });
       };
 
       if (hookOutcome.permissionDecision === "allow") {
         // Hook granted permission — proceed to execution.
+        recordAllow("hook");
       } else if (hookOutcome.permissionDecision === "deny" || !hookOutcome.allowed) {
         const reason = hookOutcome.reason ? `: ${hookOutcome.reason}` : "";
         return denyAndEmit("hook", hookOutcome.reason ?? "hook denied", `Permission denied by hook${reason}`);
@@ -151,6 +174,7 @@ export async function executeSingleTool(
         );
         if (promptDecision.behavior === "allow") {
           // Permission tool granted — proceed.
+          recordAllow("permission-prompt-tool");
         } else if (promptDecision.behavior === "deny") {
           return denyAndEmit(
             "permission-prompt-tool",
@@ -166,6 +190,7 @@ export async function executeSingleTool(
           if (!allowed) {
             return denyAndEmit("user", "user declined", "Permission denied by user.");
           }
+          recordAllow("user");
         } else {
           return denyAndEmit(
             "headless",
@@ -181,6 +206,7 @@ export async function executeSingleTool(
         if (!allowed) {
           return denyAndEmit("user", "user declined", "Permission denied by user.");
         }
+        recordAllow("user");
       } else {
         // Headless mode with no hook decision and no interactive prompt:
         // fail-closed deny. SDK consumers should configure a permissionRequest
@@ -199,6 +225,16 @@ export async function executeSingleTool(
         permissionMode,
         denySource: "policy",
         denyReason: perm.reason,
+      });
+      // Audit U-B5: a `tool-rule-deny` reason came from an explicit
+      // `toolPermissions` rule the user wrote; everything else is policy.
+      recordApproval({
+        tool: tool.name,
+        decision: "deny",
+        source: perm.reason === "tool-rule-deny" ? "rule" : "policy",
+        argsPreview: previewArgs(JSON.stringify(toolCall.arguments)),
+        reason: perm.reason,
+        cwd: process.cwd(),
       });
       return { output: `Permission denied: ${perm.reason}`, isError: true };
     }

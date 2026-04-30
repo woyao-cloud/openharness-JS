@@ -4,6 +4,7 @@
  * right after the scrollback content each frame (no absolute positioning gap).
  */
 
+import { recordApproval } from "../harness/approvals.js";
 import type { Message } from "../types/message.js";
 import { getTheme } from "../utils/theme-data.js";
 import { summarizeToolArgs } from "../utils/tool-summary.js";
@@ -433,6 +434,10 @@ export class TerminalRenderer {
         } catch {
           /* persistence failure must not block the agent */
         }
+        // Audit U-B5: log the "always allow this tool" rule promotion as a
+        // supplementary record so /permissions log shows the user upgraded
+        // from a one-shot allow to a persistent rule.
+        recordApproval({ tool: toolName, decision: "always", source: "user", cwd: process.cwd() });
       }
       this.scheduleRender();
       resolve(k === "y" || k === "a");
