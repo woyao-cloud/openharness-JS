@@ -569,3 +569,106 @@ describe("rasterize/rasterizeLive parity", () => {
     assert.ok(findRow(grid2, "❯") >= 0, "rasterizeLive missing prompt");
   });
 });
+
+// ── v2.25.0 Visibility integrated snapshots ──
+
+describe("v2.25.0 visibility", () => {
+  it("C1: spinner section shows 'Running <Tool>' when one tool is running, 'Calling <server>:<tool>' for mcp, 'Running N tools' for parallel", () => {
+    // Single non-mcp tool
+    {
+      const state = makeState({
+        loading: true,
+        thinkingStartedAt: Date.now(),
+        toolCalls: new Map([["call-1", { toolName: "Bash", status: "running" as const }]]),
+      });
+      const grid = new CellGrid(80, 5);
+      rasterize(state, grid);
+      assert.match(gridAllText(grid), /Running Bash/, "single-tool case: 'Running Bash'");
+    }
+    // Single mcp tool
+    {
+      const state = makeState({
+        loading: true,
+        thinkingStartedAt: Date.now(),
+        toolCalls: new Map([["call-1", { toolName: "mcp__filesystem__read_file", status: "running" as const }]]),
+      });
+      const grid = new CellGrid(80, 5);
+      rasterize(state, grid);
+      assert.match(gridAllText(grid), /Calling filesystem:read_file/, "mcp case: 'Calling <server>:<tool>'");
+    }
+    // Parallel tools
+    {
+      const state = makeState({
+        loading: true,
+        thinkingStartedAt: Date.now(),
+        toolCalls: new Map<string, ToolCallInfo>([
+          ["a", { toolName: "Read", status: "running" }],
+          ["b", { toolName: "Grep", status: "running" }],
+        ]),
+      });
+      const grid = new CellGrid(80, 5);
+      rasterize(state, grid);
+      assert.match(gridAllText(grid), /Running 2 tools/, "parallel case: 'Running N tools'");
+    }
+  });
+
+  it("C2: ↵ continuation glyph appears after every non-last line in multi-line input", () => {
+    const state = makeState({ inputText: "line one\nline two\nline three" });
+    const grid = new CellGrid(80, 10);
+    rasterize(state, grid);
+    // Per-row assertion (rather than a global ↵ count over gridAllText) so
+    // that a future status-line / hint format containing ↵ would not silently
+    // break this test.
+    const oneRow = findRow(grid, "line one");
+    const twoRow = findRow(grid, "line two");
+    const threeRow = findRow(grid, "line three");
+    assert.ok(oneRow >= 0 && twoRow >= 0 && threeRow >= 0, "all three input lines should be rendered");
+    assert.match(gridText(grid, oneRow), /↵/, "line one should have ↵ glyph");
+    assert.match(gridText(grid, twoRow), /↵/, "line two should have ↵ glyph");
+    assert.doesNotMatch(gridText(grid, threeRow), /↵/, "last line should be unmarked");
+  });
+
+  it("C3: tool-call section uses category fg colors (Read=cyan, Bash=magenta, Edit=yellow, mcp__*=green)", () => {
+    const state = makeState({
+      // loading: true documents the intended state — running tools only exist
+      // mid-turn. Defends against a future renderToolCallsSection adding a
+      // !loading early-return guard.
+      loading: true,
+      toolCalls: new Map<string, ToolCallInfo>([
+        ["a", { toolName: "Read", status: "running" }],
+        ["b", { toolName: "Bash", status: "running" }],
+        ["c", { toolName: "Edit", status: "running" }],
+        ["d", { toolName: "mcp__filesystem__read_file", status: "running" }],
+      ]),
+    });
+    const grid = new CellGrid(80, 12);
+    rasterize(state, grid);
+
+    // For each tool's row, scan columns left-to-right and return the fg color
+    // of the first cell whose char is not a space and not the tree marker
+    // (▶/▼). That cell is the status-icon cell, which carries the
+    // category's fg color (set by toolColor()).
+    //
+    // Cols 0-1 are empty for running tools — ▶/▼ is only written when
+    // canExpand=true, which requires status !== "running". So col 2 is the
+    // spinner/status icon (one of SPINNER_CHARS, never a space) styled with
+    // toolStyle.fg. The TREE_MARKERS guard is defensive against any future
+    // change that writes the tree marker for running tools.
+    const TREE_MARKERS = new Set(["▶", "▼"]);
+    function statusFgFor(toolText: string): string | null {
+      const row = findRow(grid, toolText);
+      if (row < 0) return null;
+      for (let c = 0; c < grid.width; c++) {
+        const cell = grid.cells[row]![c]!;
+        if (cell.char && cell.char !== " " && !TREE_MARKERS.has(cell.char)) {
+          return cell.style.fg;
+        }
+      }
+      return null;
+    }
+    assert.equal(statusFgFor("Read"), "cyan");
+    assert.equal(statusFgFor("Bash"), "magenta");
+    assert.equal(statusFgFor("Edit"), "yellow");
+    assert.equal(statusFgFor("mcp__filesystem__read_file"), "green");
+  });
+});

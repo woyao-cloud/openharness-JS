@@ -5,6 +5,7 @@
  */
 
 import { recordApproval } from "../harness/approvals.js";
+import { appendToolPermission } from "../harness/config.js";
 import type { Message } from "../types/message.js";
 import { getTheme } from "../utils/theme-data.js";
 import { summarizeToolArgs } from "../utils/tool-summary.js";
@@ -425,11 +426,6 @@ export class TerminalRenderer {
       // exists (we don't auto-create on first interaction).
       if (k === "a" && toolName) {
         try {
-          // Lazy import to avoid pulling config into the renderer bundle
-          // for callers that don't trip the permission path.
-          const { appendToolPermission } = require("../harness/config.js") as {
-            appendToolPermission: (n: string) => boolean;
-          };
           appendToolPermission(toolName);
         } catch {
           /* persistence failure must not block the agent */

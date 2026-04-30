@@ -1021,7 +1021,6 @@ export async function startREPL(config: REPLConfig): Promise<void> {
           case "tool_call_end": {
             const toolName = callIdToToolName.get(event.callId) ?? event.callId;
             const prevTc = renderer.getToolCall(event.callId);
-            const _elapsed = prevTc?.startedAt ? Math.floor((Date.now() - prevTc.startedAt) / 1000) : 0;
             renderer.setToolCall(event.callId, {
               toolName,
               status: event.isError ? "error" : "done",

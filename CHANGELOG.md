@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Differentiated spinner stage label (audit U-C1)**. The "Thinking…" spinner now reflects which phase the agent is in: `Thinking` while waiting on the LLM, `Running <ToolName>` when a single tool is executing (e.g., `Running Bash`, `Running Edit`), `Calling <server>:<tool>` when an MCP tool is active (e.g., `Calling filesystem:read_file` for `mcp__filesystem__read_file`), and `Running N tools` for parallel fan-out. Pure-render derivation from `state.toolCalls` — no new query events. Mirrors Claude Code's verb-form spinner labels. Elapsed-time color staging (primary → stall → error) is unchanged.
+- **Multi-line input wrap glyph (audit U-C2)**. Every non-last line of a multi-line input (Alt+Enter) now ends with a dim `↵` continuation glyph so the wrap is visually marked. The last line stays unmarked. The existing `[N lines]` suffix on row 0 wins when it would collide with the glyph. Mirrors Claude Code's continuation indicator.
+- **Tool-type color coding (audit U-C3)**. The tool-call section's status icon and tool name are now color-coded by category instead of a uniform yellow: Read tools (`Read`/`Glob`/`Grep`/`WebFetch`/`WebSearch`/`ExaSearch`) → cyan; mutating tools (`Edit`/`Write`/`NotebookEdit`) → yellow; exec tools (`Bash`/`PowerShell`) → magenta; MCP tools (`mcp__*`) → green. `Agent`/`ParallelAgents` keep their existing cyan-bold `S_AGENT` style via the short-circuit. Done-state and error-state colors (`S_GREEN`/`S_ERROR`) are unchanged.
+
+### Fixed
+- **Spinner shimmer no longer slows on long labels.** The shimmer's modulus was `(thinkText.length + 6)` which scaled with label length. With audit U-C1 producing labels like `Calling filesystem:read_file` (28 chars), the shimmer slowed by ~2.4x compared to the prior fixed `Thinking` label. Switched to a fixed period of 20 to match `renderThinkingSection`.
+
+### Internal
+- New `src/renderer/spinner-label.ts` — `deriveSpinnerLabel(toolCalls)` pure function. 8 unit tests cover empty / done-only / single-tool / single-mcp / malformed-mcp / mcp-with-empty-server / multi-tool / mixed-status.
+- New `src/renderer/tool-color.ts` — `toolColor(toolName)` pure function. 7 unit tests cover each category, the `mcp__` prefix path, the unknown-tool fallback, and the Agent fallback (Agent is intentionally not in the map; the caller short-circuits via `isAgent` before consulting `toolColor`).
+- `src/renderer/layout-sections.ts:renderSpinnerSection` (line 110) replaces hardcoded `"Thinking"` with `deriveSpinnerLabel(state.toolCalls)`. `renderToolCallsSection` (lines 163-166) replaces the single `S_YELLOW` non-Agent path with a `toolColor(tc.toolName)`-derived `Style`. `renderInputSection` appends `↵` after every non-last input line (clipped to grid width), yielding to `[N lines]` on row 0 when they would collide.
+- 3 new integrated snapshot tests in `src/renderer/ui-ux.test.ts` cover the spinner-label / wrap-glyph / category-color behavior end-to-end.
+- **Cleanups (carry-forward from #91):** dropped unused `_elapsed = …` line at `src/repl.ts:1024`. Migrated `require("../harness/config.js")` at `src/renderer/index.ts:430` (inside `handlePermissionKey`) to a static import — the v2.23.0 ESM-`require()`-swallow footgun memory had flagged this as the next file to touch.
+
 ## 2.24.0 (2026-04-30) — Status & Hyperlinks
 
 Closes Tier U-B of the 2026-04-27 UI/UX-parity plan (`~/.claude/plans/2-typescript-sdk-moonlit-hinton.md`). Four shipped items (#87/#90/#91) plus one already-shipped audit closeout (U-B4 inline diff syntax — discovered grep-first). Adds Exa neural search (#88) as a peer to the existing DuckDuckGo-backed `WebSearch` tool. After this release, OH's interactive REPL surface matches Claude Code's stable surface where parity is meaningful — only Tier U-C (visibility polish: spinner stage, wrap glyph, tool-type colors, rich tables/JSON tree, nested tool-call display) remains, scheduled for v2.25.0+.

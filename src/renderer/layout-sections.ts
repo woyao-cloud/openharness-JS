@@ -8,6 +8,8 @@ import type { CellGrid, Style } from "./cells.js";
 import { renderDiff } from "./diff.js";
 import { isImageOutput, renderImageInline } from "./image.js";
 import type { LayoutState } from "./layout.js";
+import { deriveSpinnerLabel } from "./spinner-label.js";
+import { toolColor } from "./tool-color.js";
 
 // ── Style constants ──
 
@@ -105,14 +107,14 @@ export function renderThinkingSummarySection(state: LayoutState, grid: CellGrid,
 
 export function renderSpinnerSection(state: LayoutState, grid: CellGrid, r: number, limit: number): number {
   if (!state.loading || state.streamingText || state.thinkingText || r >= limit) return r;
-  const thinkText = "Thinking";
+  const thinkText = deriveSpinnerLabel(state.toolCalls);
   const elapsed = state.thinkingStartedAt ? Math.floor((Date.now() - state.thinkingStartedAt) / 1000) : 0;
   const t = getTheme();
   const baseColor = elapsed > 60 ? t.error : elapsed > 30 ? t.stall : t.primary;
   const shimmerColor = elapsed > 60 ? t.stallShimmer : elapsed > 30 ? t.warning : t.primaryShimmer;
   const baseStyle: Style = { fg: baseColor, bg: null, bold: false, dim: false, underline: false };
   grid.writeText(r, 0, "◆ ", { ...baseStyle, bold: true });
-  const shimmerPos = state.spinnerFrame % (thinkText.length + 6);
+  const shimmerPos = state.spinnerFrame % 20;
   const shimmerStyle: Style = { fg: shimmerColor, bg: null, bold: true, dim: false, underline: false };
   for (let ci = 0; ci < thinkText.length; ci++) {
     grid.setCell(r, 2 + ci, thinkText[ci]!, Math.abs(ci - shimmerPos) <= 1 ? shimmerStyle : baseStyle);
@@ -158,8 +160,10 @@ export function renderToolCallsSection(
         : tc.status === "done"
           ? "✓"
           : "✗";
-    const statusStyle = tc.status === "error" ? S_ERROR : tc.status === "done" ? S_GREEN : isAgent ? S_AGENT : S_YELLOW;
-    const nameStyle = isAgent ? S_AGENT : { ...S_YELLOW, bold: true };
+    const toolStyle: Style = { fg: toolColor(tc.toolName), bg: null, bold: false, dim: false, underline: false };
+    const statusStyle =
+      tc.status === "error" ? S_ERROR : tc.status === "done" ? S_GREEN : isAgent ? S_AGENT : toolStyle;
+    const nameStyle = isAgent ? S_AGENT : { ...toolStyle, bold: true };
     const isExpanded = state.expandedToolCalls.has(callId);
     const canExpand = tc.status !== "running" && tc.output;
 
@@ -476,18 +480,32 @@ export function renderInputSection(
   const inputStart = promptWidth;
   const inputLines = state.inputText.split("\n");
   const maxInputLines = Math.min(inputLines.length, 5);
-  for (let li = 0; li < maxInputLines; li++) {
-    if (inputRow + li >= limit) break;
-    if (li === 0) {
-      grid.writeText(inputRow, inputStart, inputLines[0]!, S_TEXT);
-    } else {
-      grid.writeText(inputRow + li, inputStart, inputLines[li]!, S_TEXT);
-    }
-  }
+  // Pre-compute the [N lines] suffix column on row 0 (if multi-line) so the
+  // wrap glyph for line 0 can yield to the suffix when they would collide.
+  // The +1 reserves the glyph column so the suffix starts one column after
+  // it (produces "text↵ [N lines]"); a +0 would let the suffix overwrite the
+  // glyph on narrow terminals.
+  let lineCountCol = -1;
   if (inputLines.length > 1) {
     const lineCountStr = ` [${inputLines.length} lines]`;
-    const lineCountCol = Math.min(inputStart + (inputLines[0]?.length ?? 0) + 1, grid.width - lineCountStr.length - 1);
-    if (lineCountCol > inputStart) grid.writeText(inputRow, lineCountCol, lineCountStr, S_DIM);
+    lineCountCol = Math.min(inputStart + (inputLines[0]?.length ?? 0) + 1, grid.width - lineCountStr.length - 1);
+  }
+  for (let li = 0; li < maxInputLines; li++) {
+    if (inputRow + li >= limit) break;
+    const lineText = inputLines[li]!;
+    grid.writeText(inputRow + li, inputStart, lineText, S_TEXT);
+    // Audit U-C2: append a dim ↵ continuation glyph to every non-last line.
+    if (li < inputLines.length - 1) {
+      const glyphCol = inputStart + lineText.length;
+      const wouldCollideWithLineCount = li === 0 && lineCountCol > inputStart && glyphCol >= lineCountCol;
+      if (glyphCol < grid.width && !wouldCollideWithLineCount) {
+        grid.writeText(inputRow + li, glyphCol, "↵", S_DIM);
+      }
+    }
+  }
+  if (inputLines.length > 1 && lineCountCol > inputStart) {
+    const lineCountStr = ` [${inputLines.length} lines]`;
+    grid.writeText(inputRow, lineCountCol, lineCountStr, S_DIM);
   }
   const hintsRow = inputRow + maxInputLines;
   if (hintsRow < limit) {
