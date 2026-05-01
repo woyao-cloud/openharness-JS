@@ -85,7 +85,7 @@ export const WebFetchTool: Tool<typeof inputSchema> = {
       });
 
       // Re-check host after redirect to prevent SSRF via open redirects
-      const finalUrl = new URL(response.url);
+      const finalUrl = new URL(response.url || input.url);
       if (isBlockedHost(finalUrl.hostname)) {
         return { output: "Error: Redirect to private/internal host blocked.", isError: true };
       }
@@ -108,7 +108,10 @@ export const WebFetchTool: Tool<typeof inputSchema> = {
         text = `${text.slice(0, MAX_OUTPUT)}\n... [truncated]`;
       }
 
-      return { output: text, isError: false };
+      const ct = contentType.toLowerCase();
+      const isJson = /^application\/(?:[a-z0-9.+-]+\+)?json\b/.test(ct);
+      const outputType = isJson ? "json" : ct.includes("text/markdown") ? "markdown" : "plain";
+      return { output: text, isError: false, outputType };
     } catch (err: any) {
       return { output: `Error fetching URL: ${err.message}`, isError: true };
     }

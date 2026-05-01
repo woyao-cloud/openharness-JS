@@ -24,6 +24,7 @@ export type ToolCallEnd = {
   readonly type: "tool_call_end";
   readonly callId: string;
   readonly output: string;
+  readonly outputType?: "json" | "markdown" | "image" | "plain";
   readonly isError: boolean;
 };
 

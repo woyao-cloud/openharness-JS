@@ -23,6 +23,7 @@ import type { Provider } from "./providers/base.js";
 import { query } from "./query/index.js";
 import { resetDiffStyleCache } from "./renderer/diff.js";
 import { type KeyEvent, TerminalRenderer } from "./renderer/index.js";
+import { resetJsonStyleCache } from "./renderer/json-tree.js";
 import { resetStyleCache } from "./renderer/layout.js";
 import { resetMdStyleCache } from "./renderer/markdown.js";
 import type { Tools } from "./Tool.js";
@@ -33,6 +34,9 @@ import { formatTokenCount } from "./utils/format.js";
 import { fuzzyFilter } from "./utils/fuzzy.js";
 import { setActiveTheme } from "./utils/theme-data.js";
 import { formatToolArgs, summarizeToolOutput } from "./utils/tool-summary.js";
+
+/** Per-call cap on rendered tool output in renderer state. Sized to fit typical JSON/markdown files (16 KiB) so JSON.parse / markdown detection works on real content; larger outputs render truncated. */
+const TOOL_OUTPUT_RENDER_CAP = 16384;
 
 export type REPLConfig = {
   provider: Provider;
@@ -855,6 +859,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
       resetStyleCache();
       resetMdStyleCache();
       resetDiffStyleCache();
+      resetJsonStyleCache();
       // Persist theme to config
       try {
         const cfg = cachedConfig ?? {
@@ -1024,7 +1029,8 @@ export async function startREPL(config: REPLConfig): Promise<void> {
             renderer.setToolCall(event.callId, {
               toolName,
               status: event.isError ? "error" : "done",
-              output: event.output?.slice(0, 500),
+              output: event.output?.slice(0, TOOL_OUTPUT_RENDER_CAP),
+              outputType: event.outputType,
               args: prevTc?.args,
               resultSummary: event.output ? summarizeToolOutput(event.output) : undefined,
               startedAt: prevTc?.startedAt,

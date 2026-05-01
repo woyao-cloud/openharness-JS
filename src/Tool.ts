@@ -10,6 +10,7 @@ import type { PermissionMode, RiskLevel } from "./types/permissions.js";
 export type ToolResult = {
   output: string;
   isError: boolean;
+  outputType?: "json" | "markdown" | "image" | "plain";
 };
 
 export type ToolContext = {

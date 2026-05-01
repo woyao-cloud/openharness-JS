@@ -672,3 +672,78 @@ describe("v2.25.0 visibility", () => {
     assert.equal(statusFgFor("mcp__filesystem__read_file"), "green");
   });
 });
+
+// ── U-C4: Rich Tool Output ──
+
+describe("U-C4: rich tool output rendering", () => {
+  it("renders JSON tree for tool output stamped outputType='json'", () => {
+    const tc: ToolCallInfo = {
+      toolName: "Read",
+      status: "done",
+      output: '{"name":"openharness","version":"2.26.0"}',
+      outputType: "json",
+    };
+    const state = makeState({
+      toolCalls: new Map([["a", tc]]),
+      expandedToolCalls: new Set(["a"]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /"name": "openharness"/);
+    assert.match(text, /"version": "2\.26\.0"/);
+  });
+
+  it("renders markdown for tool output stamped outputType='markdown'", () => {
+    const md = "# Title\n\n## Subtitle\n\nbody text";
+    const tc: ToolCallInfo = {
+      toolName: "Read",
+      status: "done",
+      output: md,
+      outputType: "markdown",
+    };
+    const state = makeState({
+      toolCalls: new Map([["a", tc]]),
+      expandedToolCalls: new Set(["a"]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /Title/);
+    assert.match(text, /Subtitle/);
+  });
+
+  it("falls back to plain when outputType='plain' is set explicitly", () => {
+    const tc: ToolCallInfo = {
+      toolName: "Bash",
+      status: "done",
+      output: '{"this":"would normally render as json"}',
+      outputType: "plain",
+    };
+    const state = makeState({
+      toolCalls: new Map([["a", tc]]),
+      expandedToolCalls: new Set(["a"]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /\{"this":"would normally render as json"\}/);
+  });
+
+  it("uses heuristic JSON detection when outputType is undefined", () => {
+    const tc: ToolCallInfo = {
+      toolName: "Bash",
+      status: "done",
+      output: '{"foo":"bar"}',
+      // outputType intentionally undefined
+    };
+    const state = makeState({
+      toolCalls: new Map([["a", tc]]),
+      expandedToolCalls: new Set(["a"]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /"foo": "bar"/);
+  });
+});

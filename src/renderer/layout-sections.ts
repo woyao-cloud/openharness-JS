@@ -6,8 +6,8 @@
 import { getTheme } from "../utils/theme-data.js";
 import type { CellGrid, Style } from "./cells.js";
 import { renderDiff } from "./diff.js";
-import { isImageOutput, renderImageInline } from "./image.js";
 import type { LayoutState } from "./layout.js";
+import { renderToolOutput } from "./output-renderer.js";
 import { deriveSpinnerLabel } from "./spinner-label.js";
 import { toolColor } from "./tool-color.js";
 
@@ -217,25 +217,12 @@ export function renderToolCallsSection(
     }
 
     if (tc.output && tc.status !== "running" && isExpanded && r < limit) {
-      if (isImageOutput(tc.output)) {
-        const label = renderImageInline(tc.output);
-        grid.writeText(r, 6, label.slice(0, w - 8), S_DIM);
-        r++;
-        continue;
-      }
-      const outLines = tc.output.split("\n");
-      const maxOut = 20;
-      const showLines = outLines.slice(0, maxOut);
-      for (const line of showLines) {
-        if (r >= limit) break;
-        const lineStyle = tc.status === "error" ? S_ERROR : S_DIM;
-        grid.writeTextWithLinks(r, 6, line.slice(0, w - 8), lineStyle, w - 2);
-        r++;
-      }
-      if (outLines.length > maxOut && r < limit) {
-        grid.writeText(r, 6, `… (${outLines.length} lines total)`, S_DIM);
-        r++;
-      }
+      const consumed = renderToolOutput(grid, r, 6, tc.output, tc.outputType, w - 8, {
+        status: tc.status,
+        maxLines: 20,
+        limit,
+      });
+      r += consumed;
     }
   }
   return r;

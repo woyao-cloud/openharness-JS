@@ -47,6 +47,7 @@ export type ToolCallInfo = {
   toolName: string;
   status: "running" | "done" | "error";
   output?: string;
+  outputType?: "json" | "markdown" | "image" | "plain";
   args?: string;
   isAgent?: boolean;
   agentDescription?: string;

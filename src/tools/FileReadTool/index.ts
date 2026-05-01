@@ -15,6 +15,15 @@ const DEFAULT_LIMIT = 2000;
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"]);
 const NOTEBOOK_EXTENSION = ".ipynb";
 
+const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
+const JSON_EXTENSIONS = new Set([".json"]);
+
+function outputTypeFromExt(ext: string): "json" | "markdown" | "plain" {
+  if (JSON_EXTENSIONS.has(ext)) return "json";
+  if (MARKDOWN_EXTENSIONS.has(ext)) return "markdown";
+  return "plain";
+}
+
 function parsePageRange(pages: string): number[] {
   const result: number[] = [];
   for (const part of pages.split(",")) {
@@ -112,7 +121,7 @@ export const FileReadTool: Tool<typeof inputSchema> = {
         }
 
         if (pageTexts.length > 0) {
-          return { output: pageTexts.join("\n\n"), isError: false };
+          return { output: pageTexts.join("\n\n"), isError: false, outputType: "plain" };
         }
 
         // Fallback: return as base64 for multimodal analysis
@@ -141,7 +150,7 @@ export const FileReadTool: Tool<typeof inputSchema> = {
             }
           }
         }
-        return { output: parts.join("\n\n"), isError: false };
+        return { output: parts.join("\n\n"), isError: false, outputType: "plain" };
       }
 
       // Default: text file
@@ -160,7 +169,7 @@ export const FileReadTool: Tool<typeof inputSchema> = {
         result += `\n\n(Showing lines ${offset + 1}-${offset + shown} of ${total})`;
       }
 
-      return { output: result, isError: false };
+      return { output: result, isError: false, outputType: outputTypeFromExt(ext) };
     } catch (err: any) {
       if (err.code === "ENOENT") {
         return { output: `Error: File not found: ${filePath}`, isError: true };
