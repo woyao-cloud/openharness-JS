@@ -12,6 +12,7 @@ import { getContextWindow } from "../harness/cost.js";
 import { getHooks, invalidateHookCache } from "../harness/hooks.js";
 import { discoverPlugins, discoverSkills } from "../harness/plugins.js";
 import { invalidateSandboxCache } from "../harness/sandbox.js";
+import { formatTrace, listTracedSessions, loadTrace } from "../harness/traces.js";
 import { invalidateVerificationCache } from "../harness/verification.js";
 import { normalizeMcpConfig } from "../mcp/config-normalize.js";
 import { connectedMcpServers, disconnectMcpClients, loadMcpTools } from "../mcp/loader.js";
@@ -53,6 +54,7 @@ export function registerInfoCommands(
         "memory",
         "doctor",
         "hooks",
+        "traces",
         "context",
         "mcp",
         "mcp-login",
@@ -372,6 +374,36 @@ export function registerInfoCommands(
   register("hooks", "List loaded hooks grouped by event", () => {
     return { output: formatHooksReport(getHooks()), handled: true };
   });
+
+  register(
+    "traces",
+    "List sessions with persisted OTel-style traces (or show one with /traces <sessionId>)",
+    (args) => {
+      const id = args.trim();
+      if (id) {
+        const spans = loadTrace(id);
+        if (spans.length === 0) return { output: `No trace found for session ${id}.`, handled: true };
+        return { output: formatTrace(spans), handled: true };
+      }
+      const sessions = listTracedSessions();
+      if (sessions.length === 0) {
+        return {
+          output: "No persisted traces. Tracing is opt-in — start oh with OH_TRACE=1 to record spans to ~/.oh/traces/.",
+          handled: true,
+        };
+      }
+      const lines = [`${sessions.length} session(s) with traces (most recent first):`, ""];
+      for (const sid of sessions.slice(0, 20)) {
+        const spans = loadTrace(sid);
+        const totalMs = spans.reduce((sum, s) => sum + s.durationMs, 0);
+        const errors = spans.filter((s) => s.status === "error").length;
+        const errSuffix = errors > 0 ? ` ${errors} error(s)` : "";
+        lines.push(`  ${sid}  ${spans.length} spans, ${totalMs}ms total${errSuffix}`);
+      }
+      lines.push("", "Run `/traces <sessionId>` to see the full span tree.");
+      return { output: lines.join("\n"), handled: true };
+    },
+  );
 
   register("context", "Show context window usage breakdown", (_args, ctx) => {
     const ctxWindow = getContextWindow(ctx.model);

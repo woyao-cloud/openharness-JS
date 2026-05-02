@@ -258,6 +258,11 @@ export async function executeSingleTool(
   }
 
   // Execute with timeout and result budgeting
+  const toolSpanId = context.tracer?.startSpan(
+    `tool:${tool.name}`,
+    { riskLevel: tool.riskLevel },
+    context.parentSpanId,
+  );
   try {
     const toolAbort = AbortSignal.timeout(TOOL_TIMEOUT_MS);
     const contextWithTimeout = { ...context, abortSignal: context.abortSignal ?? toolAbort };
@@ -269,6 +274,7 @@ export async function executeSingleTool(
         );
       }),
     ]);
+    if (toolSpanId) context.tracer?.endSpan(toolSpanId, result.isError ? "error" : "ok");
 
     // Hook: postToolUse / postToolUseFailure (mutually exclusive — strict CC parity)
     if (result.isError) {
@@ -346,6 +352,7 @@ export async function executeSingleTool(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const errName = err instanceof Error ? err.name : "ExecutionError";
+    if (toolSpanId) context.tracer?.endSpan(toolSpanId, "error", { error: errMsg });
     emitHook("postToolUseFailure", {
       toolName: tool.name,
       toolArgs: JSON.stringify(toolCall.arguments).slice(0, 1000),

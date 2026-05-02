@@ -32,6 +32,10 @@ export type ToolContext = {
   gitCommitPerTool?: boolean;
   /** Forward an inner-query tool event to the outer event stream, stamped with the parent's callId. Used by AgentTool and AgentDispatcher to surface nested tool calls. */
   emitChildEvent?: (event: ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta) => void;
+  /** Optional session tracer for OTel-style span emission around tool execution. */
+  tracer?: import("./harness/traces.js").SessionTracer;
+  /** Optional parent span ID for the current tool execution (set by query loop). */
+  parentSpanId?: string;
 };
 
 export type Tool<Input extends z.ZodType = z.ZodType> = {

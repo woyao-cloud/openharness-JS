@@ -2,6 +2,7 @@
  * Shared types for the query loop sub-modules.
  */
 
+import type { SessionTracer } from "../harness/traces.js";
 import type { Provider } from "../providers/base.js";
 import type { Tools } from "../Tool.js";
 import type { Message } from "../types/message.js";
@@ -34,6 +35,8 @@ export type QueryConfig = {
    * the tool is missing, throws, or returns malformed JSON.
    */
   permissionPromptTool?: string;
+  /** Optional session tracer. When set, query() emits `query` and `tool:<Name>` spans. */
+  tracer?: SessionTracer;
 };
 
 export type TransitionReason = "next_turn" | "retry_network" | "retry_prompt_too_long" | "retry_max_output_tokens";

@@ -171,3 +171,52 @@ test("compressMessages: returns input unchanged when <= 2 messages", () => {
   const result = compressMessages(msgs, 10);
   assert.deepEqual(result, msgs);
 });
+
+// ── v2.30 C.1: SessionTracer wiring ──
+
+test("query: emits 'query' span when tracer is provided", async () => {
+  const { SessionTracer } = await import("./harness/traces.js");
+  const tracer = new SessionTracer("test-trace-query");
+  const provider = createMockProvider([textResponseEvents("Hello")]);
+  for await (const _ of query("hi", { provider, tools: [], systemPrompt: "test", permissionMode: "trust", tracer })) {
+    // drain
+  }
+  const spans = tracer.getSpans();
+  const querySpan = spans.find((s) => s.name === "query");
+  assert.ok(querySpan, "expected a 'query' span");
+  assert.equal(querySpan.status, "ok");
+  assert.ok(querySpan.durationMs >= 0);
+});
+
+test("query: omits all spans when tracer is undefined (no-op default)", async () => {
+  const provider = createMockProvider([textResponseEvents("Hello")]);
+  // No tracer — should not crash
+  for await (const _ of query("hi", { provider, tools: [], systemPrompt: "test", permissionMode: "trust" })) {
+    // drain
+  }
+  // Test passes by not throwing
+});
+
+test("query: emits 'tool:<Name>' span as child of query span", async () => {
+  const { SessionTracer } = await import("./harness/traces.js");
+  const tracer = new SessionTracer("test-trace-tool");
+  const toolEvents = toolCallEvents("MockTool", { input: "x" });
+  const textEvents = textResponseEvents("done");
+  const provider = createMockProvider([toolEvents, textEvents]);
+  const mockTool = createMockTool("MockTool");
+  for await (const _ of query("hi", {
+    provider,
+    tools: [mockTool],
+    systemPrompt: "test",
+    permissionMode: "trust",
+    tracer,
+  })) {
+    // drain
+  }
+  const spans = tracer.getSpans();
+  const querySpan = spans.find((s) => s.name === "query");
+  const toolSpan = spans.find((s) => s.name === "tool:MockTool");
+  assert.ok(querySpan, "expected a 'query' span");
+  assert.ok(toolSpan, "expected a 'tool:MockTool' span");
+  assert.equal(toolSpan.parentSpanId, querySpan.spanId, "tool span must be child of query span");
+});

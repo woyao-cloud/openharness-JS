@@ -118,8 +118,14 @@ export class StreamingToolExecutor {
         this.outputChunks.push({ callId: id, chunk });
       },
     };
+    const toolSpanId = callContext.tracer?.startSpan(
+      `tool:${tool.name}`,
+      { riskLevel: tool.riskLevel },
+      callContext.parentSpanId,
+    );
     try {
       tracked.result = await tool.call(parsed.data, callContext);
+      if (toolSpanId) callContext.tracer?.endSpan(toolSpanId, tracked.result.isError ? "error" : "ok");
 
       // Verification loop: auto-run lint/typecheck after file-modifying tools
       if (tracked.result && !tracked.result.isError && ["Edit", "Write", "MultiEdit"].includes(tool.name)) {
@@ -156,6 +162,7 @@ export class StreamingToolExecutor {
         output: `Error: ${err instanceof Error ? err.message : String(err)}`,
         isError: true,
       };
+      if (toolSpanId) callContext.tracer?.endSpan(toolSpanId, "error", { error: tracked.result.output });
     }
     tracked.status = "completed";
     this.processQueue(); // Process next queued tools

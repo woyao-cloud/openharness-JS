@@ -86,6 +86,26 @@ export async function startREPL(config: REPLConfig): Promise<void> {
   const { initCheckpoints } = await import("./harness/checkpoints.js");
   initCheckpoints(session.id);
 
+  // Optional session-wide tracer. Opt-in via OH_TRACE=1 env var.
+  // Persists OTel-style spans to ~/.oh/traces/<sessionId>.jsonl.
+  // When OH_OTLP_ENDPOINT is also set, ships each ended span via fire-and-forget
+  // HTTP POST to the configured collector (Jaeger, Honeycomb, Grafana Tempo, etc.).
+  // OH_OTLP_HEADERS is a JSON-encoded headers object, e.g. '{"Authorization":"Bearer ..."}'.
+  let tracer: import("./harness/traces.js").SessionTracer | undefined;
+  if (process.env.OH_TRACE === "1") {
+    const { SessionTracer } = await import("./harness/traces.js");
+    const otlpEndpoint = process.env.OH_OTLP_ENDPOINT;
+    let otlpHeaders: Record<string, string> | undefined;
+    if (process.env.OH_OTLP_HEADERS) {
+      try {
+        otlpHeaders = JSON.parse(process.env.OH_OTLP_HEADERS);
+      } catch {
+        /* malformed JSON in env — skip headers, ship without auth */
+      }
+    }
+    tracer = new SessionTracer(session.id, otlpEndpoint ? { endpoint: otlpEndpoint, headers: otlpHeaders } : undefined);
+  }
+
   // Start background cron executor
   const { CronExecutor } = await import("./services/CronExecutor.js");
   const cronExecutor = new CronExecutor(
@@ -942,6 +962,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
       askUserQuestion,
       model: currentModel || undefined,
       abortSignal: abortController.signal,
+      tracer,
     };
 
     try {
