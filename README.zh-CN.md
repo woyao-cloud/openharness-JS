@@ -21,7 +21,7 @@
   <img src="assets/openharness_v0.11.1_4.gif" alt="OpenHarness demo" width="800" />
 </p>
 
-[![npm version](https://img.shields.io/npm/v/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![npm downloads](https://img.shields.io/npm/dm/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![license](https://img.shields.io/npm/l/@zhijiewang/openharness)](LICENSE) ![tests](https://img.shields.io/badge/tests-890-brightgreen) ![tools](https://img.shields.io/badge/tools-42-blue) ![Node.js 18+](https://img.shields.io/badge/node-18%2B-green) ![TypeScript](https://img.shields.io/badge/typescript-strict-blue) [![GitHub stars](https://img.shields.io/github/stars/zhijiewong/openharness)](https://github.com/zhijiewong/openharness) [![GitHub issues](https://img.shields.io/github/issues-raw/zhijiewong/openharness)](https://github.com/zhijiewong/openharness/issues) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/zhijiewong/openharness/pulls)
+[![npm version](https://img.shields.io/npm/v/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![npm downloads](https://img.shields.io/npm/dm/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![license](https://img.shields.io/npm/l/@zhijiewang/openharness)](LICENSE) ![tests](https://img.shields.io/badge/tests-1502-brightgreen) ![tools](https://img.shields.io/badge/tools-44-blue) ![Node.js 18+](https://img.shields.io/badge/node-18%2B-green) ![TypeScript](https://img.shields.io/badge/typescript-strict-blue) [![GitHub stars](https://img.shields.io/github/stars/zhijiewong/openharness)](https://github.com/zhijiewong/openharness) [![GitHub issues](https://img.shields.io/github/issues-raw/zhijiewong/openharness)](https://github.com/zhijiewong/openharness/issues) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/zhijiewong/openharness/pulls)
 
 [English](README.md) | **简体中文**
 
@@ -32,7 +32,7 @@
 - [快速开始](#快速开始)
 - [为什么选择 OpenHarness？](#为什么选择-openharness)
 - [终端界面](#终端界面)
-- [工具（43 个）](#工具43-个)
+- [工具（44 个）](#工具43-个)
 - [斜杠命令](#斜杠命令)
 - [权限模式](#权限模式)
 - [钩子](#钩子)
@@ -114,8 +114,11 @@ OpenHarness 采用受 Ink/Claude Code 默认模式启发的顺序式终端渲染
 - **语法高亮** —— 关键字、字符串、注释、数字、类型（支持 JS/TS/Python/Rust/Go 等 20+ 种语言）
 - **可折叠代码块** —— 超过 8 行的代码块会自动折叠；按 `Ctrl+K` 全部展开
 - **可折叠思考块** —— 思考块在完成后会折叠为一行摘要；按 `Ctrl+O` 展开
-- **流光加载动画** —— 带颜色过渡的 "Thinking" 指示器（30 秒后洋红 → 黄，60 秒后 → 红）
-- **工具调用显示** —— 参数预览、实时流式输出、结果摘要（行数、耗时），按 `Tab` 展开/折叠
+- **流光加载动画** —— 带阶段标签（`Thinking`、`Running <Tool>`、`Calling <server>:<tool>`、`Running N tools`）和颜色过渡的指示器（30 秒后洋红 → 黄，60 秒后 → 红）
+- **工具调用显示** —— 参数预览、实时流式输出、结果摘要（行数、耗时），按 `Tab` 展开/折叠。工具名称按类别着色（读取类青色、修改类黄色、执行类品红色、MCP 类绿色）
+- **富工具输出** —— JSON 文件以彩色静态树形渲染（深度 3 级折叠、行数截断）；Markdown 文件完整渲染样式（标题、代码块、表格），不再是普通的按行拆分。渲染器通过 `outputType` 字段分发（FileReadTool / WebFetchTool 会标注），未标注的工具走启发式回退路径
+- **嵌套工具调用** —— 当 `Agent` 或 `ParallelAgents` 派生内层工具调用（Read、Bash、Edit）时,子调用会缩进显示在派生它的父调用之下。ParallelAgents 还会显示每个任务的 `Task` 包装行,使子调用按任务分组,而不是平铺在合并的父调用之下。深度 3 级缩进上限,超过显示 `… (N more level)` 折叠标记
+- **多行输入折行符** —— 多行输入的每一非末尾行都以暗色 `↵` 续行符结尾,使折行视觉清晰
 - **权限提示** —— 带边框的提示框，按风险级别着色，醒目的 **Y**es/**N**o/**D**iff 按键，内联 diff 带语法高亮
 - **状态栏** —— 显示模型名称、token 计数、费用、上下文占用条（可通过配置自定义）
 - **上下文告警** —— 上下文窗口超过 75% 时显示黄色警告
@@ -146,7 +149,7 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 
 可用变量：`{model}`、`{tokens}`（输入↑ 输出↓）、`{cost}`（$X.XXXX）、`{ctx}`（上下文占用条）。空片段会自动折叠。
 
-## 工具（43 个）
+## 工具（44 个）
 
 | 工具 | 风险 | 描述 |
 |------|------|-------------|

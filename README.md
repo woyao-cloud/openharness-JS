@@ -21,7 +21,7 @@ AI coding agent in your terminal. Works with any LLM -- free local models or clo
   <img src="assets/openharness_v0.11.1_4.gif" alt="OpenHarness demo" width="800" />
 </p>
 
-[![npm version](https://img.shields.io/npm/v/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![npm downloads](https://img.shields.io/npm/dm/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![license](https://img.shields.io/npm/l/@zhijiewang/openharness)](LICENSE) ![tests](https://img.shields.io/badge/tests-890-brightgreen) ![tools](https://img.shields.io/badge/tools-42-blue) ![Node.js 18+](https://img.shields.io/badge/node-18%2B-green) ![TypeScript](https://img.shields.io/badge/typescript-strict-blue) [![GitHub stars](https://img.shields.io/github/stars/zhijiewong/openharness)](https://github.com/zhijiewong/openharness) [![GitHub issues](https://img.shields.io/github/issues-raw/zhijiewong/openharness)](https://github.com/zhijiewong/openharness/issues) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/zhijiewong/openharness/pulls)
+[![npm version](https://img.shields.io/npm/v/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![npm downloads](https://img.shields.io/npm/dm/@zhijiewang/openharness)](https://www.npmjs.com/package/@zhijiewang/openharness) [![license](https://img.shields.io/npm/l/@zhijiewang/openharness)](LICENSE) ![tests](https://img.shields.io/badge/tests-1502-brightgreen) ![tools](https://img.shields.io/badge/tools-44-blue) ![Node.js 18+](https://img.shields.io/badge/node-18%2B-green) ![TypeScript](https://img.shields.io/badge/typescript-strict-blue) [![GitHub stars](https://img.shields.io/github/stars/zhijiewong/openharness)](https://github.com/zhijiewong/openharness) [![GitHub issues](https://img.shields.io/github/issues-raw/zhijiewong/openharness)](https://github.com/zhijiewong/openharness/issues) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/zhijiewong/openharness/pulls)
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -32,7 +32,7 @@ AI coding agent in your terminal. Works with any LLM -- free local models or clo
 - [Quick Start](#quick-start)
 - [Why OpenHarness?](#why-openharness)
 - [Terminal UI](#terminal-ui)
-- [Tools (43)](#tools-43)
+- [Tools (44)](#tools-43)
 - [Slash Commands](#slash-commands)
 - [Permission Modes](#permission-modes)
 - [Hooks](#hooks)
@@ -114,8 +114,11 @@ Scrolling is handled by the terminal's native scrollbar. Completed messages flow
 - **Syntax highlighting** — keywords, strings, comments, numbers, types (JS/TS/Python/Rust/Go and 20+ languages)
 - **Collapsible code blocks** — blocks over 8 lines auto-collapse; `Ctrl+K` to expand all
 - **Collapsible thinking** — thinking blocks collapse to a one-line summary after completion; `Ctrl+O` to expand
-- **Shimmer spinner** — animated "Thinking" indicator with color transitions (magenta → yellow at 30s → red at 60s)
-- **Tool call display** — args preview, live streaming output, result summaries (line counts, elapsed time), expand/collapse with `Tab`
+- **Shimmer spinner** — animated indicator with stage label (`Thinking`, `Running <Tool>`, `Calling <server>:<tool>`, `Running N tools`) and color transitions (magenta → yellow at 30s → red at 60s)
+- **Tool call display** — args preview, live streaming output, result summaries (line counts, elapsed time), expand/collapse with `Tab`. Tool name color-coded by category (read tools cyan, mutating tools yellow, exec tools magenta, MCP tools green)
+- **Rich tool output** — JSON files render as a colored static tree (depth-3 collapse, line truncation); markdown files render with full styling (headings, code blocks, tables) instead of plain split-on-newline. Renderer dispatches via `outputType` field stamped by FileReadTool / WebFetchTool, with a heuristic fallback for unstamped tools
+- **Nested tool calls** — when `Agent` or `ParallelAgents` spawns inner tool calls (Read, Bash, Edit), the children render indented under their spawning parent. ParallelAgents shows per-task `Task` wrapper rows so child calls group by task instead of flat under the bundled parent. Depth-3 indent limit with `… (N more level)` collapse marker
+- **Multi-line input wrap glyph** — every non-last line of a multi-line input ends with a dim `↵` continuation marker so the wrap is visually obvious
 - **Permission prompts** — bordered box with risk coloring, bold colored **Y**es/**N**o/**D**iff keys, syntax-highlighted inline diffs
 - **Status line** — model name, token count, cost, context usage bar (customizable via config)
 - **Context warning** — yellow alert when context window exceeds 75%
@@ -146,7 +149,7 @@ statusLineFormat: '{model} │ {tokens} │ {cost} │ {ctx}'
 
 Available variables: `{model}`, `{tokens}` (input↑ output↓), `{cost}` ($X.XXXX), `{ctx}` (context usage bar). Empty sections are automatically collapsed.
 
-## Tools (43)
+## Tools (44)
 
 | Tool | Risk | Description |
 |------|------|-------------|
