@@ -1,0 +1,59 @@
+# mcp-config-sample.yaml — Annotated MCP server config for openHarness.
+#
+# Drop the `mcpServers:` block into your project's `.oh/config.yaml`
+# (project-local) or `~/.oh/config.yaml` (user-global). OH discovers
+# both and merges the project-local on top.
+#
+# OH supports three MCP transports — pick whichever the server provides:
+#   - stdio (default — server runs as subprocess; OH speaks JSON-RPC over its stdio)
+#   - http  (Streamable HTTP — for remote MCP servers)
+#   - sse   (Server-Sent Events — legacy; prefer http when available)
+#
+# Header values support ${VAR} interpolation from process.env. If the
+# referenced env var is not set, OH skips that server with a warning and
+# continues with the rest — no hard failure.
+#
+# After editing config, restart `oh` to pick up the new servers. Use
+# `/mcp` in-session to see status of each server (connected, auth-needed,
+# error, etc.).
+
+mcpServers:
+  # ── stdio: filesystem server (locally installed via npm) ──
+  - name: filesystem
+    command: mcp-server-fs
+    args:
+      - --root
+      - /home/user/projects
+    env:
+      LOG_LEVEL: info
+
+  # ── stdio: Python-implemented server with venv ──
+  - name: my-internal-tools
+    command: /opt/internal-tools/.venv/bin/python
+    args:
+      - -m
+      - internal_tools.mcp_server
+    env:
+      INTERNAL_API_KEY: "${INTERNAL_API_KEY}"
+      ENV: production
+
+  # ── http: remote MCP service with bearer auth ──
+  - name: linear
+    type: http
+    url: https://mcp.linear.app/mcp
+    headers:
+      Authorization: "Bearer ${LINEAR_API_KEY}"
+
+  # ── http: GitHub MCP via personal access token ──
+  - name: github
+    type: http
+    url: https://api.githubcopilot.com/mcp
+    headers:
+      Authorization: "Bearer ${GITHUB_TOKEN}"
+
+  # ── sse: legacy self-hosted server ──
+  - name: legacy-internal
+    type: sse
+    url: https://mcp.internal.example.com/sse
+    headers:
+      X-API-Key: "${INTERNAL_KEY}"
