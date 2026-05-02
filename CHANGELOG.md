@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.29.0 (2026-05-02) — tool_output_delta Cleanup
+
+Cleanup follow-up to U-C5 (deferred from v2.27.0 spec, line 302). Eliminates the dual-path duplication where `tool_output_delta` from inner Agent tools rendered both in the parent Agent's `liveOutput` preview AND under the child tool's row in the REPL — same lines visible twice. Single PR (#96), 1 commit, **1502/1502 tests pass** (was 1500; +2). Tiniest scope of the recent cycles — 5 source lines, 2 unit tests, 0 review-cycle bugs.
+
+### Fixed
+- **Inner `tool_output_delta` no longer renders twice in the REPL.** When `AgentTool` forwards an inner tool's `tool_output_delta` event, it now picks ONE rendering path: the v2.27.0-introduced `emitChildEvent` (forwarded path → child's row gets its own `liveOutput`) takes precedence over the legacy `onOutputChunk` (parent preview path). The `if/else` gate uses `forwardInnerEvent`'s existing boolean return value: when forwarding succeeds (`true`), `onOutputChunk` is skipped; when forwarding doesn't fire (no `emitChildEvent` in context — i.e., SDK / non-REPL caller), `onOutputChunk` runs as fallback so chunks remain visible somewhere. Pre-v2.27.0 SDK behavior preserved exactly; REPL gets clean per-row chunk rendering.
+
+### Internal
+- **Spec & plan**: `docs/superpowers/specs/2026-05-02-tool-output-delta-cleanup-design.md` (~140 lines) and `docs/superpowers/plans/2026-05-02-tool-output-delta-cleanup-plan.md` (~260 lines, 3 tasks). Approach was the obvious one given v2.27.0 already designed `forwardInnerEvent` to return `boolean` for testability — the runtime gating use is a natural consequence of that design.
+- **Inline implementation, no subagent.** 5-line change too small for subagent dispatch overhead. Same lesson as v2.28.0 Task 1 (3 string-literal extensions): mechanical changes that don't require codebase exploration are faster inline.
+- **Test count: 1502/1502 pass** (was 1500; +2 — both tests verify `forwardInnerEvent`'s boolean return value, the runtime contract the new gate depends on).
+
 ## 2.28.0 (2026-05-02) — ParallelAgents Task Parents
 
 Picks up the highest-impact deferred follow-up from v2.27.0's spec (line 297-301): synthesizes per-task `tool_call_start` / `tool_call_complete` / `tool_call_end` wrapper events inside `AgentDispatcher.runTask` (toolName: `"Task"`), giving `ParallelAgents` a 3-level structure (`ParallelAgents → Task → child tool`) instead of v2.27.0's flat children. Single PR (#95), 4 commits, **1500/1500 tests pass** (was 1496; +4). Pure additive change — no new event types, no public schema changes; reuses every piece of v2.27.0 plumbing (parentCallId stamping, tree builder, hierarchical renderer, depth-3 limit). Smaller scope than v2.27.0 — 0 review-cycle bugs caught, vs 6 in v2.26.0 / 2 in v2.27.0.
