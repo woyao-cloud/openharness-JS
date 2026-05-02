@@ -977,7 +977,8 @@ export async function startREPL(config: REPLConfig): Promise<void> {
 
           case "tool_call_start": {
             callIdToToolName.set(event.callId, event.toolName);
-            const isAgentTool = event.toolName === "Agent" || event.toolName === "ParallelAgents";
+            const isAgentTool =
+              event.toolName === "Agent" || event.toolName === "ParallelAgents" || event.toolName === "Task";
             renderer.setToolCall(event.callId, {
               toolName: event.toolName,
               status: "running",
@@ -991,7 +992,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
           case "tool_call_complete": {
             const tcToolName = callIdToToolName.get(event.callId) ?? "";
             const existingTc = renderer.getToolCall(event.callId);
-            const isAgentCall = tcToolName === "Agent" || tcToolName === "ParallelAgents";
+            const isAgentCall = tcToolName === "Agent" || tcToolName === "ParallelAgents" || tcToolName === "Task";
             const agentDesc = isAgentCall
               ? ((event.arguments as Record<string, unknown>).description as string | undefined)
               : undefined;

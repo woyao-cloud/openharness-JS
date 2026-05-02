@@ -152,7 +152,7 @@ export function renderToolCallsSection(
 
   const renderSingleCall = (callId: string, tc: ToolCallInfo, depth: number): void => {
     const colOffset = depth * 4;
-    const isAgent = tc.isAgent || tc.toolName === "Agent" || tc.toolName === "ParallelAgents";
+    const isAgent = tc.isAgent || tc.toolName === "Agent" || tc.toolName === "ParallelAgents" || tc.toolName === "Task";
     const icon = isAgent
       ? tc.status === "running"
         ? "⊕"

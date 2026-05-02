@@ -161,6 +161,26 @@ export class AgentDispatcher {
     const cwd = this.workingDir ?? process.cwd();
     const useWorktree = isGitRepo(cwd);
     let worktreePath: string | null = null;
+    let result: AgentTaskResult;
+
+    const taskCallId = `task-${task.id}-${Date.now().toString(36)}`;
+    const taskDescription = task.description ?? task.id;
+    const synthEnabled = !!this.emitChildEvent && !!this.parentCallId;
+    if (synthEnabled) {
+      this.emitChildEvent!({
+        type: "tool_call_start",
+        toolName: "Task",
+        callId: taskCallId,
+        parentCallId: this.parentCallId,
+      });
+      this.emitChildEvent!({
+        type: "tool_call_complete",
+        toolName: "Task",
+        callId: taskCallId,
+        arguments: { description: taskDescription },
+        parentCallId: this.parentCallId,
+      });
+    }
 
     if (useWorktree) {
       worktreePath = createWorktree(cwd);
@@ -213,13 +233,15 @@ export class AgentDispatcher {
       }
 
       let output = "";
+      let errorMessage: string | null = null;
       try {
         for await (const event of query(promptWithContext, config)) {
           if (event.type === "text_delta") output += event.content;
           if (event.type === "error") {
-            return { id: task.id, output: `Error: ${event.message}`, isError: true, durationMs: Date.now() - start };
+            errorMessage = event.message;
+            break;
           }
-          forwardChildEvent(event, this.parentCallId, this.emitChildEvent);
+          forwardChildEvent(event, taskCallId, this.emitChildEvent);
         }
       } finally {
         if (worktreePath) {
@@ -231,9 +253,13 @@ export class AgentDispatcher {
         }
       }
 
-      return { id: task.id, output: output || "(no output)", isError: false, durationMs: Date.now() - start };
+      if (errorMessage !== null) {
+        result = { id: task.id, output: `Error: ${errorMessage}`, isError: true, durationMs: Date.now() - start };
+      } else {
+        result = { id: task.id, output: output || "(no output)", isError: false, durationMs: Date.now() - start };
+      }
     } catch (err) {
-      return {
+      result = {
         id: task.id,
         output: `Failed: ${err instanceof Error ? err.message : String(err)}`,
         isError: true,
@@ -243,6 +269,16 @@ export class AgentDispatcher {
       if (worktreePath) {
         removeWorktree(worktreePath, cwd);
       }
+      if (synthEnabled) {
+        this.emitChildEvent!({
+          type: "tool_call_end",
+          callId: taskCallId,
+          output: result!.output,
+          isError: result!.isError,
+          parentCallId: this.parentCallId,
+        });
+      }
     }
+    return result!;
   }
 }

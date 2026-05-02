@@ -825,4 +825,37 @@ describe("U-C5: nested tool call rendering", () => {
     const text = gridAllText(grid);
     assert.match(text, /more level/);
   });
+
+  it("renders ParallelAgents → Task → child as 3-level tree (U-C5b)", () => {
+    const parallel: ToolCallInfo = {
+      toolName: "ParallelAgents",
+      status: "running",
+      isAgent: true,
+    };
+    const task: ToolCallInfo = {
+      toolName: "Task",
+      status: "running",
+      agentDescription: "fetch logs",
+      parentCallId: "p",
+    };
+    const child: ToolCallInfo = {
+      toolName: "Read",
+      status: "done",
+      output: "file contents",
+      parentCallId: "t",
+    };
+    const state = makeState({
+      toolCalls: new Map([
+        ["p", parallel],
+        ["t", task],
+        ["c", child],
+      ]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /ParallelAgents/);
+    assert.match(text, /^ {4,}.*Task/m);
+    assert.match(text, /^ {8,}.*Read/m);
+  });
 });
