@@ -11,6 +11,7 @@ export type ToolCallStart = {
   readonly type: "tool_call_start";
   readonly toolName: string;
   readonly callId: string;
+  readonly parentCallId?: string;
 };
 
 export type ToolCallComplete = {
@@ -18,6 +19,7 @@ export type ToolCallComplete = {
   readonly callId: string;
   readonly toolName: string;
   readonly arguments: Record<string, unknown>;
+  readonly parentCallId?: string;
 };
 
 export type ToolCallEnd = {
@@ -26,6 +28,7 @@ export type ToolCallEnd = {
   readonly output: string;
   readonly outputType?: "json" | "markdown" | "image" | "plain";
   readonly isError: boolean;
+  readonly parentCallId?: string;
 };
 
 export type PermissionRequest = {
@@ -70,6 +73,7 @@ export type ToolOutputDelta = {
   readonly type: "tool_output_delta";
   readonly callId: string;
   readonly chunk: string;
+  readonly parentCallId?: string;
 };
 
 export type AskUserRequest = {

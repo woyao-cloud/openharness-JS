@@ -46,6 +46,7 @@ export { resetStyleCache } from "./layout-sections.js";
 export type ToolCallInfo = {
   toolName: string;
   status: "running" | "done" | "error";
+  parentCallId?: string;
   output?: string;
   outputType?: "json" | "markdown" | "image" | "plain";
   args?: string;

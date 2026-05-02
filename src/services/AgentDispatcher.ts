@@ -9,7 +9,30 @@
 import { createWorktree, isGitRepo, removeWorktree } from "../git/index.js";
 import type { Provider } from "../providers/base.js";
 import type { Tools } from "../Tool.js";
+import type { StreamEvent, ToolCallComplete, ToolCallEnd, ToolCallStart, ToolOutputDelta } from "../types/events.js";
 import type { PermissionMode } from "../types/permissions.js";
+
+/**
+ * Forward inner-loop tool events to the outer stream, stamping parentCallId.
+ * Exported for direct unit testing.
+ */
+export function forwardChildEvent(
+  event: StreamEvent,
+  parentCallId: string | undefined,
+  emit: ((e: ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta) => void) | undefined,
+): boolean {
+  if (!emit || !parentCallId) return false;
+  if (
+    event.type === "tool_call_start" ||
+    event.type === "tool_call_complete" ||
+    event.type === "tool_call_end" ||
+    event.type === "tool_output_delta"
+  ) {
+    emit({ ...event, parentCallId });
+    return true;
+  }
+  return false;
+}
 
 export type AgentTask = {
   id: string;
@@ -45,6 +68,8 @@ export class AgentDispatcher {
     private workingDir?: string,
     private abortSignal?: AbortSignal,
     maxConcurrency = 4,
+    private parentCallId?: string,
+    private emitChildEvent?: (event: ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta) => void,
   ) {
     this.tasks = new Map();
     this.maxConcurrency = maxConcurrency;
@@ -194,6 +219,7 @@ export class AgentDispatcher {
           if (event.type === "error") {
             return { id: task.id, output: `Error: ${event.message}`, isError: true, durationMs: Date.now() - start };
           }
+          forwardChildEvent(event, this.parentCallId, this.emitChildEvent);
         }
       } finally {
         if (worktreePath) {

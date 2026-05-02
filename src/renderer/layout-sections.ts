@@ -6,10 +6,11 @@
 import { getTheme } from "../utils/theme-data.js";
 import type { CellGrid, Style } from "./cells.js";
 import { renderDiff } from "./diff.js";
-import type { LayoutState } from "./layout.js";
+import type { LayoutState, ToolCallInfo } from "./layout.js";
 import { renderToolOutput } from "./output-renderer.js";
 import { deriveSpinnerLabel } from "./spinner-label.js";
 import { toolColor } from "./tool-color.js";
+import { buildToolCallTree, type TreeNode } from "./tool-tree.js";
 
 // ── Style constants ──
 
@@ -146,8 +147,11 @@ export function renderToolCallsSection(
   opts: { maxLiveLines: number; showOverflow: boolean },
 ): number {
   const w = grid.width;
-  for (const [callId, tc] of state.toolCalls) {
-    if (r >= limit) break;
+  const tree = buildToolCallTree(state.toolCalls);
+  const MAX_DEPTH = 3;
+
+  const renderSingleCall = (callId: string, tc: ToolCallInfo, depth: number): void => {
+    const colOffset = depth * 4;
     const isAgent = tc.isAgent || tc.toolName === "Agent" || tc.toolName === "ParallelAgents";
     const icon = isAgent
       ? tc.status === "running"
@@ -168,12 +172,12 @@ export function renderToolCallsSection(
     const canExpand = tc.status !== "running" && tc.output;
 
     if (canExpand) {
-      grid.writeText(r, 0, isExpanded ? "▼" : "▶", S_DIM);
+      grid.writeText(r, 0 + colOffset, isExpanded ? "▼" : "▶", S_DIM);
     }
-    grid.writeText(r, 2, `${icon} `, statusStyle);
-    grid.writeText(r, 4, tc.toolName, nameStyle);
+    grid.writeText(r, 2 + colOffset, `${icon} `, statusStyle);
+    grid.writeText(r, 4 + colOffset, tc.toolName, nameStyle);
 
-    let afterName = 4 + tc.toolName.length + 1;
+    let afterName = 4 + colOffset + tc.toolName.length + 1;
     if (tc.args) {
       const maxArgs = w - afterName - 15;
       if (maxArgs > 5) {
@@ -198,34 +202,56 @@ export function renderToolCallsSection(
     r++;
 
     if (isAgent && tc.agentDescription && r < limit) {
-      grid.writeText(r, 6, tc.agentDescription.slice(0, w - 8), S_DIM);
+      grid.writeText(r, 6 + colOffset, tc.agentDescription.slice(0, w - 8 - colOffset), S_DIM);
       r++;
     }
 
     if (tc.status === "running" && tc.liveOutput && tc.liveOutput.length > 0) {
       const overflow = tc.liveOutput.length > opts.maxLiveLines ? tc.liveOutput.length - opts.maxLiveLines : 0;
       if (opts.showOverflow && overflow > 0 && r < limit) {
-        grid.writeText(r, 6, `… (${overflow} earlier lines)`, S_DIM);
+        grid.writeText(r, 6 + colOffset, `… (${overflow} earlier lines)`, S_DIM);
         r++;
       }
       const visible = overflow > 0 ? tc.liveOutput.slice(-opts.maxLiveLines) : tc.liveOutput;
       for (const line of visible) {
         if (r >= limit) break;
-        grid.writeTextWithLinks(r, 6, line.slice(0, w - 8), S_DIM, w - 2);
+        grid.writeTextWithLinks(r, 6 + colOffset, line.slice(0, w - 8 - colOffset), S_DIM, w - 2);
         r++;
       }
     }
 
     if (tc.output && tc.status !== "running" && isExpanded && r < limit) {
-      const consumed = renderToolOutput(grid, r, 6, tc.output, tc.outputType, w - 8, {
+      const consumed = renderToolOutput(grid, r, 6 + colOffset, tc.output, tc.outputType, w - 8 - colOffset, {
         status: tc.status,
         maxLines: 20,
         limit,
       });
       r += consumed;
     }
-  }
+  };
+
+  const renderNode = (node: TreeNode): void => {
+    if (r >= limit) return;
+    if (node.depth > MAX_DEPTH) {
+      const descendants = countDescendants(node) + 1;
+      const colOffset = MAX_DEPTH * 4;
+      const noun = descendants === 1 ? "level" : "levels";
+      grid.writeText(r, colOffset, `… (${descendants} more ${noun})`, S_DIM);
+      r++;
+      return;
+    }
+    renderSingleCall(node.callId, node.call, node.depth);
+    for (const child of node.children) renderNode(child);
+  };
+
+  for (const root of tree) renderNode(root);
   return r;
+}
+
+function countDescendants(node: TreeNode): number {
+  let n = node.children.length;
+  for (const c of node.children) n += countDescendants(c);
+  return n;
 }
 
 export function renderContextWarningSection(state: LayoutState, grid: CellGrid, r: number, limit: number): number {

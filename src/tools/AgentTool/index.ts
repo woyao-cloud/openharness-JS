@@ -3,6 +3,31 @@ import { createWorktree, hasWorktreeChanges, isGitRepo, removeWorktree } from ".
 import { emitHook } from "../../harness/hooks.js";
 import { getMessageBus } from "../../services/agent-messaging.js";
 import type { Tool, ToolContext, ToolResult } from "../../Tool.js";
+import type { StreamEvent } from "../../types/events.js";
+
+/**
+ * Forward a single inner-query event to the outer stream via `context.emitChildEvent`,
+ * stamping it with `parentCallId = context.callId`.
+ *
+ * Handles: tool_call_start, tool_call_complete, tool_call_end, tool_output_delta.
+ * Returns true when the event was forwarded, false otherwise.
+ *
+ * Exported for unit testing — the hot path in AgentTool.call() calls this inline
+ * to keep the forwarding logic isolated and testable without stubbing query().
+ */
+export function forwardInnerEvent(event: StreamEvent, context: ToolContext): boolean {
+  if (!context.emitChildEvent || !context.callId) return false;
+  if (
+    event.type === "tool_call_start" ||
+    event.type === "tool_call_complete" ||
+    event.type === "tool_call_end" ||
+    event.type === "tool_output_delta"
+  ) {
+    context.emitChildEvent({ ...event, parentCallId: event.parentCallId ?? context.callId });
+    return true;
+  }
+  return false;
+}
 
 const inputSchema = z.object({
   prompt: z.string(),
@@ -162,6 +187,13 @@ export const AgentTool: Tool<typeof inputSchema> = {
             if (context.onOutputChunk && context.callId) {
               context.onOutputChunk(context.callId, event.chunk);
             }
+            forwardInnerEvent(event, context);
+          } else if (
+            event.type === "tool_call_start" ||
+            event.type === "tool_call_complete" ||
+            event.type === "tool_call_end"
+          ) {
+            forwardInnerEvent(event, context);
           } else if (event.type === "error") {
             return { output: `Sub-agent error: ${event.message}`, isError: true };
           } else if (event.type === "turn_complete" && event.reason !== "completed") {

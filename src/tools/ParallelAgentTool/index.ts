@@ -40,6 +40,9 @@ export const ParallelAgentTool: Tool<typeof inputSchema> = {
       context.model,
       context.workingDir,
       context.abortSignal,
+      4, // maxConcurrency default
+      context.callId,
+      context.emitChildEvent,
     );
 
     dispatcher.addTasks(input.tasks as AgentTask[]);

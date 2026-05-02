@@ -7,7 +7,7 @@ import { createCheckpoint, getAffectedFiles } from "../harness/checkpoints.js";
 import { emitHook, emitHookWithOutcome } from "../harness/hooks.js";
 import type { ToolContext, ToolResult, Tools } from "../Tool.js";
 import { findToolByName } from "../Tool.js";
-import type { StreamEvent } from "../types/events.js";
+import type { StreamEvent, ToolCallComplete, ToolCallEnd, ToolCallStart, ToolOutputDelta } from "../types/events.js";
 import type { ToolCall } from "../types/message.js";
 import { createToolResultMessage } from "../types/message.js";
 import type { AskUserFn, PermissionMode } from "../types/permissions.js";
@@ -366,9 +366,12 @@ export async function* executeToolCalls(
   permissionPromptTool?: string,
 ): AsyncGenerator<StreamEvent, void> {
   const batches = partitionToolCalls(toolCalls, tools);
-  const outputChunks: StreamEvent[] = [];
+  const childEvents: StreamEvent[] = [];
   const onOutputChunk = (callId: string, chunk: string) => {
-    outputChunks.push({ type: "tool_output_delta", callId, chunk });
+    childEvents.push({ type: "tool_output_delta", callId, chunk });
+  };
+  const emitChildEvent = (event: ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta) => {
+    childEvents.push(event);
   };
 
   const allToolNames: string[] = toolCalls.map((tc) => tc.toolName);
@@ -380,14 +383,14 @@ export async function* executeToolCalls(
           executeSingleTool(
             tc,
             tools,
-            { ...context, callId: tc.id, onOutputChunk },
+            { ...context, callId: tc.id, onOutputChunk, emitChildEvent },
             permissionMode,
             askUser,
             permissionPromptTool,
           ),
         ),
       );
-      for (const chunk of outputChunks.splice(0)) yield chunk;
+      for (const chunk of childEvents.splice(0)) yield chunk;
       for (let i = 0; i < batch.calls.length; i++) {
         const tc = batch.calls[i]!;
         const result = results[i]!;
@@ -401,12 +404,12 @@ export async function* executeToolCalls(
         const result = await executeSingleTool(
           tc,
           tools,
-          { ...context, callId: tc.id, onOutputChunk },
+          { ...context, callId: tc.id, onOutputChunk, emitChildEvent },
           permissionMode,
           askUser,
           permissionPromptTool,
         );
-        for (const chunk of outputChunks.splice(0)) yield chunk;
+        for (const chunk of childEvents.splice(0)) yield chunk;
         yield { type: "tool_call_end", callId: tc.id, output: result.output, isError: result.isError };
         state?.messages.push(
           createToolResultMessage({ callId: tc.id, output: result.output, isError: result.isError }),

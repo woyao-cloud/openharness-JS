@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createMockProvider, createMockTool, makeTmpDir, textResponseEvents } from "../test-helpers.js";
-import { AgentDispatcher } from "./AgentDispatcher.js";
+import { createMockProvider, createMockTool, makeTmpDir, textResponseEvents, toolCallEvents } from "../test-helpers.js";
+import type { StreamEvent, ToolCallComplete, ToolCallEnd, ToolCallStart, ToolOutputDelta } from "../types/events.js";
+import { AgentDispatcher, forwardChildEvent } from "./AgentDispatcher.js";
 
 describe("AgentDispatcher", () => {
   const tools = [createMockTool("Bash")];
@@ -60,5 +61,107 @@ describe("AgentDispatcher", () => {
     const results = await dispatcher.execute();
     // With an already-aborted signal, the loop exits immediately
     assert.equal(results.length, 0);
+  });
+
+  it("forwards tool_call_start events with parentCallId when emitChildEvent is provided", async () => {
+    const captured: Array<ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta> = [];
+    const emitChildEvent = (e: ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta) => {
+      captured.push(e);
+    };
+    // Turn 1: tool call (Bash is in tools, will execute and return "Bash executed")
+    // Turn 2: text response so the loop completes cleanly
+    const provider = createMockProvider([
+      toolCallEvents("Bash", { command: "ls" }, "inner-call-1"),
+      textResponseEvents("done"),
+    ]);
+    const tmpDir = makeTmpDir();
+    const dispatcher = new AgentDispatcher(
+      provider,
+      tools,
+      systemPrompt,
+      "trust",
+      undefined,
+      tmpDir,
+      undefined,
+      4,
+      "parallel-parent",
+      emitChildEvent,
+    );
+    dispatcher.addTask({ id: "a", prompt: "Run something" });
+    const results = await dispatcher.execute();
+    assert.equal(results.length, 1);
+    // may or may not be error depending on tool, but must not crash
+    const startEvents = captured.filter((e) => e.type === "tool_call_start");
+    assert.ok(startEvents.length >= 1, "expected at least one tool_call_start forwarded");
+    assert.equal(startEvents[0]!.parentCallId, "parallel-parent");
+  });
+
+  it("does not crash when parentCallId and emitChildEvent are undefined", async () => {
+    // Turn 1: tool call; Turn 2: text response
+    const provider = createMockProvider([
+      toolCallEvents("Bash", { command: "ls" }, "inner-call-2"),
+      textResponseEvents("done"),
+    ]);
+    const tmpDir = makeTmpDir();
+    // positions 8-10 omitted — no parentCallId, no emitChildEvent
+    const dispatcher = new AgentDispatcher(provider, tools, systemPrompt, "trust", undefined, tmpDir);
+    dispatcher.addTask({ id: "b", prompt: "Run something" });
+    const results = await dispatcher.execute();
+    assert.equal(results.length, 1);
+    // no crash is the key assertion
+  });
+});
+
+describe("forwardChildEvent", () => {
+  it("returns false and does not call emit when parentCallId is undefined", () => {
+    const emitted: unknown[] = [];
+    const event: StreamEvent = { type: "tool_call_start", toolName: "Bash", callId: "c1" };
+    const result = forwardChildEvent(event, undefined, (e) => emitted.push(e));
+    assert.equal(result, false);
+    assert.equal(emitted.length, 0);
+  });
+
+  it("returns false and does not call emit when emit is undefined", () => {
+    const event: StreamEvent = { type: "tool_call_start", toolName: "Bash", callId: "c1" };
+    const result = forwardChildEvent(event, "parent-1", undefined);
+    assert.equal(result, false);
+  });
+
+  it("returns false for non-tool events (e.g. text_delta)", () => {
+    const emitted: unknown[] = [];
+    const event: StreamEvent = { type: "text_delta", content: "hello" };
+    const result = forwardChildEvent(event, "parent-1", (e) => emitted.push(e));
+    assert.equal(result, false);
+    assert.equal(emitted.length, 0);
+  });
+
+  it("stamps parentCallId on tool_call_start and returns true", () => {
+    const emitted: Array<ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta> = [];
+    const event: StreamEvent = { type: "tool_call_start", toolName: "Bash", callId: "c2" };
+    const result = forwardChildEvent(event, "parent-x", (e) => emitted.push(e));
+    assert.equal(result, true);
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0]!.parentCallId, "parent-x");
+  });
+
+  it("stamps parentCallId on tool_call_complete and returns true", () => {
+    const emitted: Array<ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta> = [];
+    const event: StreamEvent = {
+      type: "tool_call_complete",
+      callId: "c3",
+      toolName: "Bash",
+      arguments: { command: "ls" },
+    };
+    const result = forwardChildEvent(event, "parent-y", (e) => emitted.push(e));
+    assert.equal(result, true);
+    assert.equal(emitted[0]!.parentCallId, "parent-y");
+  });
+
+  it("stamps parentCallId on tool_output_delta and returns true", () => {
+    const emitted: Array<ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta> = [];
+    const event: StreamEvent = { type: "tool_output_delta", callId: "c4", chunk: "chunk1" };
+    const result = forwardChildEvent(event, "parent-z", (e) => emitted.push(e));
+    assert.equal(result, true);
+    assert.equal(emitted[0]!.parentCallId, "parent-z");
   });
 });

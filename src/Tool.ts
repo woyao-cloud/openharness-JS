@@ -5,6 +5,7 @@
 
 import type { z } from "zod";
 import type { Provider } from "./providers/base.js";
+import type { ToolCallComplete, ToolCallEnd, ToolCallStart, ToolOutputDelta } from "./types/events.js";
 import type { PermissionMode, RiskLevel } from "./types/permissions.js";
 
 export type ToolResult = {
@@ -29,6 +30,8 @@ export type ToolContext = {
   askUserQuestion?: (question: string, options?: string[]) => Promise<string>;
   /** Auto-commit after file-modifying tools */
   gitCommitPerTool?: boolean;
+  /** Forward an inner-query tool event to the outer event stream, stamped with the parent's callId. Used by AgentTool and AgentDispatcher to surface nested tool calls. */
+  emitChildEvent?: (event: ToolCallStart | ToolCallComplete | ToolCallEnd | ToolOutputDelta) => void;
 };
 
 export type Tool<Input extends z.ZodType = z.ZodType> = {

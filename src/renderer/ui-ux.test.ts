@@ -747,3 +747,82 @@ describe("U-C4: rich tool output rendering", () => {
     assert.match(text, /"foo": "bar"/);
   });
 });
+
+// ── U-C5: Nested Tool Call Rendering ──
+
+describe("U-C5: nested tool call rendering", () => {
+  it("renders Agent parent with one child indented at col 6", () => {
+    const parent: ToolCallInfo = {
+      toolName: "Agent",
+      status: "running",
+      isAgent: true,
+    };
+    const child: ToolCallInfo = {
+      toolName: "Read",
+      status: "done",
+      output: "file contents",
+      parentCallId: "p",
+    };
+    const state = makeState({
+      toolCalls: new Map([
+        ["p", parent],
+        ["c", child],
+      ]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /Agent/);
+    assert.match(text, /^ {4,}.*Read/m);
+  });
+
+  it("renders Agent with multi-level nesting (Agent → Agent → Read)", () => {
+    const root: ToolCallInfo = { toolName: "Agent", status: "running", isAgent: true };
+    const mid: ToolCallInfo = { toolName: "Agent", status: "running", isAgent: true, parentCallId: "p" };
+    const leaf: ToolCallInfo = { toolName: "Read", status: "done", output: "ok", parentCallId: "m" };
+    const state = makeState({
+      toolCalls: new Map([
+        ["p", root],
+        ["m", mid],
+        ["l", leaf],
+      ]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /^ {8,}.*Read/m);
+  });
+
+  it("renders ParallelAgents with all children flat under the bundled parent (v1 simplification)", () => {
+    const parent: ToolCallInfo = { toolName: "ParallelAgents", status: "running", isAgent: true };
+    const child1: ToolCallInfo = { toolName: "Read", status: "done", output: "a", parentCallId: "p" };
+    const child2: ToolCallInfo = { toolName: "Bash", status: "done", output: "b", parentCallId: "p" };
+    const state = makeState({
+      toolCalls: new Map([
+        ["p", parent],
+        ["c1", child1],
+        ["c2", child2],
+      ]),
+    });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /^ {4,}.*Read/m);
+    assert.match(text, /^ {4,}.*Bash/m);
+  });
+
+  it("collapses depth > 3 with '… (N more levels)' marker", () => {
+    const calls = new Map<string, ToolCallInfo>([
+      ["a", { toolName: "Agent", status: "running", isAgent: true }],
+      ["b", { toolName: "Agent", status: "running", isAgent: true, parentCallId: "a" }],
+      ["c", { toolName: "Agent", status: "running", isAgent: true, parentCallId: "b" }],
+      ["d", { toolName: "Agent", status: "running", isAgent: true, parentCallId: "c" }],
+      ["e", { toolName: "Read", status: "done", output: "ok", parentCallId: "d" }],
+    ]);
+    const state = makeState({ toolCalls: calls });
+    const grid = new CellGrid(80, 30);
+    rasterize(state, grid);
+    const text = gridAllText(grid);
+    assert.match(text, /more level/);
+  });
+});

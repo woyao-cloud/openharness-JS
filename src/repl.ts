@@ -983,6 +983,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
               status: "running",
               startedAt: Date.now(),
               isAgent: isAgentTool,
+              parentCallId: event.parentCallId,
             });
             break;
           }
@@ -1000,6 +1001,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
               status: "running",
               args: formatToolArgs(tcToolName, event.arguments),
               agentDescription: agentDesc ?? existingTc?.agentDescription,
+              parentCallId: event.parentCallId ?? existingTc?.parentCallId,
             });
             break;
           }
@@ -1031,6 +1033,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
               status: event.isError ? "error" : "done",
               output: event.output?.slice(0, TOOL_OUTPUT_RENDER_CAP),
               outputType: event.outputType,
+              parentCallId: event.parentCallId ?? prevTc?.parentCallId,
               args: prevTc?.args,
               resultSummary: event.output ? summarizeToolOutput(event.output) : undefined,
               startedAt: prevTc?.startedAt,
