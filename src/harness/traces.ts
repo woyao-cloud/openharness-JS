@@ -37,6 +37,11 @@ export type TraceEvent = {
 
 const MAX_IN_MEMORY_SPANS = 1000;
 
+export type OTLPConfig = {
+  endpoint: string;
+  headers?: Record<string, string>;
+};
+
 export class SessionTracer {
   private sessionId: string;
   private spans: TraceSpan[] = [];
@@ -45,9 +50,11 @@ export class SessionTracer {
     { name: string; startTime: number; parentSpanId?: string; attributes: Record<string, unknown> }
   >();
   private spanCounter = 0;
+  private otlp?: OTLPConfig;
 
-  constructor(sessionId: string) {
+  constructor(sessionId: string, otlp?: OTLPConfig) {
     this.sessionId = sessionId;
+    this.otlp = otlp;
   }
 
   /** Start a new span. Returns the span ID. */
@@ -81,7 +88,21 @@ export class SessionTracer {
       this.spans = this.spans.slice(-MAX_IN_MEMORY_SPANS);
     }
     this.persistSpan(span);
+    if (this.otlp) this.shipSpanOTLP(span);
     return span;
+  }
+
+  /** Fire-and-forget POST of a single span to the configured OTLP HTTP endpoint. Errors swallowed — telemetry must never crash the agent. */
+  private shipSpanOTLP(span: TraceSpan): void {
+    if (!this.otlp) return;
+    const payload = exportTraceOTLP(this.sessionId, [span]);
+    fetch(this.otlp.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(this.otlp.headers ?? {}) },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      /* swallow — telemetry must not interfere with the agent */
+    });
   }
 
   /** Get all completed spans */

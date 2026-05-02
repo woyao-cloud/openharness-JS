@@ -119,3 +119,84 @@ describe("exportTraceOTLP", () => {
     assert.equal(otlp.resourceSpans[0].scopeSpans[0].spans[0].name, "test");
   });
 });
+
+describe("SessionTracer OTLP shipping (C.3)", () => {
+  it("POSTs each ended span to the configured OTLP endpoint", async () => {
+    const captured: Array<{ url: string; body: unknown; headers: Record<string, string> }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+      captured.push({
+        url: String(url),
+        body: init?.body ? JSON.parse(init.body as string) : null,
+        headers: (init?.headers as Record<string, string>) ?? {},
+      });
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const tracer = new SessionTracer("test-otlp", {
+        endpoint: "http://localhost:4318/v1/traces",
+        headers: { Authorization: "Bearer test-token" },
+      });
+      const spanId = tracer.startSpan("test_span", { tool: "Read" });
+      tracer.endSpan(spanId);
+
+      // fire-and-forget; give the microtask queue a tick to drain
+      await new Promise((r) => setImmediate(r));
+
+      assert.equal(captured.length, 1, "expected 1 POST per ended span");
+      assert.equal(captured[0]!.url, "http://localhost:4318/v1/traces");
+      assert.equal(captured[0]!.headers.Authorization, "Bearer test-token");
+      assert.equal((captured[0]!.headers as any)["Content-Type"], "application/json");
+      const otlp = captured[0]!.body as any;
+      assert.ok(otlp.resourceSpans, "expected OTLP resourceSpans payload shape");
+      assert.equal(otlp.resourceSpans[0].scopeSpans[0].spans[0].name, "test_span");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does NOT POST when no OTLP config is provided (default behaviour preserved)", async () => {
+    let postCount = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      postCount++;
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const tracer = new SessionTracer("test-no-otlp");
+      const spanId = tracer.startSpan("noop");
+      tracer.endSpan(spanId);
+
+      await new Promise((r) => setImmediate(r));
+      assert.equal(postCount, 0, "no fetch should fire without OTLP config");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("swallows OTLP fetch errors so telemetry never crashes the agent", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("collector unreachable");
+    }) as typeof fetch;
+
+    try {
+      const tracer = new SessionTracer("test-otlp-err", {
+        endpoint: "http://invalid.example.com/v1/traces",
+      });
+      const spanId = tracer.startSpan("test");
+      const span = tracer.endSpan(spanId);
+
+      // Span persistence + return value should be unaffected
+      assert.ok(span, "endSpan should still return the span");
+      assert.equal(span.name, "test");
+
+      await new Promise((r) => setImmediate(r));
+      // No throw means the test passes — the .catch() in shipSpanOTLP swallowed the error
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
