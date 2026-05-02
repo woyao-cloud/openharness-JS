@@ -178,3 +178,35 @@ describe("AgentTool.call() — no-provider guard", () => {
     assert.ok(result.output.includes("provider"));
   });
 });
+
+// ---------------------------------------------------------------------------
+// v2.29 U-C5b cleanup: tool_output_delta deduplication via gated onOutputChunk.
+// ---------------------------------------------------------------------------
+describe("forwardInnerEvent return value gates onOutputChunk fallback (v2.29)", () => {
+  it("returns true for tool_output_delta when emitChildEvent is set (REPL context — onOutputChunk skipped)", () => {
+    const ctx = makeCtx();
+    const event: StreamEvent = {
+      type: "tool_output_delta",
+      callId: "child-1",
+      chunk: "streaming line\n",
+    };
+    const forwarded = forwardInnerEvent(event, ctx);
+    assert.equal(forwarded, true, "should return true so caller skips onOutputChunk");
+    assert.equal(ctx.captured.length, 1);
+  });
+
+  it("returns false for tool_output_delta when emitChildEvent is undefined (SDK fallback to onOutputChunk)", () => {
+    const ctx: ToolContext = {
+      workingDir: process.cwd(),
+      callId: "parent-sdk",
+      // emitChildEvent intentionally omitted — simulates SDK / non-REPL caller
+    };
+    const event: StreamEvent = {
+      type: "tool_output_delta",
+      callId: "child-2",
+      chunk: "streaming line\n",
+    };
+    const forwarded = forwardInnerEvent(event, ctx);
+    assert.equal(forwarded, false, "should return false so caller falls back to onOutputChunk");
+  });
+});

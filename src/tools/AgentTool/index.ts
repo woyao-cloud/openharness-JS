@@ -184,10 +184,10 @@ export const AgentTool: Tool<typeof inputSchema> = {
             finalText += event.content;
           } else if (event.type === "tool_output_delta") {
             outputChunks.push(event.chunk);
-            if (context.onOutputChunk && context.callId) {
+            const forwarded = forwardInnerEvent(event, context);
+            if (!forwarded && context.onOutputChunk && context.callId) {
               context.onOutputChunk(context.callId, event.chunk);
             }
-            forwardInnerEvent(event, context);
           } else if (
             event.type === "tool_call_start" ||
             event.type === "tool_call_complete" ||
