@@ -218,14 +218,6 @@ export type OhConfig = {
     enabled?: boolean; // default false
     endpoint?: string; // where to POST events (optional)
   };
-  /** Sandbox — filesystem and network restrictions */
-  sandbox?: {
-    enabled?: boolean;
-    allowedPaths?: string[];
-    allowedDomains?: string[];
-    blockNetwork?: boolean;
-    blockedCommands?: string[];
-  };
   /** Remote server security settings */
   remote?: {
     tokens?: string[]; // allowed bearer tokens (empty = open access)

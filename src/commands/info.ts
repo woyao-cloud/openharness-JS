@@ -11,7 +11,6 @@ import { estimateMessageTokens } from "../harness/context-warning.js";
 import { getContextWindow } from "../harness/cost.js";
 import { getHooks, invalidateHookCache } from "../harness/hooks.js";
 import { discoverPlugins, discoverSkills } from "../harness/plugins.js";
-import { invalidateSandboxCache } from "../harness/sandbox.js";
 import { formatTrace, listTracedSessions, loadTrace } from "../harness/traces.js";
 import { getVerificationConfig, invalidateVerificationCache } from "../harness/verification.js";
 import { normalizeMcpConfig } from "../mcp/config-normalize.js";
@@ -82,7 +81,6 @@ export function registerInfoCommands(
         "fast",
         "keys",
         "effort",
-        "sandbox",
         "permissions",
         "allowed-tools",
         "login",
@@ -812,13 +810,12 @@ export function registerInfoCommands(
     "reload-plugins",
     "Hot-reload plugins, skills, hooks, MCP servers and config without restarting the session.",
     async () => {
-      // Invalidate every cached source — config, hooks, sandbox, verification.
+      // Invalidate every cached source — config, hooks, verification.
       // Skills + plugins aren't cached (each discoverSkills/discoverPlugins call
       // reads fresh) but we still re-run them for the report so the user sees
       // a count consistent with the new on-disk state.
       invalidateConfigCache();
       invalidateHookCache();
-      invalidateSandboxCache();
       invalidateVerificationCache();
 
       // Tear down + reconnect MCP servers (the live connections aren't
@@ -842,7 +839,7 @@ export function registerInfoCommands(
 
       const lines = [
         "Hot reload complete:",
-        "  - config + hooks + sandbox + verification: caches invalidated",
+        "  - config + hooks + verification: caches invalidated",
         `  - hook events configured:       ${hookEvents}`,
         `  - MCP servers connected:        ${mcpServers}${mcpError ? ` (error: ${mcpError})` : ""}`,
         `  - MCP tools loaded:             ${mcpTools}`,

@@ -8,7 +8,7 @@
  *   session.ts  — /clear, /compact, /export, /history, /browse, /resume, /fork, /pin, /unpin
  *   git.ts      — /diff, /undo, /rewind, /commit, /log
  *   info.ts     — /help, /cost, /status, /config, /files, /model, /memory, /doctor, /context, /mcp, /init
- *   settings.ts — /theme, /companion, /fast, /keys, /effort, /sandbox, /permissions, /allowed-tools
+ *   settings.ts — /theme, /companion, /fast, /keys, /effort, /permissions, /allowed-tools
  *   ai.ts       — /plan, /review, /roles, /agents, /plugins, /btw, /loop, /cybergotchi
  *   skills.ts   — /skill-create, /skill-delete, /skill-edit, /skill-search, /skill-install
  */

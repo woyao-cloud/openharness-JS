@@ -1,5 +1,5 @@
 /**
- * Settings commands — /theme, /companion, /fast, /keys, /keybindings, /effort, /sandbox, /permissions, /allowed-tools, /trust
+ * Settings commands — /theme, /companion, /fast, /keys, /keybindings, /effort, /permissions, /allowed-tools, /trust
  */
 
 import { spawn } from "node:child_process";
@@ -9,7 +9,6 @@ import { dirname, join } from "node:path";
 import { readApprovalLog } from "../harness/approvals.js";
 import { readOhConfig } from "../harness/config.js";
 import { loadKeybindings } from "../harness/keybindings.js";
-import { sandboxStatus } from "../harness/sandbox.js";
 import { isTrusted, listTrusted, trust } from "../harness/trust.js";
 import type { CommandHandler } from "./types.js";
 
@@ -150,10 +149,6 @@ export function registerSettingsCommands(
       };
     }
     return { output: `Effort level set to: ${level}`, handled: true };
-  });
-
-  register("sandbox", "Show sandbox status and restrictions", () => {
-    return { output: `${sandboxStatus()}\n\nConfigure in .oh/config.yaml under sandbox:`, handled: true };
   });
 
   register("permissions", "View or change permission mode (or 'log' for approval history)", (args, ctx) => {
