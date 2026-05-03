@@ -1,6 +1,6 @@
 {
   "name": "@zhijiewang/openharness",
-  "version": "2.30.1",
+  "version": "2.31.0",
   "description": "Open-source terminal coding agent. Works with any LLM.",
   "type": "module",
   "bin": {
