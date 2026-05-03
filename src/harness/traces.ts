@@ -51,6 +51,15 @@ export class SessionTracer {
   >();
   private spanCounter = 0;
   private otlp?: OTLPConfig;
+  /**
+   * Pending spans that have ended but not yet been POSTed to OTLP. Drained
+   * by a microtask-debounced flush (one POST per microtask boundary even if
+   * many spans end in the same tick) and by the public `flush()` method.
+   */
+  private otlpBuffer: TraceSpan[] = [];
+  private otlpFlushScheduled = false;
+  /** In-flight fetches so `flush()` can await any POSTs already on the wire. */
+  private otlpInFlight = new Set<Promise<void>>();
 
   constructor(sessionId: string, otlp?: OTLPConfig) {
     this.sessionId = sessionId;
@@ -92,17 +101,60 @@ export class SessionTracer {
     return span;
   }
 
-  /** Fire-and-forget POST of a single span to the configured OTLP HTTP endpoint. Errors swallowed — telemetry must never crash the agent. */
+  /**
+   * Buffer the span for OTLP shipping. The actual POST is deferred to a
+   * microtask so multiple spans ending in the same tick coalesce into a
+   * single batch POST instead of one fetch each. Errors are swallowed —
+   * telemetry must never crash the agent.
+   */
   private shipSpanOTLP(span: TraceSpan): void {
     if (!this.otlp) return;
-    const payload = exportTraceOTLP(this.sessionId, [span]);
-    fetch(this.otlp.endpoint, {
+    this.otlpBuffer.push(span);
+    if (this.otlpFlushScheduled) return;
+    this.otlpFlushScheduled = true;
+    queueMicrotask(() => {
+      this.otlpFlushScheduled = false;
+      this.drainOTLPBuffer();
+    });
+  }
+
+  /** Send whatever is in `otlpBuffer` as a single fire-and-forget POST. The
+   * returned promise is tracked in `otlpInFlight` so `flush()` can await it. */
+  private drainOTLPBuffer(): void {
+    if (!this.otlp || this.otlpBuffer.length === 0) return;
+    const batch = this.otlpBuffer;
+    this.otlpBuffer = [];
+    const payload = exportTraceOTLP(this.sessionId, batch);
+    const p: Promise<void> = fetch(this.otlp.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(this.otlp.headers ?? {}) },
       body: JSON.stringify(payload),
-    }).catch(() => {
-      /* swallow — telemetry must not interfere with the agent */
+    }).then(
+      () => undefined,
+      () => undefined, // swallow — telemetry must not interfere with the agent
+    );
+    this.otlpInFlight.add(p);
+    p.finally(() => {
+      this.otlpInFlight.delete(p);
     });
+  }
+
+  /**
+   * Drain any pending OTLP buffer and await every in-flight POST. Call this at
+   * session end so spans aren't dropped on `process.exit`. No-op when OTLP is
+   * not configured. Errors are swallowed (already, by `drainOTLPBuffer`).
+   */
+  async flush(): Promise<void> {
+    if (!this.otlp) return;
+    // Drain any not-yet-shipped buffer first; cancel pending microtask flush
+    // (the buffer becomes empty so the microtask would no-op anyway, but
+    // clearing the flag is explicit).
+    this.otlpFlushScheduled = false;
+    this.drainOTLPBuffer();
+    // Wait for every fetch we've kicked off (microtask-shipped or just now).
+    if (this.otlpInFlight.size > 0) {
+      await Promise.allSettled(Array.from(this.otlpInFlight));
+    }
   }
 
   /** Get all completed spans */
@@ -220,8 +272,22 @@ export function formatTrace(spans: TraceSpan[]): string {
   return lines.join("\n");
 }
 
+/**
+ * Coerce an arbitrary string (UUID with hyphens, "span-N", etc.) into a fixed-length
+ * lowercase hex string suitable for OTLP. OTLP collectors (Jaeger, Tempo, OTel
+ * Collector) validate that traceId is 32 hex chars and spanId is 16 hex chars and
+ * reject anything containing `-` or non-hex letters. We strip non-hex chars, then
+ * pad-left with zeros (or truncate from the left) to the target length.
+ */
+function toHexId(input: string, length: 16 | 32): string {
+  const hex = input.toLowerCase().replace(/[^0-9a-f]/g, "");
+  if (hex.length === 0) return "0".repeat(length);
+  return hex.length >= length ? hex.slice(0, length) : hex.padStart(length, "0");
+}
+
 /** Export trace in OpenTelemetry-compatible format */
 export function exportTraceOTLP(sessionId: string, spans: TraceSpan[]): object {
+  const traceId = toHexId(sessionId, 32);
   return {
     resourceSpans: [
       {
@@ -235,9 +301,9 @@ export function exportTraceOTLP(sessionId: string, spans: TraceSpan[]): object {
           {
             scope: { name: "openharness.agent" },
             spans: spans.map((s) => ({
-              traceId: sessionId.padEnd(32, "0").slice(0, 32),
-              spanId: s.spanId.padEnd(16, "0").slice(0, 16),
-              parentSpanId: s.parentSpanId?.padEnd(16, "0").slice(0, 16),
+              traceId,
+              spanId: toHexId(s.spanId, 16),
+              parentSpanId: s.parentSpanId ? toHexId(s.parentSpanId, 16) : undefined,
               name: s.name,
               startTimeUnixNano: s.startTime * 1_000_000,
               endTimeUnixNano: s.endTime * 1_000_000,

@@ -151,6 +151,10 @@ export class AnthropicProvider implements Provider {
     let currentToolId = "";
     let currentToolName = "";
     let currentToolArgs = "";
+    // Persist across chunk boundaries: a TCP/TLS framing boundary can land
+    // between the SSE `event:` and `data:` lines, leaving the event type
+    // staged for the next chunk's first `data:` line.
+    let currentEvent = "";
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -158,8 +162,6 @@ export class AnthropicProvider implements Provider {
 
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
-      let currentEvent = "";
 
       for (const line of lines) {
         const trimmed = line.trim();

@@ -102,6 +102,47 @@ describe("AgentDispatcher", () => {
     assert.equal(childStart!.parentCallId, taskStart!.callId);
   });
 
+  it("plumbs workingDir through config so the tool sees the task's cwd, not process.cwd()", async () => {
+    // Regression: previously runTask called `process.chdir(worktreePath)` to
+    // set the cwd for the inner query loop, then `process.chdir(originalCwd)`
+    // in finally. Two parallel tasks raced on this global. The fix passes
+    // `workingDir` through QueryConfig so each task's tools see their own
+    // cwd without mutating the shared process state.
+    //
+    // To detect the bug deterministically without setting up a git repo, we
+    // arrange for the AgentDispatcher's workingDir to differ from
+    // `process.cwd()`. With the bug, the tool would see process.cwd() (since
+    // `config.workingDir` was not set and `process.chdir` only fires when a
+    // worktree is created — which it isn't outside a git repo). With the
+    // fix, the tool sees the dispatcher's workingDir.
+    const captured: string[] = [];
+    const captureTool = createMockTool("CaptureCwd");
+    captureTool.call = async (_input, ctx) => {
+      captured.push(ctx.workingDir);
+      return { output: "captured", isError: false };
+    };
+
+    const dispatcherDir = makeTmpDir();
+    const otherDir = makeTmpDir();
+    const originalCwd = process.cwd();
+    process.chdir(otherDir);
+    try {
+      const provider = createMockProvider([toolCallEvents("CaptureCwd", {}, "cap-1"), textResponseEvents("done")]);
+      const dispatcher = new AgentDispatcher(provider, [captureTool], systemPrompt, "trust", undefined, dispatcherDir);
+      dispatcher.addTask({ id: "a", prompt: "capture cwd" });
+      await dispatcher.execute();
+
+      assert.equal(captured.length, 1, "tool should have run exactly once");
+      assert.equal(
+        captured[0],
+        dispatcherDir,
+        `tool's ctx.workingDir should be the dispatcher's workingDir (${dispatcherDir}), not process.cwd() (${otherDir})`,
+      );
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   it("does not crash when parentCallId and emitChildEvent are undefined", async () => {
     // Turn 1: tool call; Turn 2: text response
     const provider = createMockProvider([

@@ -3,7 +3,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { getContextWindow } from "../harness/cost.js";
@@ -148,7 +148,6 @@ export function registerSessionCommands(
 
     try {
       mkdirSync(dirname(filename), { recursive: true });
-      const { writeFileSync } = require("node:fs");
       writeFileSync(filename, body);
       return { output: `Exported ${ctx.messages.length} messages to ${filename}`, handled: true };
     } catch {

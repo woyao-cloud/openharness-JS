@@ -118,6 +118,70 @@ describe("exportTraceOTLP", () => {
     assert.equal(otlp.resourceSpans[0].scopeSpans[0].spans.length, 1);
     assert.equal(otlp.resourceSpans[0].scopeSpans[0].spans[0].name, "test");
   });
+
+  it("emits valid hex-only IDs that OTLP collectors accept", () => {
+    // Regression: previously traceId/spanId were `padEnd("0").slice(0, N)` of
+    // raw inputs, leaving hyphens in UUIDs and the literal `-` and letters in
+    // `"span-N"`. OTel Collector / Jaeger / Tempo validate hex encoding and
+    // reject those, silently dropping every shipped span.
+    const sessionId = "abc12345-6789-4def-89ab-0123456789ab"; // realistic UUID v4
+    const spans = [
+      {
+        spanId: "span-1",
+        name: "parent",
+        startTime: 1000,
+        endTime: 2000,
+        durationMs: 1000,
+        attributes: {},
+        status: "ok" as const,
+      },
+      {
+        spanId: "span-2",
+        parentSpanId: "span-1",
+        name: "child",
+        startTime: 1100,
+        endTime: 1900,
+        durationMs: 800,
+        attributes: {},
+        status: "ok" as const,
+      },
+    ];
+    const otlp = exportTraceOTLP(sessionId, spans) as any;
+    const exported = otlp.resourceSpans[0].scopeSpans[0].spans;
+
+    const HEX32 = /^[0-9a-f]{32}$/;
+    const HEX16 = /^[0-9a-f]{16}$/;
+
+    assert.match(exported[0].traceId, HEX32, "traceId must be 32 hex chars (no hyphens)");
+    assert.match(exported[0].spanId, HEX16, "spanId must be 16 hex chars (no `-` or letters past f)");
+    assert.match(exported[1].spanId, HEX16);
+    assert.match(exported[1].parentSpanId, HEX16, "parentSpanId must also be hex-only");
+
+    // Both spans share the same traceId (same session)
+    assert.equal(exported[0].traceId, exported[1].traceId);
+
+    // Child's parentSpanId must equal parent's spanId so the trace stitches together
+    assert.equal(exported[1].parentSpanId, exported[0].spanId);
+
+    // Different spanIds in the input must still produce different hex IDs
+    assert.notEqual(exported[0].spanId, exported[1].spanId);
+  });
+
+  it("omits parentSpanId when the source span has no parent", () => {
+    const otlp = exportTraceOTLP("session", [
+      {
+        spanId: "span-1",
+        name: "root",
+        startTime: 0,
+        endTime: 1,
+        durationMs: 1,
+        attributes: {},
+        status: "ok" as const,
+      },
+    ]) as any;
+    const span = otlp.resourceSpans[0].scopeSpans[0].spans[0];
+    assert.equal(span.parentSpanId, undefined);
+  });
 });
 
 describe("SessionTracer OTLP shipping (C.3)", () => {
@@ -171,6 +235,87 @@ describe("SessionTracer OTLP shipping (C.3)", () => {
 
       await new Promise((r) => setImmediate(r));
       assert.equal(postCount, 0, "no fetch should fire without OTLP config");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("coalesces many spans ending in the same tick into a single POST", async () => {
+    // Regression: previously each endSpan fired its own fetch with no
+    // backpressure — 100 spans = 100 concurrent in-flight requests. We now
+    // microtask-debounce so spans ending in the same tick share a POST.
+    const captured: Array<{ spanCount: number }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : null;
+      const spans = body?.resourceSpans?.[0]?.scopeSpans?.[0]?.spans ?? [];
+      captured.push({ spanCount: spans.length });
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const tracer = new SessionTracer("test-batch", {
+        endpoint: "http://localhost:4318/v1/traces",
+      });
+      // End 25 spans synchronously in the same tick.
+      for (let i = 0; i < 25; i++) {
+        const id = tracer.startSpan(`tool_call_${i}`);
+        tracer.endSpan(id);
+      }
+      // Microtask flush runs before setImmediate.
+      await new Promise((r) => setImmediate(r));
+
+      assert.equal(captured.length, 1, "25 spans in one tick should coalesce into 1 POST");
+      assert.equal(captured[0]!.spanCount, 25, "the single batched POST should carry all 25 spans");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("flush() awaits in-flight POSTs (no spans dropped at session end)", async () => {
+    // Regression: previously `endSpan` fired-and-forgot — process.exit
+    // could land while a fetch was still on the wire, dropping the span.
+    // flush() must await any in-flight POST before resolving.
+    let fetchResolved = false;
+    let fetchCalls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      fetchCalls++;
+      // Simulate a slow OTLP endpoint — resolve after one macrotask tick.
+      await new Promise((r) => setImmediate(r));
+      fetchResolved = true;
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const tracer = new SessionTracer("test-flush", {
+        endpoint: "http://localhost:4318/v1/traces",
+      });
+      tracer.endSpan(tracer.startSpan("a"));
+      // Don't yield — go straight into flush(). The microtask flush will
+      // either have run (kicking off the fetch) or flush() drains the buffer
+      // itself; either way flush() must await the resulting fetch.
+      await tracer.flush();
+
+      assert.equal(fetchCalls, 1, "exactly one POST should have been issued");
+      assert.ok(fetchResolved, "flush() must await the in-flight POST before returning");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("flush() is a no-op when OTLP is not configured", async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCount = 0;
+    globalThis.fetch = (async () => {
+      fetchCount++;
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const tracer = new SessionTracer("no-otlp");
+      tracer.endSpan(tracer.startSpan("x"));
+      await tracer.flush();
+      assert.equal(fetchCount, 0);
     } finally {
       globalThis.fetch = originalFetch;
     }

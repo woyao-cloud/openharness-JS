@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { readApprovalLog } from "../harness/approvals.js";
 import { readOhConfig } from "../harness/config.js";
 import { loadKeybindings } from "../harness/keybindings.js";
+import { sandboxStatus } from "../harness/sandbox.js";
 import { isTrusted, listTrusted, trust } from "../harness/trust.js";
 import type { CommandHandler } from "./types.js";
 
@@ -152,7 +153,6 @@ export function registerSettingsCommands(
   });
 
   register("sandbox", "Show sandbox status and restrictions", () => {
-    const { sandboxStatus } = require("../harness/sandbox.js");
     return { output: `${sandboxStatus()}\n\nConfigure in .oh/config.yaml under sandbox:`, handled: true };
   });
 

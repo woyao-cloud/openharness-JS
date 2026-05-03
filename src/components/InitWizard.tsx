@@ -15,6 +15,7 @@ import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { useCallback, useState } from "react";
 import { writeOhConfig } from "../harness/config.js";
+import { MCP_REGISTRY } from "../mcp/registry.js";
 import CybergotchiSetup from "./CybergotchiSetup.js";
 
 // ── Types ──
@@ -151,7 +152,6 @@ export default function InitWizard({ onDone }: Props) {
     let mcpServers: any[] | undefined;
     if (selectedMcp.size > 0) {
       try {
-        const { MCP_REGISTRY } = require("../mcp/registry.js");
         mcpServers = [...selectedMcp]
           .map((name) => MCP_REGISTRY.find((e: any) => e.name === name))
           .filter(Boolean)

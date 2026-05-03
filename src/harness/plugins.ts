@@ -15,6 +15,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getInstalledPlugins } from "./marketplace.js";
 
 export type SkillMetadata = {
   name: string;
@@ -225,7 +226,6 @@ export function discoverSkills(): SkillMetadata[] {
 
   // Load skills from installed marketplace plugins (namespaced as plugin-name:skill-name)
   try {
-    const { getInstalledPlugins } = require("./marketplace.js") as typeof import("./marketplace.js");
     for (const plugin of getInstalledPlugins()) {
       const pluginSkillsDir = join(plugin.cachePath, "skills");
       const pluginSkills = loadSkillsFromDir(pluginSkillsDir, "plugin");

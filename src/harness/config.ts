@@ -377,12 +377,9 @@ export function appendToolPermission(toolName: string, action: "allow" | "deny" 
 
 export function writeOhConfig(cfg: OhConfig, root?: string): void {
   invalidateConfigCache();
-  // Emit configChange hook (lazy import to avoid circular dependency)
-  try {
-    require("./hooks.js").emitHook("configChange", {});
-  } catch {
-    /* ignore */
-  }
+  // Emit configChange hook (dynamic import to avoid circular dependency
+  // with hooks.ts, which imports readOhConfig from this module).
+  import("./hooks.js").then((m) => m.emitHook("configChange", {})).catch(() => {});
   const p = configPath(root);
   mkdirSync(join(root ?? ".", ".oh"), { recursive: true });
 

@@ -2,9 +2,9 @@
  * Skill management commands — /skills, /skill-create, /skill-delete, /skill-edit, /skill-search, /skill-install
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { discoverSkills } from "../harness/plugins.js";
+import { discoverSkills, findSkill } from "../harness/plugins.js";
 import type { CommandHandler } from "./types.js";
 
 export function registerSkillCommands(register: (name: string, description: string, handler: CommandHandler) => void) {
@@ -83,12 +83,10 @@ How to confirm the skill worked correctly.
     const name = args.trim();
     if (!name) return { output: "Usage: /skill-delete <name>", handled: true };
 
-    const { findSkill } = require("../harness/plugins.js") as typeof import("../harness/plugins.js");
     const skill = findSkill(name);
     if (!skill) return { output: `Skill "${name}" not found.`, handled: true };
 
     try {
-      const { unlinkSync } = require("node:fs");
       unlinkSync(skill.filePath);
       return { output: `Deleted skill: ${skill.filePath}`, handled: true };
     } catch (err: any) {
@@ -100,7 +98,6 @@ How to confirm the skill worked correctly.
     const name = args.trim();
     if (!name) return { output: "Usage: /skill-edit <name>", handled: true };
 
-    const { findSkill } = require("../harness/plugins.js") as typeof import("../harness/plugins.js");
     const skill = findSkill(name);
     if (!skill) return { output: `Skill "${name}" not found.`, handled: true };
 

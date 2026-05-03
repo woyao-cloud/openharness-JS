@@ -198,6 +198,13 @@ export class AgentDispatcher {
         if (filtered.length > 0) taskTools = filtered;
       }
 
+      // Plumb cwd through config.workingDir so parallel runTask calls don't
+      // race on the global process.cwd(). The query loop seeds ToolContext
+      // with this value; built-in tools (FileRead, Glob, Bash, …) honor it.
+      // Previously this method called `process.chdir(worktreePath)` and a
+      // matching `process.chdir(originalCwd)` in `finally` — but since
+      // `process.cwd()` is process-wide, two concurrent tasks would clobber
+      // each other's directory mid-execution.
       const config = {
         provider: this.provider,
         tools: taskTools,
@@ -206,6 +213,7 @@ export class AgentDispatcher {
         model: this.model,
         maxTurns: 20,
         abortSignal: this.abortSignal,
+        workingDir: worktreePath ?? cwd,
       };
 
       // Inject blocker results as context
@@ -223,34 +231,15 @@ export class AgentDispatcher {
         }
       }
 
-      const originalCwd = process.cwd();
-      if (worktreePath) {
-        try {
-          process.chdir(worktreePath);
-        } catch {
-          /* ignore */
-        }
-      }
-
       let output = "";
       let errorMessage: string | null = null;
-      try {
-        for await (const event of query(promptWithContext, config)) {
-          if (event.type === "text_delta") output += event.content;
-          if (event.type === "error") {
-            errorMessage = event.message;
-            break;
-          }
-          forwardChildEvent(event, taskCallId, this.emitChildEvent);
+      for await (const event of query(promptWithContext, config)) {
+        if (event.type === "text_delta") output += event.content;
+        if (event.type === "error") {
+          errorMessage = event.message;
+          break;
         }
-      } finally {
-        if (worktreePath) {
-          try {
-            process.chdir(originalCwd);
-          } catch {
-            /* ignore */
-          }
-        }
+        forwardChildEvent(event, taskCallId, this.emitChildEvent);
       }
 
       if (errorMessage !== null) {

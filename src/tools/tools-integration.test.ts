@@ -248,6 +248,32 @@ describe("PowerShellTool", async () => {
       const result = await PowerShellTool.call({ command: "throw 'deliberate error'" }, ctx("."));
       assert.equal(result.isError, true);
     });
+
+    test("bypasses cmd.exe so %VAR% is not expanded by the host shell", async () => {
+      // Regression: previous implementation used execSync(string), which on
+      // Windows routes through cmd.exe and would expand %ProgramFiles% before
+      // PowerShell ever sees the command. execFileSync(file, args[]) spawns
+      // powershell.exe directly, so %ProgramFiles% is a literal arg to
+      // PowerShell. PowerShell prints it verbatim because it doesn't
+      // recognise cmd.exe's %VAR% syntax.
+      const result = await PowerShellTool.call({ command: "Write-Output '%ProgramFiles%'" }, ctx("."));
+      assert.equal(result.isError, false);
+      // If cmd.exe had been in the loop, %ProgramFiles% would be expanded to
+      // e.g. C:\Program Files, NOT contain a literal "%ProgramFiles%".
+      assert.ok(
+        result.output.includes("%ProgramFiles%"),
+        `cmd.exe should not have expanded %ProgramFiles% — got: ${result.output}`,
+      );
+    });
+
+    test("handles double quotes in command without manual escaping", async () => {
+      // Regression: the old escape `replace(/"/g, '\\"')` was a per-char hack
+      // that broke as soon as the command contained other shell metachars.
+      // execFileSync passes the command as a single argv element, so quoting
+      // is the OS's job, not ours.
+      const result = await PowerShellTool.call({ command: 'Write-Output "hello \\"world\\""' }, ctx("."));
+      assert.equal(result.isError, false);
+    });
   } else {
     test("returns error on non-Windows platforms", async () => {
       const result = await PowerShellTool.call({ command: "Get-Date" }, ctx("."));

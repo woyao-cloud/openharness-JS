@@ -17,7 +17,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readOhConfig } from "./config.js";
 
-const TELEMETRY_DIR = join(homedir(), ".oh", "telemetry");
+/**
+ * Telemetry directory. Resolved on each access so `OH_TELEMETRY_DIR` env-var
+ * overrides (used by tests) take effect even after this module loads.
+ */
+function telemetryDir(): string {
+  return process.env.OH_TELEMETRY_DIR ?? join(homedir(), ".oh", "telemetry");
+}
 
 // ── Types ──
 
@@ -52,7 +58,6 @@ export type TelemetryPayload = {
 // ── State ──
 
 let _enabled: boolean | undefined;
-let _sessionFile: string | null = null;
 
 function isEnabled(): boolean {
   if (_enabled !== undefined) return _enabled;
@@ -61,11 +66,13 @@ function isEnabled(): boolean {
   return _enabled;
 }
 
+/** Resolve the JSONL path for a sessionId. Stateless — was previously a module-level
+ * singleton that ignored `sessionId` after the first call, causing multi-session
+ * processes (e.g. `--resume`) to write every session into the first one's file. */
 function getSessionFile(sessionId: string): string {
-  if (_sessionFile) return _sessionFile;
-  mkdirSync(TELEMETRY_DIR, { recursive: true });
-  _sessionFile = join(TELEMETRY_DIR, `${sessionId}.jsonl`);
-  return _sessionFile;
+  const dir = telemetryDir();
+  mkdirSync(dir, { recursive: true });
+  return join(dir, `${sessionId}.jsonl`);
 }
 
 // ── Public API ──
@@ -127,7 +134,7 @@ export function recordError(sessionId: string, category: string): void {
 
 /** Read local telemetry events for a session */
 export function readSessionEvents(sessionId: string): TelemetryEvent[] {
-  const file = join(TELEMETRY_DIR, `${sessionId}.jsonl`);
+  const file = join(telemetryDir(), `${sessionId}.jsonl`);
   if (!existsSync(file)) return [];
 
   try {
@@ -147,16 +154,17 @@ export function getAggregateStats(): {
   toolUsage: Record<string, number>;
   errorCategories: Record<string, number>;
 } {
-  if (!existsSync(TELEMETRY_DIR)) return { totalSessions: 0, totalEvents: 0, toolUsage: {}, errorCategories: {} };
+  const dir = telemetryDir();
+  if (!existsSync(dir)) return { totalSessions: 0, totalEvents: 0, toolUsage: {}, errorCategories: {} };
 
-  const files = readdirSync(TELEMETRY_DIR).filter((f) => f.endsWith(".jsonl"));
+  const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
   const toolUsage: Record<string, number> = {};
   const errorCategories: Record<string, number> = {};
   let totalEvents = 0;
 
   for (const file of files) {
     try {
-      const lines = readFileSync(join(TELEMETRY_DIR, file), "utf-8").split("\n").filter(Boolean);
+      const lines = readFileSync(join(dir, file), "utf-8").split("\n").filter(Boolean);
       totalEvents += lines.length;
 
       for (const line of lines) {
@@ -179,5 +187,4 @@ export function getAggregateStats(): {
 /** Reset telemetry cache (for testing or config changes) */
 export function resetTelemetry(): void {
   _enabled = undefined;
-  _sessionFile = null;
 }

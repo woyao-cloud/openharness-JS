@@ -2,7 +2,21 @@
  * AI commands — /plan, /review, /roles, /agents, /plugins, /btw, /loop
  */
 
+import { listRoles } from "../agents/roles.js";
 import { gitDiff, isGitRepo } from "../git/index.js";
+import {
+  addMarketplace,
+  formatInstalledPlugins,
+  formatMarketplaceSearch,
+  getInstalledPlugins,
+  installPlugin,
+  listMarketplaces,
+  removeMarketplace,
+  searchMarketplace,
+  uninstallPlugin,
+} from "../harness/marketplace.js";
+import { discoverPlugins, discoverSkills } from "../harness/plugins.js";
+import { discoverAgents } from "../services/a2a.js";
 import { handleCybergotchiCommand } from "./cybergotchi.js";
 import type { CommandHandler } from "./types.js";
 
@@ -81,7 +95,6 @@ export function registerAICommands(register: (name: string, description: string,
   });
 
   register("roles", "List available agent specialization roles", () => {
-    const { listRoles } = require("../agents/roles.js");
     const roles = listRoles();
     const lines = ["Available agent roles:\n"];
     for (const role of roles) {
@@ -97,7 +110,6 @@ export function registerAICommands(register: (name: string, description: string,
   });
 
   register("agents", "Discover running openHarness agents on this machine", () => {
-    const { discoverAgents } = require("../services/a2a.js");
     const agents = discoverAgents();
 
     if (agents.length === 0) {
@@ -126,19 +138,6 @@ export function registerAICommands(register: (name: string, description: string,
   });
 
   const pluginsHandler = (args: string) => {
-    const { discoverPlugins, discoverSkills } = require("../harness/plugins.js");
-    const {
-      searchMarketplace,
-      installPlugin,
-      uninstallPlugin,
-      getInstalledPlugins,
-      listMarketplaces,
-      addMarketplace,
-      removeMarketplace,
-      formatMarketplaceSearch,
-      formatInstalledPlugins,
-    } = require("../harness/marketplace.js");
-
     const parts = args.trim().split(/\s+/);
     const subcommand = parts[0] ?? "";
     const rest = parts.slice(1).join(" ");

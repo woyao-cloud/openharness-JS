@@ -3,6 +3,7 @@
  * Uses TerminalRenderer for display instead of Ink.
  */
 
+import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { getCommandEntries } from "./commands/index.js";
 import { roll } from "./cybergotchi/bones.js";
@@ -221,7 +222,6 @@ export async function startREPL(config: REPLConfig): Promise<void> {
         const dir = lastSep >= 0 ? expanded.slice(0, lastSep + 1) : ".";
         const prefix = lastSep >= 0 ? expanded.slice(lastSep + 1) : expanded;
         try {
-          const { readdirSync, statSync } = require("node:fs");
           const entries = (readdirSync(dir) as string[])
             .filter((name: string) => name.toLowerCase().startsWith(prefix.toLowerCase()))
             .slice(0, 10);

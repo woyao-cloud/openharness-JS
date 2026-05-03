@@ -13,10 +13,11 @@ import { getHooks, invalidateHookCache } from "../harness/hooks.js";
 import { discoverPlugins, discoverSkills } from "../harness/plugins.js";
 import { invalidateSandboxCache } from "../harness/sandbox.js";
 import { formatTrace, listTracedSessions, loadTrace } from "../harness/traces.js";
-import { invalidateVerificationCache } from "../harness/verification.js";
+import { getVerificationConfig, invalidateVerificationCache } from "../harness/verification.js";
 import { normalizeMcpConfig } from "../mcp/config-normalize.js";
 import { connectedMcpServers, disconnectMcpClients, loadMcpTools } from "../mcp/loader.js";
 import { getAuthStatus } from "../mcp/oauth.js";
+import { formatRegistry, generateConfigBlock, MCP_REGISTRY, searchRegistry } from "../mcp/registry.js";
 import { getRouteSelection } from "../providers/router.js";
 import { formatHooksReport } from "./hooks-report.js";
 import { mcpLoginHandler, mcpLogoutHandler } from "./mcp-auth.js";
@@ -339,7 +340,6 @@ export function registerInfoCommands(
     lines.push(`  Global config: ${globalCfg ? "~/.oh/config.yaml ✓" : "not set (optional)"}`);
 
     try {
-      const { getVerificationConfig } = require("../harness/verification.js");
       const vCfg = getVerificationConfig();
       if (vCfg?.enabled) {
         lines.push(`  Verification:  ✓ (${vCfg.rules.length} rules, mode: ${vCfg.mode})`);
@@ -509,7 +509,6 @@ export function registerInfoCommands(
   });
 
   register("mcp-registry", "Browse and add MCP servers from the curated registry", (args) => {
-    const { searchRegistry, formatRegistry, generateConfigBlock, MCP_REGISTRY } = require("../mcp/registry.js");
     const query = args.trim();
 
     if (!query) {

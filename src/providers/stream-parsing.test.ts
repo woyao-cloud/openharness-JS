@@ -30,6 +30,27 @@ function mockSSE(lines: string[]): () => void {
   };
 }
 
+/** Like mockSSE but emits the body in pre-split chunks to simulate a TCP/TLS framing
+ * boundary mid-stream. Each chunk is enqueued as a separate ReadableStream chunk. */
+function mockSSEChunked(chunks: string[]): () => void {
+  globalThis.fetch = (async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body: new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    }),
+  })) as any;
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
+}
+
 async function collectEvents(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
   for await (const e of gen) events.push(e);
@@ -88,6 +109,34 @@ describe("Anthropic stream parsing", () => {
     assert.equal(starts.length, 1);
     assert.equal((starts[0] as any).toolName, "Bash");
     assert.equal(completes.length, 1);
+    assert.deepEqual((completes[0] as any).arguments, { command: "echo hi" });
+  });
+
+  it("preserves event type across chunk boundaries (tool_call_complete still fires)", async () => {
+    // Regression: a TCP/TLS framing boundary between an `event:` line and
+    // its `data:` line previously dropped the event type, causing
+    // content_block_stop's data line to dispatch against an empty switch
+    // case and the tool_call_complete event to vanish.
+    cleanup = mockSSEChunked([
+      [
+        "event: content_block_start",
+        'data: {"content_block":{"type":"tool_use","id":"tc1","name":"Bash"}}',
+        "event: content_block_delta",
+        'data: {"delta":{"type":"input_json_delta","partial_json":"{\\"command\\":\\"echo hi\\"}"}}',
+        "event: content_block_stop",
+        "",
+      ].join("\n"),
+      // Boundary lands between `event: content_block_stop` and its `data: {}`.
+      ["data: {}", "event: message_stop", "data: {}", ""].join("\n"),
+    ]);
+    const provider = new AnthropicProvider({ name: "anthropic", apiKey: "test" });
+    const events = await collectEvents(provider.stream([createUserMessage("hi")], "system"));
+    const completes = events.filter((e) => e.type === "tool_call_complete");
+    assert.equal(
+      completes.length,
+      1,
+      "tool_call_complete must fire even when event/data lines straddle a chunk boundary",
+    );
     assert.deepEqual((completes[0] as any).arguments, { command: "echo hi" });
   });
 

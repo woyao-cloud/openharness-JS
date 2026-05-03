@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../../Tool.js";
 
@@ -28,10 +28,16 @@ export const PowerShellTool: Tool<typeof inputSchema> = {
 
     const timeout = input.timeout ?? 120_000;
     try {
-      const output = execSync(
-        `powershell.exe -NoProfile -NonInteractive -Command "${input.command.replace(/"/g, '\\"')}"`,
-        { encoding: "utf-8", timeout, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
-      );
+      // execFileSync(file, args[]) spawns powershell.exe directly without a
+      // cmd.exe wrapper, so cmd.exe metachars (& | < > ^ %VAR%) are inert.
+      // The user's command is passed as a single -Command arg; PowerShell
+      // parses it as PowerShell, not as a doubly-parsed shell string.
+      const output = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", input.command], {
+        encoding: "utf-8",
+        timeout,
+        maxBuffer: 10 * 1024 * 1024,
+        windowsHide: true,
+      });
       return { output: output.trim(), isError: false };
     } catch (err: any) {
       const output = String(err.stdout ?? err.stderr ?? err.message ?? "PowerShell error");

@@ -4,6 +4,7 @@
 
 import { execSync } from "node:child_process";
 import { gitBranch, gitCommit, gitDiff, gitLog, gitUndo, isGitRepo } from "../git/index.js";
+import { checkpointCount, listCheckpoints, rewindLastCheckpoint } from "../harness/checkpoints.js";
 import type { CommandHandler } from "./types.js";
 
 export function registerGitCommands(register: (name: string, description: string, handler: CommandHandler) => void) {
@@ -27,8 +28,6 @@ export function registerGitCommands(register: (name: string, description: string
   });
 
   register("rewind", "Restore files from checkpoint (interactive picker or last)", (args) => {
-    const { rewindLastCheckpoint, listCheckpoints, checkpointCount } = require("../harness/checkpoints.js");
-
     const checkpoints = listCheckpoints();
     if (checkpoints.length === 0) {
       return { output: "No checkpoints available. Checkpoints are created before file modifications.", handled: true };
