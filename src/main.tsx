@@ -1228,6 +1228,69 @@ program
     await runInitWizard({ exitOnDone: true });
   });
 
+// ── project — per-project state management ──
+//
+// `oh project purge [path]` — delete all openHarness state for a project
+//
+// Mirrors Claude Code's `claude project purge`. Removes the entire `.oh/`
+// directory at the target path plus the workspace-trust entry (if any).
+// Sessions, credentials, plugins, telemetry, traces, and global config are
+// NOT touched — they're global-and-cross-project. Default UX prints the
+// deletion plan and asks for confirmation; --dry-run previews; --yes skips
+// the prompt. `--all` is deferred (openHarness has no project registry, so
+// "all projects" isn't well-defined without a session-cwd scan).
+const projectCmd = program.command("project").description("Manage per-project openHarness state");
+projectCmd
+  .command("purge [path]")
+  .description(
+    "Delete all openHarness state for a project (config, rules, memory, skills, agents, plans, checkpoints, trust entry). Sessions, credentials, plugins, telemetry, and global config are NOT touched. Defaults to the current directory.",
+  )
+  .option("--dry-run", "Preview what would be deleted without touching the filesystem")
+  .option("-y, --yes", "Skip the confirmation prompt")
+  .action(async (pathArg: string | undefined, opts: { dryRun?: boolean; yes?: boolean }) => {
+    const { planPurge, formatPurgePlan, executePurge } = await import("./harness/project-purge.js");
+    const target = pathArg ?? process.cwd();
+
+    if (!existsSync(target)) {
+      process.stderr.write(`Error: path does not exist: ${target}\n`);
+      process.exit(1);
+    }
+
+    const plan = planPurge(target);
+    console.log(formatPurgePlan(plan));
+
+    if (plan.entries.length === 0) {
+      return;
+    }
+
+    if (opts.dryRun) {
+      console.log("\n(dry-run — no files were deleted)");
+      return;
+    }
+
+    if (!opts.yes) {
+      const readline = await import("node:readline/promises");
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        const answer = (await rl.question("\nProceed with deletion? [y/N] ")).trim();
+        if (!/^y(es)?$/i.test(answer)) {
+          console.log("Aborted.");
+          return;
+        }
+      } finally {
+        rl.close();
+      }
+    }
+
+    const result = executePurge(plan);
+    console.log(`\nDeleted ${result.deleted} of ${plan.entries.length} target(s).`);
+    if (result.errors.length > 0) {
+      console.log(`${result.errors.length} error(s):`);
+      for (const err of result.errors) console.log(`  ⚠ ${err}`);
+      process.exit(1);
+    }
+  });
+
 // ── auth (audit B6) — provider-agnostic credential management ──
 //
 // `oh auth login [provider] --key <value>`  — set API key for a provider
