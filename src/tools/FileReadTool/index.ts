@@ -68,10 +68,9 @@ export const FileReadTool: Tool<typeof inputSchema> = {
 
       const ext = path.extname(filePath).toLowerCase();
 
-      // Image files: return as base64
+      // Image files: return as base64 (auto-downscaled if oversized)
       if (IMAGE_EXTENSIONS.has(ext)) {
-        const buffer = await fs.readFile(filePath);
-        const base64 = buffer.toString("base64");
+        const raw = await fs.readFile(filePath);
         const mimeTypes: Record<string, string> = {
           ".png": "image/png",
           ".jpg": "image/jpeg",
@@ -81,7 +80,11 @@ export const FileReadTool: Tool<typeof inputSchema> = {
           ".bmp": "image/bmp",
           ".svg": "image/svg+xml",
         };
-        return { output: `__IMAGE__:${mimeTypes[ext] ?? "image/png"}:${base64}`, isError: false };
+        const mediaType = mimeTypes[ext] ?? "image/png";
+        const { downscaleIfLarge } = await import("../../utils/image-downscale.js");
+        const { buffer } = await downscaleIfLarge(raw, mediaType);
+        const base64 = buffer.toString("base64");
+        return { output: `__IMAGE__:${mediaType}:${base64}`, isError: false };
       }
 
       // PDF files: extract text per page (basic extraction)

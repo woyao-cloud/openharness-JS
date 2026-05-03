@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext, ToolResult } from "../../Tool.js";
+import { downscaleIfLarge } from "../../utils/image-downscale.js";
 
 const SUPPORTED_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -47,7 +48,11 @@ export const ImageReadTool: Tool<typeof inputSchema> = {
     }
 
     try {
-      const buffer = await fs.readFile(filePath);
+      const raw = await fs.readFile(filePath);
+      // Auto-downscale to ≤2000px on the longest dimension. PDFs and
+      // missing-sharp installs pass through unchanged. Aspect + format
+      // preserved by sharp.
+      const { buffer } = await downscaleIfLarge(raw, mediaType);
       const base64 = buffer.toString("base64");
       return {
         output: `${IMAGE_PREFIX}:${mediaType}:${base64}`,
