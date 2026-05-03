@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.30.0 (2026-05-03) — Observability
+
+End-to-end observability ships. The `SessionTracer` infrastructure (built pre-v2.20, then sat unused for ~6 weeks because it was never wired) now has three integration paths landed in concert: opt-in span emission from the query loop and tool dispatch (C.1, #101); a tightened CI perf gate that actually catches regressions (C.2, #102); and OTLP HTTP shipping to remote collectors (Jaeger, Honeycomb, Grafana Tempo, etc. — C.3, #103). Plus four portfolio-piece docs PRs that landed alongside (#97 README refresh, #98 examples/, #99 CONTRIBUTING refresh, #100 ARCHITECTURE.md). 7 PRs total. **1508/1508 tests pass** (was 1502; +6).
+
+### Added
+- **End-to-end opt-in OTel-style tracing (audit C — observability)**. `SessionTracer` (built pre-v2.20, never wired into production) is now wired three ways:
+  - **`OH_TRACE=1`** at REPL startup creates a session-scoped `SessionTracer` and persists every span as JSONL to `~/.oh/traces/<sessionId>.jsonl`.
+  - **`query()` emits a `query` span** at function entry covering the full agent loop, ended from a `finally` block guaranteeing emission on every exit path (success / abort / budget exceeded / error). Carries `model`, `permissionMode`, `toolCount`, and final `turns` count as attributes.
+  - **`executeSingleTool` and `StreamingToolExecutor`** each emit a `tool:<Name>` span per tool dispatch, parented to the query span. Status `ok` or `error`; error message captured in attributes.
+  - **New `/traces` slash command** to inspect persisted traces. No args → list sessions with span counts + total duration + error counts. With session id → show full formatted span tree via `formatTrace()`.
+- **OTLP HTTP shipping for live observability (C.3)**. `SessionTracer` constructor now accepts an optional `OTLPConfig` (`endpoint` + optional `headers`). Each ended span fires-and-forgets a POST of an OTLP-shaped payload to the configured collector. Errors swallowed in a `.catch(() => {})` — telemetry must never crash the agent. REPL reads `OH_OTLP_ENDPOINT` and `OH_OTLP_HEADERS` (JSON-encoded headers object for auth) env vars and threads them to the tracer. Drop-in compatible with any OTLP/HTTP receiver:
+  ```bash
+  OH_TRACE=1 OH_OTLP_ENDPOINT=https://api.honeycomb.io/v1/traces \
+    OH_OTLP_HEADERS='{"X-Honeycomb-Team":"abc123"}' oh
+  ```
+- **Tightened renderer perf budgets + 3 new perf benchmarks (C.2)**. Existing `src/renderer/perf.test.ts` budgets (50ms / 100ms / 20ms) were 100-400x off actual measured performance — they'd never catch a real regression. Tightened to 10ms / 5ms / 3ms (~20-30x dev-machine headroom, ~6-7x slow-CI headroom — comfortable margin without flake risk). Plus 3 new benchmarks: `query()` 1-turn overhead (50ms budget), `buildToolCallTree` on 100 flat nodes (1ms budget), `buildToolCallTree` on 100 nested nodes depth 3 (1ms budget). Catches regressions in the per-frame hot path AND the per-call dispatch path AND the per-render tree build.
+- **Examples directory (`examples/`)**. 4 self-contained, runnable examples (`headless-code-review.sh`, `sdk-python-batch-summarize.py`, `sdk-typescript-streaming-events.ts`, `mcp-config-sample.yaml`) covering CLI / Python SDK / TypeScript SDK / MCP config. Each example uses verified surfaces (cross-checked against the actual SDK source) — no fabricated APIs.
+- **Root-level `ARCHITECTURE.md`**. Contributor-oriented architectural deep-dive (250 lines): high-level data-flow diagram, 8-step lifecycle of one user message with file:line pointers, key abstractions (Tool/Provider/StreamEvent/LayoutState/Hook/MCP) with their actual TypeScript signatures, major design decisions with rationale (sequential renderer vs Ink, parentCallId for nested tool calls, typed dispatch, per-task synthetic parents, progressive tool loading, worktree isolation), engineering practice (spec/plan workflow, tests, CI), guided "where to start reading" sequence.
+
+### Changed
+- **`CONTRIBUTING.md` refreshed**. Was last updated 2026-04-12; predated the spec/plan workflow that's been load-bearing for ~6 weeks. Project structure section expanded from 4 paths (1 incorrect — claimed `src/components/` is the REPL, but the REPL is `src/repl.ts` and the renderer is `src/renderer/`) to 18 paths with accurate one-liners. Added: full npm scripts table, "Adding a Tool" section (with the README badge bump reminder), spec/plan workflow section, conventional commit conventions section, testing patterns section.
+- **`README.md` + `README.zh-CN.md` refreshed (bilingual)**. Test count badge `tests-890` → `tests-1502` (5 releases stale). Tools count badge `tools-42` → `tools-44`. Tool section heading `Tools (43)` → `Tools (44)` / `工具（43 个）` → `工具（44 个）`. 4 new bullets added to Terminal UI > Features list covering recently-shipped surfaces (spinner stage labels, tool-type color coding, rich tool output rendering, nested tool calls, multi-line wrap glyph).
+
+### Internal
+- **6+ "already-built-but-unwired" pattern hits across the audit cycle.** The `SessionTracer` C.1 wiring brought the count from 5 to 6. Same lesson reinforced: when designing new infrastructure, grep for existing infra first — the codebase often has a well-designed module sitting unwired, and wiring is cheaper than building. Pattern documented in `feedback_small_pr_scope.md`.
+- **Small-scope correlation continued.** v2.27 (~700 src lines, 2 review-cycle bugs) → v2.28 (~150 src lines, 0 bugs) → v2.29 (~5 src lines, 0 bugs) → v2.30 = **3 separate small PRs (#101 / #102 / #103) instead of one large bundled PR for the C work, and 4 separate docs PRs (#97 / #98 / #99 / #100) instead of one big polish PR**. 0 review-cycle bugs across all 7 PRs. Pattern from `feedback_small_pr_scope.md` reinforced.
+- **CC parity audit refreshed** (filed in `project_v2_30_deferred_audit.md`). Surveyed CC v2.1.126 (the only CC release between 2026-04-27 and 2026-05-02). 2 small candidate gaps found (`oh project purge` ~100 lines, image auto-downscale > 2000px ~30 lines); no structural tier-level work. Filed for later pickup; can sit deferred indefinitely without blocking.
+- **Test count: 1508/1508 pass** (was 1502 on v2.29.0; +6 — 3 C.1 tracer wiring tests + 3 C.3 OTLP shipping tests; C.2 added 3 perf benchmarks not new test files. Net +6.)
+
 ## 2.29.0 (2026-05-02) — tool_output_delta Cleanup
 
 Cleanup follow-up to U-C5 (deferred from v2.27.0 spec, line 302). Eliminates the dual-path duplication where `tool_output_delta` from inner Agent tools rendered both in the parent Agent's `liveOutput` preview AND under the child tool's row in the REPL — same lines visible twice. Single PR (#96), 1 commit, **1502/1502 tests pass** (was 1500; +2). Tiniest scope of the recent cycles — 5 source lines, 2 unit tests, 0 review-cycle bugs.
