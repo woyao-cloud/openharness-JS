@@ -1,5 +1,7 @@
-import { spawn } from "node:child_process";
+import { type SpawnOptions, spawn } from "node:child_process";
 import { z } from "zod";
+import { readOhConfig } from "../../harness/config.js";
+import { wrapForSandbox } from "../../harness/sandbox-runtime.js";
 import type { Tool, ToolResult } from "../../Tool.js";
 import { safeEnv } from "../../utils/safe-env.js";
 
@@ -28,12 +30,31 @@ export const BashTool: Tool<typeof inputSchema> = {
     return false;
   },
 
-  call(input, context): Promise<ToolResult> {
+  async call(input, context): Promise<ToolResult> {
     // input.timeout is in seconds; convert to ms. Default 120s.
     const timeoutMs = Math.min((input.timeout ?? 120) * 1000, MAX_TIMEOUT);
     const isWin = process.platform === "win32";
-    const shell = isWin ? "cmd.exe" : "/bin/bash";
-    const shellArgs = isWin ? ["/c", input.command] : ["-c", input.command];
+
+    // Optional OS-level sandbox via @anthropic-ai/sandbox-runtime. Returns null
+    // when disabled / on Windows / when the optional dep isn't installed —
+    // caller falls back to the existing unsandboxed spawn unchanged.
+    const sandboxCfg = readOhConfig()?.sandbox;
+    const wrappedCommand = sandboxCfg ? await wrapForSandbox(input.command, sandboxCfg) : null;
+
+    let shell: string;
+    let shellArgs: string[];
+    let extraSpawnOpts: SpawnOptions = {};
+    if (wrappedCommand) {
+      // sandbox-runtime returns a shell-string. Pin the shell to /bin/bash so
+      // the surrounding command syntax (heredocs, $((...)) etc.) keeps working
+      // — `shell: true` would default to /bin/sh on Linux.
+      shell = wrappedCommand;
+      shellArgs = [];
+      extraSpawnOpts = { shell: "/bin/bash" };
+    } else {
+      shell = isWin ? "cmd.exe" : "/bin/bash";
+      shellArgs = isWin ? ["/c", input.command] : ["-c", input.command];
+    }
 
     // Background execution: spawn and return immediately
     if (input.run_in_background) {
@@ -43,15 +64,19 @@ export const BashTool: Tool<typeof inputSchema> = {
         env: safeEnv(),
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
+        ...extraSpawnOpts,
       });
 
       let stdout = "";
       let stderr = "";
 
-      proc.stdout.on("data", (chunk: Buffer) => {
+      // stdio is fixed to ["ignore", "pipe", "pipe"] above, so stdout/stderr
+      // are always streams. Adding `...extraSpawnOpts` widens the spawn
+      // overload's return type to potentially-null pipes; assert non-null.
+      proc.stdout!.on("data", (chunk: Buffer) => {
         stdout += chunk.toString();
       });
-      proc.stderr.on("data", (chunk: Buffer) => {
+      proc.stderr!.on("data", (chunk: Buffer) => {
         stderr += chunk.toString();
       });
 
@@ -92,6 +117,7 @@ export const BashTool: Tool<typeof inputSchema> = {
         cwd: context.workingDir,
         env: safeEnv(),
         stdio: ["ignore", "pipe", "pipe"],
+        ...extraSpawnOpts,
       });
 
       const timer = setTimeout(() => {
@@ -99,7 +125,10 @@ export const BashTool: Tool<typeof inputSchema> = {
         proc.kill("SIGTERM");
       }, timeoutMs);
 
-      proc.stdout.on("data", (chunk: Buffer) => {
+      // stdio: ["ignore", "pipe", "pipe"] is set above — pipes are always
+      // present here; the spread of extraSpawnOpts just widens the return
+      // type. Non-null asserts are safe.
+      proc.stdout!.on("data", (chunk: Buffer) => {
         const text = chunk.toString();
         stdout += text;
         if (context.onOutputChunk && context.callId) {
@@ -107,7 +136,7 @@ export const BashTool: Tool<typeof inputSchema> = {
         }
       });
 
-      proc.stderr.on("data", (chunk: Buffer) => {
+      proc.stderr!.on("data", (chunk: Buffer) => {
         const text = chunk.toString();
         stderr += text;
         if (context.onOutputChunk && context.callId) {

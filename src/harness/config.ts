@@ -225,6 +225,34 @@ export type OhConfig = {
     allowedTools?: string[]; // tool whitelist for remote callers
   };
   /**
+   * Opt-in OS-level sandbox via `@anthropic-ai/sandbox-runtime` (an optional
+   * dependency). When `enabled: true`, BashTool wraps every command in
+   * bubblewrap (Linux) or sandbox-exec (macOS) plus a domain-allowlist
+   * network proxy. Windows isn't supported by the package — the wrap is a
+   * silent passthrough there. Off by default; users opt in via config or the
+   * `--sandbox` CLI flag.
+   *
+   * `network.allowedDomains` is the proxy allowlist (e.g. `["github.com",
+   * "registry.npmjs.org"]`); `deniedDomains` blocks specific hosts before
+   * the allowlist applies. `filesystem.allowWrite` defaults to `[cwd]` —
+   * the sandbox can write to the project tree but nowhere else.
+   *
+   * See `src/harness/sandbox-runtime.ts` and SECURITY.md for the full
+   * threat-model boundary.
+   */
+  sandbox?: {
+    enabled?: boolean;
+    network?: {
+      allowedDomains?: string[];
+      deniedDomains?: string[];
+    };
+    filesystem?: {
+      allowWrite?: string[];
+      denyWrite?: string[];
+      denyRead?: string[];
+    };
+  };
+  /**
    * Environment variables injected into child processes spawned by the harness —
    * Bash/Monitor/PowerShell tool executions and MCP server subprocesses. Useful
    * for passing API keys to MCP servers without embedding them in the server's
