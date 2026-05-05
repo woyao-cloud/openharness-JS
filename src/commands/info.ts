@@ -11,7 +11,7 @@ import { estimateMessageTokens } from "../harness/context-warning.js";
 import { getContextWindow } from "../harness/cost.js";
 import { getHooks, invalidateHookCache } from "../harness/hooks.js";
 import { discoverPlugins, discoverSkills } from "../harness/plugins.js";
-import { formatTrace, listTracedSessions, loadTrace } from "../harness/traces.js";
+import { formatFlameGraph, formatTrace, listTracedSessions, loadTrace } from "../harness/traces.js";
 import { getVerificationConfig, invalidateVerificationCache } from "../harness/verification.js";
 import { normalizeMcpConfig } from "../mcp/config-normalize.js";
 import { connectedMcpServers, disconnectMcpClients, loadMcpTools } from "../mcp/loader.js";
@@ -375,13 +375,18 @@ export function registerInfoCommands(
 
   register(
     "traces",
-    "List sessions with persisted OTel-style traces (or show one with /traces <sessionId>)",
+    "List sessions with persisted OTel-style traces (or show one with /traces <sessionId>; add --flame for a flame-graph view)",
     (args) => {
-      const id = args.trim();
+      // Parse: `<sessionId>` for tree view, `<sessionId> --flame` (or `--flamegraph`)
+      // for the time-axis flame view. Order doesn't matter — accept the flag
+      // before or after the id.
+      const tokens = args.trim().split(/\s+/).filter(Boolean);
+      const flame = tokens.some((t) => t === "--flame" || t === "--flamegraph" || t === "--flame-graph");
+      const id = tokens.find((t) => !t.startsWith("--"));
       if (id) {
         const spans = loadTrace(id);
         if (spans.length === 0) return { output: `No trace found for session ${id}.`, handled: true };
-        return { output: formatTrace(spans), handled: true };
+        return { output: flame ? formatFlameGraph(spans) : formatTrace(spans), handled: true };
       }
       const sessions = listTracedSessions();
       if (sessions.length === 0) {

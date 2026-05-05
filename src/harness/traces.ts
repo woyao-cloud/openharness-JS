@@ -272,6 +272,187 @@ export function formatTrace(spans: TraceSpan[]): string {
   return lines.join("\n");
 }
 
+// ── Flame-graph rendering ──
+
+/** ANSI 256 colors picked for distinguishability across span names. */
+const FLAME_COLORS = [
+  "\x1b[38;5;202m", // orange (query)
+  "\x1b[38;5;39m", // light blue (tool:Read)
+  "\x1b[38;5;208m", // bright orange (tool:Bash)
+  "\x1b[38;5;105m", // purple (tool:Edit)
+  "\x1b[38;5;118m", // green (tool:Glob/Grep)
+  "\x1b[38;5;226m", // yellow (tool:Web*)
+  "\x1b[38;5;213m", // pink (think tools)
+  "\x1b[38;5;245m", // grey (other)
+];
+const ANSI_RESET = "\x1b[0m";
+const ANSI_DIM = "\x1b[2m";
+const ANSI_RED = "\x1b[38;5;196m";
+
+function colorForSpan(name: string): string {
+  // Stable hash so the same span name always lands the same color across renders.
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return FLAME_COLORS[hash % FLAME_COLORS.length]!;
+}
+
+/**
+ * Render spans as a flame-graph (icicle-graph really — top-down by depth).
+ * Each span gets one row: indent by tree depth, then a bar of `█` characters
+ * positioned along a wall-time axis sized to `width` columns. Bars start at
+ * the column corresponding to the span's `startTime` relative to the trace's
+ * minimum startTime, and span as many columns as their `durationMs` requires
+ * (minimum 1 column so even sub-millisecond spans are visible).
+ *
+ * Total trace duration sets the time-axis scale: a 5-second trace and a
+ * 50-second trace both fit the same `width`, so the same view works at any
+ * scale without scrolling. Per-span ms label appears to the right of the bar;
+ * span name appears at the left, indented by parent depth.
+ *
+ * Errored spans (status: "error") render in red; others use a stable
+ * per-name color so the same tool keeps the same color across the trace.
+ *
+ * The bottom row is a time ruler with ticks at 0ms, 25%, 50%, 75%, 100%.
+ *
+ * @param spans the spans to render — typically `loadTrace(sessionId)`
+ * @param width target width in columns (defaults to terminal width or 100)
+ * @param opts.color emit ANSI color codes (defaults to true; set false for tests)
+ */
+export function formatFlameGraph(
+  spans: TraceSpan[],
+  width: number = process.stdout.columns || 100,
+  opts: { color?: boolean } = {},
+): string {
+  if (spans.length === 0) return "No trace spans recorded.";
+  const useColor = opts.color !== false;
+  const c = (style: string, text: string): string => (useColor ? `${style}${text}${ANSI_RESET}` : text);
+
+  // Trace bounds — every other timestamp is relative to minStart.
+  let minStart = Infinity;
+  let maxEnd = 0;
+  for (const s of spans) {
+    if (s.startTime < minStart) minStart = s.startTime;
+    if (s.endTime > maxEnd) maxEnd = s.endTime;
+  }
+  const totalMs = maxEnd > minStart ? maxEnd - minStart : 1;
+
+  // Layout: name column gets up to 30 chars; ms label gets up to 10; the rest
+  // is the bar canvas. We need at least ~20 cols of bar canvas to be useful.
+  const NAME_WIDTH = 30;
+  const MS_WIDTH = 10;
+  const PADDING = 3; // spaces between sections
+  const barWidth = Math.max(20, width - NAME_WIDTH - MS_WIDTH - PADDING);
+
+  // Build the depth map by walking the parent chain (spans are typically in
+  // start-order but we don't rely on it). Caps recursion to prevent infinite
+  // loops on a malformed trace where parent references form a cycle.
+  const byId = new Map(spans.map((s) => [s.spanId, s]));
+  const depthOf = new Map<string, number>();
+  function depth(span: TraceSpan, hops = 0): number {
+    if (hops > 50) return hops;
+    if (depthOf.has(span.spanId)) return depthOf.get(span.spanId)!;
+    let d = 0;
+    if (span.parentSpanId) {
+      const parent = byId.get(span.parentSpanId);
+      if (parent) d = depth(parent, hops + 1) + 1;
+    }
+    depthOf.set(span.spanId, d);
+    return d;
+  }
+  for (const s of spans) depth(s);
+
+  // Sort by start time, ties broken by depth (parents before children).
+  const sorted = [...spans].sort(
+    (a, b) => a.startTime - b.startTime || depthOf.get(a.spanId)! - depthOf.get(b.spanId)!,
+  );
+
+  const lines: string[] = [];
+  for (const span of sorted) {
+    const d = depthOf.get(span.spanId)!;
+    const offset = Math.floor(((span.startTime - minStart) / totalMs) * barWidth);
+    const length = Math.max(1, Math.floor((span.durationMs / totalMs) * barWidth));
+    const indent = "  ".repeat(Math.min(d, 4)); // visual cap at 4 indent levels
+    const name = `${indent}${span.name}`.padEnd(NAME_WIDTH).slice(0, NAME_WIDTH);
+    const bar = " ".repeat(offset) + "█".repeat(Math.min(length, barWidth - offset));
+    const paddedBar = bar.padEnd(barWidth);
+    const color = span.status === "error" ? ANSI_RED : colorForSpan(span.name);
+    const msLabel = `${span.durationMs}ms`.padStart(MS_WIDTH);
+    lines.push(`${name}   ${c(color, paddedBar)} ${c(ANSI_DIM, msLabel)}`);
+  }
+
+  // Time ruler: 3-5 ticks depending on canvas width. We need ~8 columns per
+  // tick to fit timestamp labels without overlap; choose count that fits.
+  const tickCount = barWidth >= 50 ? 5 : barWidth >= 30 ? 3 : 2;
+  const tickPcts: number[] = [];
+  for (let i = 0; i < tickCount; i++) tickPcts.push(i / (tickCount - 1));
+  const tickValues = tickPcts.map((pct) => `${Math.round(totalMs * pct)}ms`);
+  const rulerLine = " ".repeat(NAME_WIDTH + 3) + buildTimeRuler(barWidth, tickValues);
+  lines.push("");
+  lines.push(c(ANSI_DIM, rulerLine));
+
+  // Per-name summary: count + total ms, descending by total ms.
+  const summary: Record<string, { count: number; totalMs: number }> = {};
+  for (const s of spans) {
+    const e = summary[s.name] ?? { count: 0, totalMs: 0 };
+    e.count++;
+    e.totalMs += s.durationMs;
+    summary[s.name] = e;
+  }
+  const ranked = Object.entries(summary).sort((a, b) => b[1].totalMs - a[1].totalMs);
+  lines.push("");
+  lines.push(c(ANSI_DIM, "Span breakdown (top by total time):"));
+  for (const [name, { count, totalMs: tms }] of ranked.slice(0, 10)) {
+    const pct = totalMs > 0 ? Math.round((tms / totalMs) * 100) : 0;
+    lines.push(
+      `  ${c(colorForSpan(name), "█")} ${name.padEnd(28)} ${count.toString().padStart(4)}× ${tms.toString().padStart(6)}ms  ${pct}%`,
+    );
+  }
+
+  const errors = spans.filter((s) => s.status === "error").length;
+  lines.push("");
+  lines.push(c(ANSI_DIM, `${spans.length} spans, ${totalMs}ms total${errors > 0 ? `, ${errors} error(s)` : ""}`));
+
+  return lines.join("\n");
+}
+
+/**
+ * Build a time ruler line of exactly `width` columns with N tick labels
+ * distributed evenly. Strategy: anchor the last tick right-aligned to the
+ * width, then place earlier ticks at their proportional positions while
+ * truncating any label that would overlap the next tick (or the last
+ * tick's reserved start). Produces a clean ruler at any (width × N).
+ *
+ * The last tick's right-anchor means the rightmost timestamp always lands
+ * exactly at the canvas edge, matching where bars end.
+ */
+function buildTimeRuler(width: number, ticks: string[]): string {
+  if (ticks.length === 0 || width <= 0) return "";
+  const buf = new Array<string>(width).fill(" ");
+
+  // Step 1: place last tick right-aligned. Its start column constrains all
+  // earlier ticks (they must end before lastStart - 1 so there's a gap).
+  const lastLabel = ticks[ticks.length - 1]!;
+  const lastStart = Math.max(0, width - lastLabel.length);
+  for (let j = 0; j < lastLabel.length && lastStart + j < width; j++) {
+    buf[lastStart + j] = lastLabel[j]!;
+  }
+
+  // Step 2: place earlier ticks left-to-right. Each can occupy from its
+  // proportional start column up to either the next tick's start (minus 1
+  // for a separator space) or, for the second-to-last tick, lastStart - 1.
+  for (let i = 0; i < ticks.length - 1; i++) {
+    const label = ticks[i]!;
+    const start = Math.round((i / (ticks.length - 1)) * (width - 1));
+    const nextProportional = Math.round(((i + 1) / (ticks.length - 1)) * (width - 1));
+    const isPenultimate = i === ticks.length - 2;
+    const endExclusive = isPenultimate ? lastStart - 1 : nextProportional - 1;
+    const maxLen = Math.max(0, endExclusive - start);
+    const out = label.slice(0, maxLen);
+    for (let j = 0; j < out.length; j++) buf[start + j] = out[j]!;
+  }
+  return buf.join("");
+}
+
 /**
  * Coerce an arbitrary string (UUID with hyphens, "span-N", etc.) into a fixed-length
  * lowercase hex string suitable for OTLP. OTLP collectors (Jaeger, Tempo, OTel

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { exportTraceOTLP, formatTrace, SessionTracer } from "./traces.js";
+import { exportTraceOTLP, formatFlameGraph, formatTrace, SessionTracer, type TraceSpan } from "./traces.js";
 
 describe("SessionTracer", () => {
   it("starts and ends spans", () => {
@@ -70,6 +70,8 @@ describe("formatTrace", () => {
   it("formats empty trace", () => {
     assert.ok(formatTrace([]).includes("No trace"));
   });
+
+  // (formatFlameGraph tests live in their own describe-block below.)
 
   it("formats spans with tree structure", () => {
     const spans = [
@@ -343,5 +345,117 @@ describe("SessionTracer OTLP shipping (C.3)", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+describe("formatFlameGraph", () => {
+  // Sample trace: query → 2 tool calls in sequence → query continues
+  const sample: TraceSpan[] = [
+    {
+      spanId: "s1",
+      name: "query",
+      startTime: 1000,
+      endTime: 5000,
+      durationMs: 4000,
+      attributes: {},
+      status: "ok",
+    },
+    {
+      spanId: "s2",
+      parentSpanId: "s1",
+      name: "tool:Read",
+      startTime: 1100,
+      endTime: 1500,
+      durationMs: 400,
+      attributes: { file: "foo.ts" },
+      status: "ok",
+    },
+    {
+      spanId: "s3",
+      parentSpanId: "s1",
+      name: "tool:Bash",
+      startTime: 2000,
+      endTime: 4500,
+      durationMs: 2500,
+      attributes: { command: "npm test" },
+      status: "error",
+    },
+  ];
+
+  it("returns a friendly message on empty input", () => {
+    assert.equal(formatFlameGraph([]), "No trace spans recorded.");
+  });
+
+  it("renders each span as a row with its name and ms label (color disabled for assertions)", () => {
+    const out = formatFlameGraph(sample, 80, { color: false });
+    assert.ok(out.includes("query"), "query row should appear");
+    assert.ok(out.includes("tool:Read"), "tool:Read row should appear");
+    assert.ok(out.includes("tool:Bash"), "tool:Bash row should appear");
+    assert.ok(out.includes("4000ms"), "query duration label");
+    assert.ok(out.includes("400ms"), "Read duration label");
+    assert.ok(out.includes("2500ms"), "Bash duration label");
+  });
+
+  it("indents children by depth so the parent/child structure is visible", () => {
+    const out = formatFlameGraph(sample, 80, { color: false });
+    // The query row has no leading spaces before its name; child rows are
+    // indented at least 2 spaces. Find the line for each.
+    const lines = out.split("\n");
+    const queryLine = lines.find((l) => l.includes("query") && !l.includes("breakdown"));
+    const readLine = lines.find((l) => l.trimStart().startsWith("tool:Read"));
+    assert.ok(queryLine, "query row should be present");
+    assert.ok(readLine, "tool:Read row should be present");
+    const readLeadingSpaces = readLine!.length - readLine!.trimStart().length;
+    assert.ok(readLeadingSpaces >= 2, `child row should be indented (got ${readLeadingSpaces} spaces)`);
+  });
+
+  it("includes a span breakdown section ranked by total time", () => {
+    const out = formatFlameGraph(sample, 80, { color: false });
+    assert.ok(out.includes("Span breakdown"), "breakdown header");
+    // tool:Bash has the most total time (2500ms), so it should appear before
+    // tool:Read in the breakdown section.
+    const breakdownIdx = out.indexOf("Span breakdown");
+    const bashInBreakdown = out.indexOf("tool:Bash", breakdownIdx);
+    const readInBreakdown = out.indexOf("tool:Read", breakdownIdx);
+    assert.ok(bashInBreakdown >= 0 && readInBreakdown >= 0);
+    assert.ok(bashInBreakdown < readInBreakdown, "highest-cost span should rank first");
+  });
+
+  it("reports the error count in the footer when status: error spans exist", () => {
+    const out = formatFlameGraph(sample, 80, { color: false });
+    assert.ok(out.includes("3 spans"), "span count");
+    assert.ok(out.includes("error"), "error count footer");
+  });
+
+  it("emits ANSI codes by default and suppresses them when color: false", () => {
+    const colored = formatFlameGraph(sample, 80);
+    const plain = formatFlameGraph(sample, 80, { color: false });
+    assert.ok(colored.includes("\x1b["), "default output should contain ANSI escapes");
+    assert.ok(!plain.includes("\x1b["), "color:false output should be ANSI-free");
+  });
+
+  it("handles a tight terminal width by using the minimum bar canvas (≥20 cols)", () => {
+    // Even at a deliberately small `width` (e.g. 50), the renderer must
+    // produce non-empty output rather than negative-padded garbage.
+    const out = formatFlameGraph(sample, 50, { color: false });
+    assert.ok(out.includes("query"));
+    assert.ok(out.includes("4000ms"));
+  });
+
+  it("survives a malformed trace where a span references a nonexistent parent (no infinite loop)", () => {
+    const orphaned: TraceSpan[] = [
+      {
+        spanId: "x",
+        parentSpanId: "ghost",
+        name: "stray",
+        startTime: 0,
+        endTime: 5,
+        durationMs: 5,
+        attributes: {},
+        status: "ok",
+      },
+    ];
+    const out = formatFlameGraph(orphaned, 80, { color: false });
+    assert.ok(out.includes("stray"));
   });
 });
