@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.37.0 (2026-05-05) — Role-level permission defaults
+
+Polish on top of v2.36's safety-clamp. `AgentRole` gains a `permissionMode` field and 5 built-in read-only roles ship with `permissionMode: 'plan'` so they're statically read-only under any parent — no `permission_mode` needed at every Agent call site. **1592/1592 tests pass** (was 1587; +5). Typecheck and Biome clean.
+
+### Added
+- **Role-level `permissionMode` default** (#116). Resolution order in `AgentTool`, most-specific-wins: caller's `input.permission_mode` → `role.permissionMode` → parent's mode. The narrowing-only safety clamp from v2.36 applies at every step, so a role default can only narrow the parent's mode, never loosen it.
+- **5 read-only built-ins now default to `plan`**: `code-reviewer`, `evaluator`, `security-auditor`, `architect`, `planner`. Spawn them under any parent (including `trust`) and they're statically read-only without per-call wiring. Mutating roles (`editor`, `migrator`, `refactorer`, `test-writer`, `debugger`, `docs-writer`) deliberately leave `permissionMode` undefined so they inherit the parent's mode and can do their job.
+- **Markdown agent frontmatter support** for `.oh/agents/*.md` and `.claude/agents/*.md`. Both `permissionMode: plan` and the hyphenated `permission-mode: plan` are accepted. Invalid values (typos, unknown modes) silently drop to undefined, same defensive pattern as the existing `isolation` field.
+
+### Internal
+- 5 new tests in `roles.test.ts` lock the contract: read-only roles default to `plan`, mutating roles deliberately don't, markdown frontmatter parses both spellings, invalid values silently drop. The "mutating roles assert undefined" test exists so a future contributor adding a writing role notices the asymmetry instead of silently re-introducing the v2.36 footgun.
+- **Why this follows v2.36 directly:** after v2.36, every Agent caller had to remember `permission_mode: 'plan'` for review/audit subagents. That's a footgun. Role-defaults make read-only enforcement automatic for roles that should never write.
+- **Roadmap progress.** Tier 3 still has `/traces` flame-graph TUI (~2 weeks) and `oh evals` SWE-bench-mini (~3-4 weeks) ahead. Tier 4 (structural refactor + perf benchmarks) and the deferred Tier 1 ripgrep-bundle remain.
+
 ## 2.36.0 (2026-05-05) — Subagent permission isolation (Tier 3 begins)
 
 First Tier 3 (differentiation) item ships. AgentTool gains a `permission_mode` override that **narrows** a sub-agent's permission scope — but never loosens it. Useful when running in `trust` for productivity but wanting a review/audit subagent to stay statically read-only. **1587/1587 tests pass** (was 1581; +6 clamp tests). Typecheck and Biome clean.
