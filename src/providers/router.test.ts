@@ -36,6 +36,19 @@ describe("ModelRouter", () => {
     assert.equal(result.tier, "powerful");
   });
 
+  it("routes architect role to powerful model", () => {
+    // Counterpart to editor below — locks the cost-saving asymmetry of the
+    // architect/editor pattern: planner gets the strong model, applier gets the cheap one.
+    const result = router.select({ turn: 3, hadToolCalls: false, toolCallCount: 0, role: "architect" });
+    assert.equal(result.tier, "powerful");
+  });
+
+  it("routes editor role to fast model (architect → editor cost optimization)", () => {
+    const result = router.select({ turn: 4, hadToolCalls: true, toolCallCount: 2, role: "editor" });
+    assert.equal(result.tier, "fast");
+    assert.ok(result.reason.includes("editor"));
+  });
+
   it("routes tool-heavy turns to fast model", () => {
     const result = router.select({ turn: 3, hadToolCalls: true, toolCallCount: 5 });
     assert.equal(result.tier, "fast");

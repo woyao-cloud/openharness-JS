@@ -542,7 +542,8 @@ Dispatch specialized sub-agents for focused tasks:
 | `security-auditor` | OWASP, injection, secrets, CVE scanning | Read-only + Bash |
 | `evaluator` | Evaluate code quality and run tests (read-only) | Read-only + Bash + Diagnostics |
 | `planner` | Design step-by-step implementation plans | Read-only + Bash |
-| `architect` | Analyze architecture and design structural changes | Read-only |
+| `architect` | Analyze architecture and design structural changes (hands off to editor) | Read-only |
+| `editor` | Apply an architect's plan as code edits, no re-planning | Read + Edit + Write + MultiEdit + Bash |
 | `migrator` | Systematic codebase migrations and upgrades | All file tools + Bash |
 
 Each role restricts the sub-agent to only its suggested tools. You can also pass `allowed_tools` explicitly:
@@ -550,6 +551,16 @@ Each role restricts the sub-agent to only its suggested tools. You can also pass
 ```
 Agent({ subagent_type: 'evaluator', prompt: 'Run all tests and report results' })
 Agent({ allowed_tools: ['Read', 'Grep'], prompt: 'Search for all TODO comments' })
+```
+
+### Architect → Editor (cost-saving multi-file edits)
+
+For larger changes that span multiple files, dispatch a two-pass `architect` → `editor` workflow. The architect (powerful model) reads the codebase and outputs a structured plan; the editor (fast model) applies it mechanically without re-planning. When `modelRouter` is configured, OH automatically routes the `architect` role to your `powerful` tier and the `editor` role to your `fast` tier — typical cost reduction is 30-50% on multi-file edits versus running both passes on the powerful model.
+
+```
+Agent({ subagent_type: 'architect', prompt: 'Plan a migration from option A to option B across src/' })
+# Hand the resulting plan to:
+Agent({ subagent_type: 'editor', prompt: '<paste plan>' })
 ```
 
 ## Headless Mode

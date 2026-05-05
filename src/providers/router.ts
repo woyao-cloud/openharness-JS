@@ -60,6 +60,14 @@ export class ModelRouter {
       return this.route("powerful", `role: ${context.role}`);
     }
 
+    // Roles that apply mechanical changes per a prior plan → fast (cost
+    // optimization for the architect → editor pattern; the planner has
+    // already done the reasoning, so the editor doesn't need a powerful model)
+    const cheapRoles = ["editor"];
+    if (context.role && cheapRoles.includes(context.role)) {
+      return this.route("fast", `role: ${context.role}`);
+    }
+
     // Early exploration turns (1-2) → fast
     if (context.turn <= 2 && context.hadToolCalls) {
       return this.route("fast", "early exploration");

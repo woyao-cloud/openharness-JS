@@ -17,7 +17,7 @@ function withTmpCwd(fn: (dir: string) => void) {
 describe("agent roles", () => {
   it("lists all roles", () => {
     const roles = listRoles();
-    assert.ok(roles.length >= 10);
+    assert.ok(roles.length >= 11);
     assert.ok(roles.find((r) => r.id === "code-reviewer"));
     assert.ok(roles.find((r) => r.id === "test-writer"));
     assert.ok(roles.find((r) => r.id === "debugger"));
@@ -25,7 +25,34 @@ describe("agent roles", () => {
     assert.ok(roles.find((r) => r.id === "evaluator"));
     assert.ok(roles.find((r) => r.id === "planner"));
     assert.ok(roles.find((r) => r.id === "architect"));
+    assert.ok(roles.find((r) => r.id === "editor"));
     assert.ok(roles.find((r) => r.id === "migrator"));
+  });
+
+  it("editor role has the apply-only tools (no Glob/Grep — discovery is the architect's job)", () => {
+    const role = getRole("editor");
+    assert.ok(role);
+    assert.strictEqual(role.name, "Editor");
+    // Editor needs Read (to see file before edit) + the mutation tools + Bash for tests.
+    assert.ok(role.suggestedTools!.includes("Read"));
+    assert.ok(role.suggestedTools!.includes("Edit"));
+    assert.ok(role.suggestedTools!.includes("Write"));
+    assert.ok(role.suggestedTools!.includes("MultiEdit"));
+    assert.ok(role.suggestedTools!.includes("Bash"));
+    // Editor does NOT do its own discovery — that's the architect's role.
+    assert.ok(!role.suggestedTools!.includes("Glob"));
+    assert.ok(!role.suggestedTools!.includes("Grep"));
+    // Prompt explicitly forbids re-planning so the cost asymmetry is preserved.
+    assert.ok(role.systemPromptSupplement.includes("DO NOT re-plan"));
+  });
+
+  it("architect role's prompt instructs hand-off to editor with structured plan", () => {
+    const role = getRole("architect");
+    assert.ok(role);
+    assert.ok(role.systemPromptSupplement.includes("editor"));
+    assert.ok(role.systemPromptSupplement.includes("## Plan"));
+    // Architect must not apply edits — that's the editor's job.
+    assert.ok(role.systemPromptSupplement.includes("Do NOT apply edits"));
   });
 
   it("gets role by ID", () => {
