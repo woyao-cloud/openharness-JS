@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.33.0 (2026-05-05) — Opt-in OS-level sandbox for BashTool
+
+First Tier 2 ("Distribution + safety") item from the May 2026 roadmap. Wires the optional [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) package into BashTool — same package Claude Code uses — so users can opt in to OS-level sandboxing (bubblewrap on Linux, sandbox-exec on macOS, plus a domain-allowlist network proxy) without OH having to roll its own bubblewrap/Seatbelt/Landlock integration. Closes the largest piece of #106. **1558/1558 tests pass** (was 1552; +6 sandbox-runtime tests). Typecheck and Biome clean.
+
+### Added
+- **Opt-in sandbox layer for `BashTool`** (#112). Off by default — users opt in via `.oh/config.yaml`:
+
+  ```yaml
+  sandbox:
+    enabled: true
+    network:
+      allowedDomains: ["github.com", "registry.npmjs.org"]
+    filesystem:
+      allowWrite: ["."]
+      denyWrite: [".env"]
+  ```
+
+  When enabled and reachable, every Bash command is wrapped via `SandboxManager.wrapWithSandbox` and spawned through `{ shell: "/bin/bash" }` (preserving bash semantics for heredocs / `$((...))` etc. — `shell: true` defaults to `/bin/sh` on Linux). Platform behaviour is set by the underlying package: Linux uses bubblewrap (must be installed separately), macOS uses sandbox-exec, **Windows is a silent no-op** (the package doesn't support it). Graceful fallback: if bubblewrap isn't installed / init fails / the optional dep is absent, `wrapForSandbox` returns null and BashTool falls through to the existing unsandboxed spawn unchanged. `SECURITY.md` documents the opt-in surface, the platform support table, and the explicit "fall back to unsandboxed path" semantics.
+
+  Scope of the v2.33 surface is intentionally minimal: **BashTool only**. PowerShell / FileEdit / FileWrite / MultiEdit / WebFetch remain unsandboxed for now; they follow in v2.34+ once the BashTool integration is stable in real use. A `requireSandbox: true` mode (fail-closed instead of fallback) and a `--sandbox` CLI flag are also filed for follow-up — config-only is enough for v2.33.
+
+### Internal
+- New module `src/harness/sandbox-runtime.ts` (~95 lines): module-level lazy init of the static `SandboxManager` API; one `initialize()` covers all subsequent `wrapWithSandbox` calls. `isSandboxAvailable()` short-circuits Windows.
+- `OhConfig.sandbox?` schema added to `src/harness/config.ts`, matching the package's config shape so YAML maps directly onto the runtime call.
+- `@anthropic-ai/sandbox-runtime` added as `optionalDependency` (mirrors the v2.31.0 `sharp` pattern — fails install gracefully on platforms where the runtime can't actually function).
+- 6 pure-logic tests in `sandbox-runtime.test.ts` — no real bubblewrap dep; we don't shell out to the package, just verify the contract (null on disabled / Windows / missing-dep, never throws, init cache reused across parallel calls).
+- **Roadmap progress.** v2.32 Tier 1 + v2.33 closes the first item of Tier 2 (safety). Next on the queue: architect/editor model routing (~1 week), then ACP server + Registry submission (1-2 weeks, the load-bearing distribution play that gets OH listed in the [ACP Registry](https://zed.dev/blog/acp-registry) and callable from Zed/JetBrains/Cursor without bespoke IDE-extension work).
+
 ## 2.32.0 (2026-05-05) — AGENTS.md + Windows CI flake fix
 
 Two merged PRs from the start of the May 2026 roadmap "Tier 1 sweep" (free wins). #110 closes the long-standing Windows CI flake (#109) by replacing 6 fixed-`setTimeout(1500ms)` waits with a deterministic poll-loop helper. #111 ships native AGENTS.md support — the cross-tool instruction standard already used by Codex, Cursor, Copilot, Cline, and Aider — so OH "just works" in the 60k+ public repos already configured for cross-agent compatibility, no migration step needed. **1552/1552 tests pass** (was 1541; +4 helper lock-in tests, +7 AGENTS.md tests). Typecheck and Biome clean across both PRs.
