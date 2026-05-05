@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.35.0 (2026-05-05) — `oh acp` (Agent Client Protocol server)
+
+Closes the **final Tier 2 item** from the May 2026 roadmap and opens the entire distribution arc. `oh acp` speaks [Agent Client Protocol](https://agentclientprotocol.com/) over stdin/stdout, so any ACP-aware editor (Zed, JetBrains via the ACP plugin, Cline, OpenCode) can drive openHarness as the underlying agent — no bespoke IDE extension per editor required. This is the single highest-leverage item in the entire 4-tier roadmap: every later release reaches more users once OH is callable from editors that already work this way. **1581/1581 tests pass** (was 1562; +19 ACP bridge tests). Typecheck and Biome clean.
+
+### Added
+- **`oh acp` — ACP server over stdio** (#114). New CLI subcommand that lazy-loads the optional `@agentclientprotocol/sdk`, pipes stdin/stdout via the SDK's `ndJsonStream`, and serves an Agent implementation that bridges OH's `StreamEvent` protocol onto ACP's `session/update` notifications. Configure your editor's ACP integration to launch `oh acp` as the agent command; sessions, tool calls, and tool results round-trip automatically. The `@agentclientprotocol/sdk` package is `optionalDependency` (matches the v2.31 `sharp` and v2.33 `sandbox-runtime` pattern); `oh acp` exits with a clear install hint if the SDK isn't present rather than silently failing.
+
+### Internal
+- `src/acp/agent.ts` (~250 lines) — pure-function `bridgeStreamEventToAcp(event, sessionId)` translation + `createAcpAgent(connection, config)` Agent interface implementation. Translation locked by 19 tests covering every OH event type. Tool-kind derivation (`read` / `edit` / `execute` / `search` / `fetch` / `think` / `other`) drives editor UX — editors color tools per kind.
+- `src/acp/server.ts` (~50 lines) — small entry point. Lazy-imports the SDK so the cost (~750KB of generated zod schemas) doesn't land on users who never invoke `oh acp`.
+- Event translation contract (locked by tests):
+  - `text_delta` → `agent_message_chunk`
+  - `thinking_delta` → `agent_thought_chunk`
+  - `tool_call_start` → `tool_call (status: pending, kind: derived)`
+  - `tool_call_complete` → `tool_call_update (in_progress, rawInput)`
+  - `tool_call_end` → `tool_call_update (completed | failed, content)`
+  - `cost_update` / `turn_complete` / `error` / `rate_limited` / `permission_request` / `ask_user` / `tool_output_delta` → no ACP equivalent (empty translation)
+- **Roadmap progress.** v2.32 (Tier 1 free wins) + v2.33 (Tier 2 safety) + v2.34 (Tier 2 cost) + v2.35 (Tier 2 distribution) = **entire Tier 2 closed**. Only Tier 3 (differentiation: `/traces` flame-graph, subagent context isolation, `oh evals`) and Tier 4 (structural: `main.tsx`/`query.ts` modularity, renderer perf benchmarks) remain. The deferred Tier 1 ripgrep-bundle item still waits on a SEA build pipeline.
+- **Filed for follow-up.** ACP `requestPermission` flow (currently uses OH's own permission flow), `cost_update` → ACP `_meta` passthrough, session resume/load (capability advertised as false), and the registry submission to https://zed.dev/blog/acp-registry (no code change required, lands alongside the release announcement).
+
 ## 2.34.0 (2026-05-05) — Architect → Editor cost-saving pattern
 
 Third Tier 2 item from the May 2026 roadmap closes. Adds the architect/editor pattern from [Aider](https://aider.chat/2024/09/26/architect.html) — a strong model designs the change, a fast model applies it. Per Aider data, **~30-50% cost reduction on multi-file edits** vs running both passes on the powerful model. Reuses the existing role + ModelRouter infrastructure — no new abstractions. **1562/1562 tests pass** (was 1558; +4). Typecheck and Biome clean.
