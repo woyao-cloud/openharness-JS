@@ -563,6 +563,17 @@ Agent({ subagent_type: 'architect', prompt: 'Plan a migration from option A to o
 Agent({ subagent_type: 'editor', prompt: '<paste plan>' })
 ```
 
+### Sub-agent permission isolation
+
+Each `Agent` call accepts a `permission_mode` override that **narrows** the parent's permission mode (never loosens it). Useful when running in `trust` and you want a subagent's review/audit pass to stay strictly read-only:
+
+```
+Agent({ subagent_type: 'code-reviewer', prompt: '...', permission_mode: 'plan' })
+Agent({ subagent_type: 'security-auditor', prompt: '...', permission_mode: 'deny' })
+```
+
+If a less-restrictive mode is requested (e.g. parent is `ask`, subagent requests `trust`), the harness silently clamps to the parent — a model can never use a sub-agent to escape user-approval gates.
+
 ## Headless Mode
 
 Run a single prompt without interactive UI — perfect for CI/CD and scripting:

@@ -563,6 +563,17 @@ Agent({ subagent_type: 'architect', prompt: 'Plan a migration from option A to o
 Agent({ subagent_type: 'editor', prompt: '<paste plan>' })
 ```
 
+### 子代理的权限隔离
+
+`Agent` 调用支持 `permission_mode` 参数，**只能收紧不能放宽**父级的权限模式。当父代理跑在 `trust` 但你希望某个评审/审计子代理保持只读时尤其有用：
+
+```
+Agent({ subagent_type: 'code-reviewer', prompt: '...', permission_mode: 'plan' })
+Agent({ subagent_type: 'security-auditor', prompt: '...', permission_mode: 'deny' })
+```
+
+如果请求的模式比父级更宽松（比如父级 `ask`、子代理请求 `trust`），harness 会静默回退到父级的模式 —— 模型永远不能借助子代理绕过用户的批准门。
+
 ## 无头模式
 
 跑一次提示词，不走交互 UI —— 适合 CI/CD 和脚本化：

@@ -4,6 +4,7 @@ import { emitHook } from "../../harness/hooks.js";
 import { getMessageBus } from "../../services/agent-messaging.js";
 import type { Tool, ToolContext, ToolResult } from "../../Tool.js";
 import type { StreamEvent } from "../../types/events.js";
+import { clampSubagentPermissionMode, type PermissionMode } from "../../types/permissions.js";
 
 /**
  * Forward a single inner-query event to the outer stream via `context.emitChildEvent`,
@@ -41,6 +42,12 @@ const inputSchema = z.object({
   model: z.string().optional(),
   subagent_type: z.string().optional(),
   allowed_tools: z.array(z.string()).optional(),
+  permission_mode: z
+    .enum(["ask", "trust", "deny", "acceptEdits", "plan", "auto", "bypassPermissions"])
+    .optional()
+    .describe(
+      "Restrict the sub-agent's permission mode. Narrowing-only: the harness clamps to the parent's mode if a less-restrictive value is requested. Useful for spawning read-only review/audit agents while the parent runs in 'trust'.",
+    ),
 });
 
 export const AgentTool: Tool<typeof inputSchema> = {
@@ -116,11 +123,17 @@ export const AgentTool: Tool<typeof inputSchema> = {
     // Model override for sub-agent
     const agentModel = input.model ?? context.model;
 
+    // Permission mode override — narrowing-only. Subagent can be same-or-stricter
+    // than parent; a less-restrictive request silently clamps to the parent so a
+    // model in `ask` can't spawn a `trust`-mode subagent to bypass user approval.
+    const parentMode: PermissionMode = context.permissionMode ?? "trust";
+    const subagentMode = clampSubagentPermissionMode(parentMode, input.permission_mode as PermissionMode | undefined);
+
     const config = {
       provider: context.provider,
       tools: agentTools,
       systemPrompt,
-      permissionMode: context.permissionMode ?? "trust",
+      permissionMode: subagentMode,
       model: agentModel,
       maxTurns: 20,
       abortSignal: context.abortSignal,
@@ -243,6 +256,7 @@ export const AgentTool: Tool<typeof inputSchema> = {
 - run_in_background (boolean, optional): Run the agent in the background. Returns immediately; you will be notified when it completes.
 - model (string, optional): Override the model for this sub-agent (e.g., use a faster model for exploration).
 - subagent_type (string, optional): Specialize the agent behavior. Types: "Explore" (read-only codebase search), "Plan" (design implementation plans), "code-reviewer", "test-writer", "debugger", "refactorer", "security-auditor", "evaluator" (read-only evaluation), "planner" (implementation plans), "architect" (system design), "migrator" (codebase migrations).
-- allowed_tools (string[], optional): Restrict the sub-agent to only these tools by name. If omitted and a role has suggested tools, those are used.`;
+- allowed_tools (string[], optional): Restrict the sub-agent to only these tools by name. If omitted and a role has suggested tools, those are used.
+- permission_mode (string, optional): Override the sub-agent's permission mode (one of: ask, trust, deny, acceptEdits, plan, auto, bypassPermissions). Narrowing-only — a less-restrictive value silently clamps to the parent's mode. Use to spawn a read-only audit/review sub-agent in "plan" or "deny" while the parent runs in "trust".`;
   },
 };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { checkPermission } from "./permissions.js";
+import { describe, test } from "node:test";
+import { checkPermission, clampSubagentPermissionMode, type PermissionMode } from "./permissions.js";
 
 test("trust mode allows everything", () => {
   const r = checkPermission("trust", "high", false);
@@ -237,4 +237,68 @@ test("non-compound bash command still uses single-rule matching", () => {
   } finally {
     setToolPermissionRules(undefined);
   }
+});
+
+// ── Subagent permission-mode clamping ──
+//
+// Contract: a subagent's permission mode may be the same strictness as its
+// parent or stricter, never looser. This guards against a model in `ask` mode
+// spawning a `trust`-mode subagent and silently bypassing user approval on
+// its own tool calls.
+
+describe("clampSubagentPermissionMode — subagent narrowing-only contract", () => {
+  test("undefined override returns parent mode unchanged", () => {
+    assert.equal(clampSubagentPermissionMode("ask", undefined), "ask");
+    assert.equal(clampSubagentPermissionMode("trust", undefined), "trust");
+    assert.equal(clampSubagentPermissionMode("deny", undefined), "deny");
+  });
+
+  test("same-strictness override is honored (no-op)", () => {
+    assert.equal(clampSubagentPermissionMode("ask", "ask"), "ask");
+    assert.equal(clampSubagentPermissionMode("trust", "trust"), "trust");
+  });
+
+  test("stricter override is honored (the useful case — read-only audit subagent under a trust parent)", () => {
+    // Parent in trust → subagent can be plan (more restrictive)
+    assert.equal(clampSubagentPermissionMode("trust", "plan"), "plan");
+    // Parent in ask → subagent can be deny (more restrictive)
+    assert.equal(clampSubagentPermissionMode("ask", "deny"), "deny");
+    // Parent in auto → subagent can be ask (more restrictive)
+    assert.equal(clampSubagentPermissionMode("auto", "ask"), "ask");
+  });
+
+  test("less-restrictive override clamps silently to parent (the safety case)", () => {
+    // ask parent → trust subagent would be looser; clamp to ask
+    assert.equal(clampSubagentPermissionMode("ask", "trust"), "ask");
+    // deny parent → bypassPermissions subagent would be looser; clamp to deny
+    assert.equal(clampSubagentPermissionMode("deny", "bypassPermissions"), "deny");
+    // plan parent → auto subagent would be looser; clamp to plan
+    assert.equal(clampSubagentPermissionMode("plan", "auto"), "plan");
+  });
+
+  test("strictness ordering: bypassPermissions < trust < auto < acceptEdits < plan < ask < deny", () => {
+    // From a bypassPermissions parent (the loosest), every other mode is at-least-as-strict and should pass through.
+    const parent: PermissionMode = "bypassPermissions";
+    const all: PermissionMode[] = ["bypassPermissions", "trust", "auto", "acceptEdits", "plan", "ask", "deny"];
+    for (const m of all) {
+      assert.equal(clampSubagentPermissionMode(parent, m), m, `bypassPermissions parent should accept ${m}`);
+    }
+    // From a deny parent (the strictest), every override looser than deny should clamp to deny.
+    for (const m of all) {
+      const expected = m === "deny" ? "deny" : "deny";
+      assert.equal(clampSubagentPermissionMode("deny", m), expected);
+    }
+  });
+
+  test("escalation attack scenario: parent ask, model requests trust → clamped (the load-bearing safety assertion)", () => {
+    // This is the exact attack the function prevents. If this changes shape,
+    // a model can elevate its subagents past user-approval gates.
+    const parent: PermissionMode = "ask";
+    const escalation: PermissionMode = "trust";
+    assert.equal(
+      clampSubagentPermissionMode(parent, escalation),
+      "ask",
+      "ask-mode parent must NEVER permit a trust-mode subagent",
+    );
+  });
 });

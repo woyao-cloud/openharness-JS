@@ -14,6 +14,60 @@ export type PermissionMode = "ask" | "trust" | "deny" | "acceptEdits" | "plan" |
 
 export type RiskLevel = "low" | "medium" | "high";
 
+/**
+ * Strictness rank for permission modes. Lower = more permissive. Used by
+ * `clampSubagentPermissionMode` to enforce that a subagent can never run
+ * less restrictively than its parent — only the same or stricter.
+ *
+ * The ordering is deliberate, not lexical:
+ *   bypassPermissions (0) — approves everything unconditionally
+ *   trust             (1) — approves everything user-trusted
+ *   auto              (2) — approves except dangerous bash
+ *   acceptEdits       (3) — auto-approves edit-safe tool subset
+ *   plan              (4) — read-only allowed; writes blocked
+ *   ask               (5) — every non-trivial call prompts the user
+ *   deny              (6) — denies everything
+ *
+ * Why a rank instead of a Set: most-restrictive comparisons are easier when
+ * the dimension is total-ordered, and adding a new mode means adding one row
+ * to this table rather than re-deriving the partial order across call sites.
+ */
+const PERMISSION_STRICTNESS_RANK: Record<PermissionMode, number> = {
+  bypassPermissions: 0,
+  trust: 1,
+  auto: 2,
+  acceptEdits: 3,
+  plan: 4,
+  ask: 5,
+  deny: 6,
+};
+
+/**
+ * Resolve a subagent's effective permission mode given the parent's mode and
+ * an optionally-requested override. The contract: a subagent may be the same
+ * strictness as its parent or stricter, never looser.
+ *
+ * Why this asymmetry: the AgentTool input schema lets the model pick a
+ * subagent's mode. Allowing a less-restrictive choice would mean a model in
+ * `ask` mode could spawn a `trust`-mode subagent and quietly bypass user
+ * approval on its own tool calls — exactly the kind of escalation the
+ * permission system exists to prevent. The same pattern as `allowed_tools`,
+ * which is also narrowing-only.
+ *
+ * Returns the parent's mode if the requested override is undefined or would
+ * loosen the gate. Returns the requested override only when it's the same or
+ * stricter than the parent.
+ */
+export function clampSubagentPermissionMode(
+  parentMode: PermissionMode,
+  requestedMode: PermissionMode | undefined,
+): PermissionMode {
+  if (!requestedMode) return parentMode;
+  return PERMISSION_STRICTNESS_RANK[requestedMode] >= PERMISSION_STRICTNESS_RANK[parentMode]
+    ? requestedMode
+    : parentMode;
+}
+
 export type PermissionResult = {
   readonly allowed: boolean;
   readonly reason: string;
