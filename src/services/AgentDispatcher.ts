@@ -10,7 +10,7 @@ import { createWorktree, isGitRepo, removeWorktree } from "../git/index.js";
 import type { Provider } from "../providers/base.js";
 import type { Tools } from "../Tool.js";
 import type { StreamEvent, ToolCallComplete, ToolCallEnd, ToolCallStart, ToolOutputDelta } from "../types/events.js";
-import type { PermissionMode } from "../types/permissions.js";
+import { clampSubagentPermissionMode, type PermissionMode } from "../types/permissions.js";
 
 /**
  * Forward inner-loop tool events to the outer stream, stamping parentCallId.
@@ -40,6 +40,15 @@ export type AgentTask = {
   description?: string;
   blockedBy?: string[]; // task IDs that must complete before this one starts
   allowedTools?: string[]; // restrict this task's agent to specific tools
+  /**
+   * Per-task permission mode override — narrowing-only, same contract as
+   * AgentTool's `permission_mode` (v2.36). When set, the task's effective
+   * mode is `clampSubagentPermissionMode(dispatcher.permissionMode, task.permissionMode)`,
+   * so a task can be the same strictness as the outer call or stricter,
+   * never looser. Use to mark specific tasks in a parallel batch as
+   * read-only review/audit while letting siblings keep full write access.
+   */
+  permissionMode?: PermissionMode;
 };
 
 export type AgentTaskResult = {
@@ -205,11 +214,16 @@ export class AgentDispatcher {
       // matching `process.chdir(originalCwd)` in `finally` — but since
       // `process.cwd()` is process-wide, two concurrent tasks would clobber
       // each other's directory mid-execution.
+      // Per-task permission mode — narrowing-only clamp applied so a task
+      // can override only to a same-or-stricter mode than the dispatcher's
+      // outer mode (#115 contract).
+      const taskPermissionMode = clampSubagentPermissionMode(this.permissionMode, task.permissionMode);
+
       const config = {
         provider: this.provider,
         tools: taskTools,
         systemPrompt: this.systemPrompt,
-        permissionMode: this.permissionMode,
+        permissionMode: taskPermissionMode,
         model: this.model,
         maxTurns: 20,
         abortSignal: this.abortSignal,

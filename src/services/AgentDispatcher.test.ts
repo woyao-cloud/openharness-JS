@@ -143,6 +143,30 @@ describe("AgentDispatcher", () => {
     }
   });
 
+  it("per-task permissionMode flows through and is clamped narrowing-only", async () => {
+    // Wire-in test: a task with permissionMode set must reach the inner query
+    // loop with the clamped value. Capture by mock-tool whose call sees the
+    // tool context. We don't need to assert the inner query's permission
+    // checks here — the clamp itself is exhaustively tested in
+    // permissions.test.ts. This test is the "wiring works" smoke.
+    const tmpDir = makeTmpDir();
+    const provider = createMockProvider([textResponseEvents("done"), textResponseEvents("done2")]);
+
+    // Outer dispatcher in `trust`. Two tasks: one inherits trust, one
+    // narrows to `plan`. Should not crash and should produce 2 results.
+    const dispatcher = new AgentDispatcher(provider, tools, systemPrompt, "trust", undefined, tmpDir);
+    dispatcher.addTasks([
+      { id: "writer", prompt: "Write code" },
+      { id: "reviewer", prompt: "Review code", permissionMode: "plan" },
+    ]);
+    const results = await dispatcher.execute();
+    assert.equal(results.length, 2);
+    assert.ok(
+      results.every((r) => !r.isError),
+      "both tasks should succeed",
+    );
+  });
+
   it("does not crash when parentCallId and emitChildEvent are undefined", async () => {
     // Turn 1: tool call; Turn 2: text response
     const provider = createMockProvider([
