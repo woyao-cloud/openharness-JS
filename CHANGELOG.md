@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.36.0 (2026-05-05) — Subagent permission isolation (Tier 3 begins)
+
+First Tier 3 (differentiation) item ships. AgentTool gains a `permission_mode` override that **narrows** a sub-agent's permission scope — but never loosens it. Useful when running in `trust` for productivity but wanting a review/audit subagent to stay statically read-only. **1587/1587 tests pass** (was 1581; +6 clamp tests). Typecheck and Biome clean.
+
+### Added
+- **`Agent({ … permission_mode: 'plan' | 'deny' | … })`** (#115) — sub-agent input schema accepts an optional permission-mode override. Useful pattern: parent runs `trust`, code-reviewer / security-auditor sub-agent runs `plan` or `deny` for static read-only enforcement. Strict-rank ordering (most permissive → most restrictive): `bypassPermissions < trust < auto < acceptEdits < plan < ask < deny`. The runtime clamps any less-restrictive request silently to the parent — a model in `ask` cannot spawn a `trust`-mode sub-agent and bypass user-approval gates. New `clampSubagentPermissionMode(parent, requested)` helper in `src/types/permissions.ts` is the single source of truth; the AgentTool wires it into the QueryConfig before dispatch. README + README.zh-CN bilingual sync.
+
+### Internal
+- 6 new tests in `permissions.test.ts` lock the contract, including the load-bearing escalation-attack scenario (parent `ask` + requested `trust` → must clamp to `ask`).
+- **Roadmap progress.** Tier 3 begins with the smallest-scope item — subagent context isolation. Next on the list: `/traces` flame-graph TUI (~2 weeks) leveraging the existing OTel + OTLP investment, then `oh evals` SWE-bench-lite-mini local harness (~3-4 weeks, the unique-in-market item). Tier 4 (structural: main.tsx/query.ts modularity refactor, renderer perf benchmarks) and the deferred Tier 1 ripgrep-bundle remain.
+- **Filed for follow-up.** ParallelAgentTool's per-task permission_mode (its task schema doesn't expose it; dispatcher honors outer-call permissionMode for now). Role-level default permission_mode on `AgentRole.permissionMode` (e.g. security-auditor auto-runs in `deny`).
+
 ## 2.35.0 (2026-05-05) — `oh acp` (Agent Client Protocol server)
 
 Closes the **final Tier 2 item** from the May 2026 roadmap and opens the entire distribution arc. `oh acp` speaks [Agent Client Protocol](https://agentclientprotocol.com/) over stdin/stdout, so any ACP-aware editor (Zed, JetBrains via the ACP plugin, Cline, OpenCode) can drive openHarness as the underlying agent — no bespoke IDE extension per editor required. This is the single highest-leverage item in the entire 4-tier roadmap: every later release reaches more users once OH is callable from editors that already work this way. **1581/1581 tests pass** (was 1562; +19 ACP bridge tests). Typecheck and Biome clean.
