@@ -574,6 +574,8 @@ Agent({ subagent_type: 'security-auditor', prompt: '...', permission_mode: 'deny
 
 If a less-restrictive mode is requested (e.g. parent is `ask`, subagent requests `trust`), the harness silently clamps to the parent — a model can never use a sub-agent to escape user-approval gates.
 
+**Read-only roles default to `plan` automatically.** `code-reviewer`, `evaluator`, `security-auditor`, `architect`, and `planner` ship with `permissionMode: 'plan'` — spawn them under any parent and they're statically read-only, no `permission_mode` override needed. Markdown-defined agents in `.oh/agents/*.md` can set their own default with `permissionMode: plan` (or `permission-mode: plan`) frontmatter.
+
 ## Headless Mode
 
 Run a single prompt without interactive UI — perfect for CI/CD and scripting:

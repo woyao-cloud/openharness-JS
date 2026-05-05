@@ -29,6 +29,65 @@ describe("agent roles", () => {
     assert.ok(roles.find((r) => r.id === "migrator"));
   });
 
+  it("read-only roles default to permissionMode 'plan'", () => {
+    // The whole point of v2.37's role-default: a parent in `trust` that
+    // spawns a code-reviewer / evaluator / security-auditor / architect /
+    // planner subagent gets read-only enforcement for free, no caller param.
+    const readOnlyRoleIds = ["code-reviewer", "evaluator", "security-auditor", "architect", "planner"];
+    for (const id of readOnlyRoleIds) {
+      const role = getRole(id);
+      assert.ok(role, `role ${id} should exist`);
+      assert.strictEqual(role!.permissionMode, "plan", `role ${id} should default to permissionMode: plan`);
+    }
+  });
+
+  it("mutating roles do NOT set a permissionMode (they need parent's mode to do their job)", () => {
+    // The asymmetric counterpart to read-only roles: editor / migrator /
+    // refactorer / test-writer / debugger / docs-writer all need to write,
+    // so a `plan` floor would break them.
+    const mutatingRoleIds = ["editor", "migrator", "refactorer", "test-writer", "debugger", "docs-writer"];
+    for (const id of mutatingRoleIds) {
+      const role = getRole(id);
+      assert.ok(role, `role ${id} should exist`);
+      assert.strictEqual(role!.permissionMode, undefined, `role ${id} should NOT have a permissionMode default`);
+    }
+  });
+
+  it("markdown agent frontmatter parses permissionMode", () => {
+    withTmpCwd((dir) => {
+      writeFile(
+        dir,
+        ".oh/agents/with-perm.md",
+        `---\nname: With Perm\ndescription: x\npermissionMode: plan\n---\nbody\n`,
+      );
+      const a = discoverMarkdownAgents().find((r) => r.id === "with-perm");
+      assert.ok(a);
+      assert.equal(a!.permissionMode, "plan");
+    });
+  });
+
+  it("markdown agent frontmatter accepts permission-mode hyphenated alias", () => {
+    withTmpCwd((dir) => {
+      writeFile(
+        dir,
+        ".oh/agents/hyphen-perm.md",
+        `---\nname: Hyphen\ndescription: x\npermission-mode: deny\n---\nbody\n`,
+      );
+      const a = discoverMarkdownAgents().find((r) => r.id === "hyphen-perm");
+      assert.ok(a);
+      assert.equal(a!.permissionMode, "deny");
+    });
+  });
+
+  it("markdown agent frontmatter silently drops invalid permissionMode (typo, no crash)", () => {
+    withTmpCwd((dir) => {
+      writeFile(dir, ".oh/agents/bad-perm.md", `---\nname: Bad\ndescription: x\npermissionMode: bogus\n---\n`);
+      const a = discoverMarkdownAgents().find((r) => r.id === "bad-perm");
+      assert.ok(a);
+      assert.equal(a!.permissionMode, undefined, "typoed value should produce no override, not crash");
+    });
+  });
+
   it("editor role has the apply-only tools (no Glob/Grep — discovery is the architect's job)", () => {
     const role = getRole("editor");
     assert.ok(role);

@@ -126,8 +126,16 @@ export const AgentTool: Tool<typeof inputSchema> = {
     // Permission mode override — narrowing-only. Subagent can be same-or-stricter
     // than parent; a less-restrictive request silently clamps to the parent so a
     // model in `ask` can't spawn a `trust`-mode subagent to bypass user approval.
+    //
+    // Resolution order, most-specific-wins:
+    //   1. input.permission_mode (the call site's explicit choice)
+    //   2. role.permissionMode (the role's documented default — e.g.
+    //      code-reviewer / security-auditor / planner default to "plan")
+    //   3. parent's mode (no narrowing — current default)
+    // The clamp applies in all cases so #1 and #2 can only narrow, not loosen.
     const parentMode: PermissionMode = context.permissionMode ?? "trust";
-    const subagentMode = clampSubagentPermissionMode(parentMode, input.permission_mode as PermissionMode | undefined);
+    const requestedMode = (input.permission_mode as PermissionMode | undefined) ?? role?.permissionMode;
+    const subagentMode = clampSubagentPermissionMode(parentMode, requestedMode);
 
     const config = {
       provider: context.provider,

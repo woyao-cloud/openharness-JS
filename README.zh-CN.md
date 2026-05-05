@@ -574,6 +574,8 @@ Agent({ subagent_type: 'security-auditor', prompt: '...', permission_mode: 'deny
 
 如果请求的模式比父级更宽松（比如父级 `ask`、子代理请求 `trust`），harness 会静默回退到父级的模式 —— 模型永远不能借助子代理绕过用户的批准门。
 
+**只读角色自动默认 `plan` 模式。** `code-reviewer`、`evaluator`、`security-auditor`、`architect`、`planner` 内置 `permissionMode: 'plan'` —— 在任何父级权限下启动它们都是静态只读，无需在调用处再传 `permission_mode`。`.oh/agents/*.md` 里自定义的 markdown agent 也可以在 frontmatter 写 `permissionMode: plan`（或 `permission-mode: plan`）来设默认。
+
 ## 无头模式
 
 跑一次提示词，不走交互 UI —— 适合 CI/CD 和脚本化：

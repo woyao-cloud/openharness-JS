@@ -22,6 +22,20 @@ export type AgentRole = {
   model?: string;
   /** Isolation mode for sub-agent execution. Default: inherits parent. */
   isolation?: "none" | "worktree";
+  /**
+   * Default permission mode for this role. When the AgentTool caller doesn't
+   * pass `permission_mode`, this value is used. Always passes through the
+   * narrowing-only safety clamp (v2.36): a role marked `plan` can't loosen
+   * the parent's stricter mode, only set the floor when the parent is looser.
+   *
+   * Use cases:
+   *   - `plan` for read-only roles (code-reviewer, evaluator, security-auditor,
+   *     architect, planner) — locks them as read-only even when the parent
+   *     is in `trust`, so the review pass can't accidentally write anything.
+   *   - Leave undefined for roles that mutate (editor, migrator, refactorer,
+   *     test-writer, debugger) — they need the parent's mode to do their job.
+   */
+  permissionMode?: import("../types/permissions.js").PermissionMode;
   /** Per-agent MCP servers injected only when this agent runs (parsed via raw passthrough; dispatcher wiring is a future task). */
   mcpServers?: Record<string, unknown>;
   /** Per-agent hooks (parsed via raw passthrough; dispatcher wiring is a future task). */
@@ -42,6 +56,7 @@ const roles: AgentRole[] = [
 
 Be specific: cite file paths, line numbers, and code snippets. Prioritize issues by severity (critical > major > minor). Don't mention things that look fine — focus on problems.`,
     suggestedTools: ["Read", "Glob", "Grep", "LS"],
+    permissionMode: "plan",
   },
   {
     id: "test-writer",
@@ -119,6 +134,7 @@ Do NOT add new features or change behavior. The refactored code must be function
 
 Report findings with severity (Critical/High/Medium/Low), affected file:line, and recommended fix.`,
     suggestedTools: ["Read", "Glob", "Grep", "Bash"],
+    permissionMode: "plan",
   },
   {
     id: "evaluator",
@@ -133,6 +149,7 @@ Report findings with severity (Critical/High/Medium/Low), affected file:line, an
 
 You CANNOT modify files. Only read, search, and run test/lint commands to evaluate.`,
     suggestedTools: ["Read", "Glob", "Grep", "LS", "Bash", "Diagnostics"],
+    permissionMode: "plan",
   },
   {
     id: "planner",
@@ -147,6 +164,7 @@ You CANNOT modify files. Only read, search, and run test/lint commands to evalua
 
 Do NOT implement anything. Your output is a plan document, not code. Read widely before planning.`,
     suggestedTools: ["Read", "Glob", "Grep", "LS", "Bash"],
+    permissionMode: "plan",
   },
   {
     id: "architect",
@@ -172,6 +190,7 @@ When you've finished planning, output a structured "Plan" the editor can apply m
 
 Keep each step small enough that an editor (a cheaper model) can apply it without re-deriving your reasoning. Group related edits together; surface dependencies between steps.`,
     suggestedTools: ["Read", "Glob", "Grep", "LS"],
+    permissionMode: "plan",
   },
   {
     id: "editor",
@@ -263,6 +282,7 @@ function parseAgentMarkdown(raw: string, filePath: string): AgentRole | null {
   const disallowedMatch = fm.match(/^disallowedTools:\s*(.+)$/m) ?? fm.match(/^disallowed-tools:\s*(.+)$/m);
   const modelMatch = fm.match(/^model:\s*(.+)$/m);
   const isolationMatch = fm.match(/^isolation:\s*(.+)$/m);
+  const permModeMatch = fm.match(/^permissionMode:\s*(.+)$/m) ?? fm.match(/^permission-mode:\s*(.+)$/m);
 
   const fmEnd = raw.indexOf("---", raw.indexOf("---") + 3);
   const content = fmEnd > 0 ? raw.slice(fmEnd + 3).trim() : "";
@@ -273,6 +293,15 @@ function parseAgentMarkdown(raw: string, filePath: string): AgentRole | null {
 
   const isolation = isolationMatch?.[1]?.trim().replace(/^["']|["']$/g, "");
   const validIsolation = isolation === "worktree" || isolation === "none" ? isolation : undefined;
+
+  // permissionMode: only honor known values; silently drop typos. Same
+  // pattern as `isolation` above — we'd rather a misspelled mode produce
+  // "no override" than a runtime crash.
+  const permModeRaw = permModeMatch?.[1]?.trim().replace(/^["']|["']$/g, "");
+  const validModes = ["ask", "trust", "deny", "acceptEdits", "plan", "auto", "bypassPermissions"] as const;
+  const validPermissionMode = validModes.includes(permModeRaw as (typeof validModes)[number])
+    ? (permModeRaw as (typeof validModes)[number])
+    : undefined;
 
   // Parse optional inline-JSON fields (mcpServers, hooks). These are block fields in
   // Anthropic's YAML but we support single-line JSON for lightweight frontmatter use.
@@ -288,6 +317,7 @@ function parseAgentMarkdown(raw: string, filePath: string): AgentRole | null {
     disallowedTools: disallowedMatch ? parseAgentList(disallowedMatch[1]!) : undefined,
     model: modelMatch?.[1]?.trim().replace(/^["']|["']$/g, ""),
     isolation: validIsolation,
+    permissionMode: validPermissionMode,
     mcpServers: mcpServersMatch ? tryParseJson(mcpServersMatch[1]!) : undefined,
     hooks: hooksMatch ? tryParseJson(hooksMatch[1]!) : undefined,
   };
