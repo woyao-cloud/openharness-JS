@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.34.0 (2026-05-05) — Architect → Editor cost-saving pattern
+
+Third Tier 2 item from the May 2026 roadmap closes. Adds the architect/editor pattern from [Aider](https://aider.chat/2024/09/26/architect.html) — a strong model designs the change, a fast model applies it. Per Aider data, **~30-50% cost reduction on multi-file edits** vs running both passes on the powerful model. Reuses the existing role + ModelRouter infrastructure — no new abstractions. **1562/1562 tests pass** (was 1558; +4). Typecheck and Biome clean.
+
+### Added
+- **New built-in `editor` role** (#113). Tool surface scoped to `Read + Edit + Write + MultiEdit + Bash` — deliberately no `Glob`/`Grep` because discovery is the architect's job. The role's prompt explicitly forbids re-planning so the cost asymmetry is preserved: "DO apply the changes exactly as described in the plan… DO NOT re-plan, second-guess the architect, or expand scope."
+- **`architect` role updated** (#113). Prompt now (a) explicitly says NOT to apply edits and (b) requires a structured `## Plan` block with `file:line + Before / After / Why` entries the editor can apply mechanically. Locks the hand-off contract.
+- **`ModelRouter.select` gains a symmetric `cheapRoles` rule** (#113). Counterpart to the existing `powerfulRoles`: roles in this list route to the `fast` tier. Currently `{editor}`; `powerfulRoles` already covers `{architect, code-reviewer, evaluator, security-auditor}`. With `modelRouter` configured (`fast`/`balanced`/`powerful`), `architect` automatically gets your strongest model and `editor` automatically gets your cheapest — the cost split happens at routing-time without per-call config.
+- **README.md + README.zh-CN.md** document the pattern under Agent Roles with an architect → editor walkthrough.
+
+### Internal
+- Lock-in tests for both routing directions (`architect → powerful`, `editor → fast`) in `router.test.ts`. Editor role tool-surface verification + "DO NOT re-plan" prompt assertion in `roles.test.ts`. These two tests are the load-bearing assertions for the cost-saving claim — if either flips, the routing asymmetry is broken silently.
+- **Roadmap progress.** v2.32 (Tier 1) + v2.33 (Tier 2 safety) + v2.34 (Tier 2 cost) closes 2 of 3 Tier 2 items. The remaining one — **ACP server + Registry submission** — is the load-bearing distribution play of the entire 4-tier arc and deserves its own design pass before code (subagent-vs-main-CLI server shape, JSON-RPC ↔ stream-event mapping, Zed/JetBrains handshake). Filed for a fresh session.
+
 ## 2.33.0 (2026-05-05) — Opt-in OS-level sandbox for BashTool
 
 First Tier 2 ("Distribution + safety") item from the May 2026 roadmap. Wires the optional [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) package into BashTool — same package Claude Code uses — so users can opt in to OS-level sandboxing (bubblewrap on Linux, sandbox-exec on macOS, plus a domain-allowlist network proxy) without OH having to roll its own bubblewrap/Seatbelt/Landlock integration. Closes the largest piece of #106. **1558/1558 tests pass** (was 1552; +6 sandbox-runtime tests). Typecheck and Biome clean.
