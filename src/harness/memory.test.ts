@@ -339,9 +339,56 @@ test("claudeMdToPrompt formats entries with source headers", () => {
     { path: "./CLAUDE.md", source: "project", content: "Use TS." },
     { path: "~/.claude/CLAUDE.md", source: "user", content: "Prefer minimal comments." },
   ]);
-  assert.ok(prompt.includes("# Project instructions (CLAUDE.md)"));
+  // Generic header (no longer hardcoded to CLAUDE.md) since AGENTS.md may
+  // also feed in. Per-entry `source:` comments disambiguate.
+  assert.ok(prompt.includes("# Project instructions"));
   assert.ok(prompt.includes("source: project"));
   assert.ok(prompt.includes("source: user"));
   assert.ok(prompt.includes("Use TS."));
   assert.ok(prompt.includes("minimal comments"));
+});
+
+// ── AGENTS.md (cross-tool standard) ──
+
+test("loadClaudeMdHierarchy reads AGENTS.md when present", () => {
+  withTmpCwd((dir) => {
+    writeFileSync(join(dir, "AGENTS.md"), "# Cross-tool rules\nUse 4-space indent.");
+    const entries = loadClaudeMdHierarchy();
+    const agents = entries.find((e) => e.source === "agents-md");
+    assert.ok(agents, "AGENTS.md should be loaded under source: agents-md");
+    assert.ok(agents!.content.includes("4-space indent"));
+  });
+});
+
+test("loadClaudeMdHierarchy reads CLAUDE.md and AGENTS.md side-by-side", () => {
+  withTmpCwd((dir) => {
+    writeFileSync(join(dir, "CLAUDE.md"), "Anthropic-only guidance.");
+    writeFileSync(join(dir, "AGENTS.md"), "Cross-tool guidance.");
+    const entries = loadClaudeMdHierarchy();
+    const sources = entries.map((e) => e.source).filter((s) => s !== "user");
+    // Order matches candidate order: project (CLAUDE.md) before agents-md.
+    assert.deepEqual(sources, ["project", "agents-md"]);
+    const project = entries.find((e) => e.source === "project");
+    const agents = entries.find((e) => e.source === "agents-md");
+    assert.ok(project!.content.includes("Anthropic-only"));
+    assert.ok(agents!.content.includes("Cross-tool"));
+  });
+});
+
+test("loadClaudeMdHierarchy returns AGENTS.md alone when CLAUDE.md is absent", () => {
+  withTmpCwd((dir) => {
+    writeFileSync(join(dir, "AGENTS.md"), "AGENTS-only repo.");
+    const entries = loadClaudeMdHierarchy();
+    const local = entries.filter((e) => e.source !== "user");
+    assert.equal(local.length, 1);
+    assert.equal(local[0]!.source, "agents-md");
+    assert.ok(local[0]!.content.includes("AGENTS-only"));
+  });
+});
+
+test("AGENTS.md content flows into the rendered prompt with its own source line", () => {
+  const prompt = claudeMdToPrompt([{ path: "./AGENTS.md", source: "agents-md", content: "Run tests before commits." }]);
+  assert.ok(prompt.includes("# Project instructions"));
+  assert.ok(prompt.includes("source: agents-md"));
+  assert.ok(prompt.includes("Run tests before commits."));
 });

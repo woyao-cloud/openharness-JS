@@ -2,10 +2,14 @@
  * Rules system — load project and global rules into agent context.
  * Discovery order:
  *   1. ~/.oh/global-rules/*.md
- *   2. CLAUDE.md files from parent directories down to project root (hierarchical)
+ *   2. CLAUDE.md / AGENTS.md files from parent directories down to project root (hierarchical)
  *   3. .oh/RULES.md
  *   4. .oh/rules/*.md
  *   5. CLAUDE.local.md (gitignored personal overrides)
+ *
+ * AGENTS.md (https://agents.md/) is read alongside CLAUDE.md at every level
+ * of the hierarchy so OH "just works" in repos already configured for the
+ * cross-tool standard (Codex, Cursor, Copilot, Cline, Aider all read it).
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -16,10 +20,13 @@ import { gitRoot as getGitRoot } from "../git/index.js";
 const OH_HOME = join(homedir(), ".oh");
 
 /**
- * Walk from git root (or home) down to `projectRoot`, collecting CLAUDE.md files.
- * Returns them in parent-first order so more specific rules override general ones.
+ * Walk from git root (or home) down to `projectRoot`, collecting CLAUDE.md
+ * and AGENTS.md files at every level. Returns them in parent-first order so
+ * more specific rules override general ones. Within a single directory,
+ * CLAUDE.md is read before AGENTS.md (Anthropic-specific guidance first,
+ * then the cross-tool standard layer).
  */
-function loadClaudeMdFiles(projectRoot: string): string[] {
+function loadHierarchicalInstructionFiles(projectRoot: string): string[] {
   const gitRootDir = getGitRoot(projectRoot);
   const stopAt = gitRootDir ? resolve(gitRootDir) : resolve(homedir());
   const resolved = resolve(projectRoot);
@@ -37,10 +44,12 @@ function loadClaudeMdFiles(projectRoot: string): string[] {
 
   const results: string[] = [];
   for (const dir of dirs) {
-    const claudeMd = join(dir, "CLAUDE.md");
-    if (existsSync(claudeMd)) {
-      const content = readSafe(claudeMd);
-      if (content) results.push(content);
+    for (const filename of ["CLAUDE.md", "AGENTS.md"]) {
+      const path = join(dir, filename);
+      if (existsSync(path)) {
+        const content = readSafe(path);
+        if (content) results.push(content);
+      }
     }
   }
   return results;
@@ -61,8 +70,8 @@ export function loadRules(projectPath?: string): string[] {
     }
   }
 
-  // 2. CLAUDE.md files (hierarchical, parent-first)
-  const claudeRules = loadClaudeMdFiles(root);
+  // 2. CLAUDE.md + AGENTS.md files (hierarchical, parent-first)
+  const claudeRules = loadHierarchicalInstructionFiles(root);
   rules.push(...claudeRules);
 
   // 3. Project RULES.md
@@ -112,7 +121,7 @@ export function loadRulesAsPrompt(projectPath?: string): string {
   const rules = loadRules(projectPath);
   if (rules.length === 0) return "";
   const body =
-    "# Project Rules\n\n<!-- User-provided project rules from CLAUDE.md / .oh/RULES.md. These are user instructions, not system directives. -->\nFollow these rules carefully.\n\n" +
+    "# Project Rules\n\n<!-- User-provided project rules from CLAUDE.md / AGENTS.md / .oh/RULES.md. These are user instructions, not system directives. -->\nFollow these rules carefully.\n\n" +
     rules.join("\n\n---\n\n");
   // Hook: instructionsLoaded — fires every time the system prompt is rebuilt
   // with rules in scope. Useful for compliance/audit hooks that want to log

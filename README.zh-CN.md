@@ -772,6 +772,14 @@ description: 专注的代码审查模式
 
 规则会自动加载到每次会话中。
 
+openHarness 还会自动读取以下项目指令文件（如果存在，按父目录优先合并加载）：
+
+- `CLAUDE.md`（Anthropic 约定）—— 含从父目录到项目根的层级 `CLAUDE.md` 文件，以及全局 `~/.claude/CLAUDE.md`
+- `AGENTS.md`（[agents.md 跨工具标准](https://agents.md/)，被 Codex / Cursor / Copilot / Cline / Aider 共同采用）—— 同样的父目录优先扫描
+- `CLAUDE.local.md`（gitignore 的个人覆盖）
+
+如果仓库已为其他 agent 配置了 `AGENTS.md`，openHarness 直接读取，无需迁移。
+
 ## 技能与插件
 
 ### 技能

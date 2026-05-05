@@ -118,12 +118,12 @@ export function memoriesToPrompt(memories: MemoryEntry[]): string {
   return result.trimEnd();
 }
 
-// ── CLAUDE.md support (Anthropic convention) ──
+// ── Project instructions: CLAUDE.md (Anthropic) + AGENTS.md (industry standard) ──
 
-/** A single CLAUDE.md source with its resolved content (imports inlined). */
+/** A single project-instructions source with its resolved content (imports inlined). */
 export type ClaudeMdEntry = {
   path: string;
-  source: "project" | "project-local" | "user" | "claude-dir";
+  source: "project" | "project-local" | "user" | "claude-dir" | "agents-md";
   content: string;
 };
 
@@ -175,11 +175,17 @@ function readClaudeMdIfExists(path: string, source: ClaudeMdEntry["source"]): Cl
 }
 
 /**
- * Load the hierarchical CLAUDE.md set in the order Anthropic documents:
- *   1. `./.claude/CLAUDE.md` (project, checked in)
+ * Load hierarchical project-instruction files. Order:
+ *   1. `./.claude/CLAUDE.md` (project, Anthropic convention)
  *   2. `./CLAUDE.md` (project, checked in)
- *   3. `./CLAUDE.local.md` (project, gitignored)
- *   4. `~/.claude/CLAUDE.md` (user-global)
+ *   3. `./AGENTS.md` (project, AGENTS.md cross-tool standard — agents.md)
+ *   4. `./CLAUDE.local.md` (project, gitignored)
+ *   5. `~/.claude/CLAUDE.md` (user-global)
+ *
+ * AGENTS.md is read alongside CLAUDE.md so OH "just works" in the 60k+ repos
+ * already configured for cross-agent compatibility (Codex / Cursor / Copilot
+ * / Cline / Aider all read AGENTS.md). Both layers concatenate into the
+ * system prompt; if both files exist, both contribute.
  *
  * Each file is read, `@imports` are resolved, and the results are returned in
  * load order. Missing files are skipped. The caller can format these into the
@@ -191,6 +197,7 @@ export function loadClaudeMdHierarchy(root = "."): ClaudeMdEntry[] {
   const candidates: Array<[string, ClaudeMdEntry["source"]]> = [
     [join(root, ".claude", "CLAUDE.md"), "claude-dir"],
     [join(root, "CLAUDE.md"), "project"],
+    [join(root, "AGENTS.md"), "agents-md"],
     [join(root, "CLAUDE.local.md"), "project-local"],
     [join(homedir(), ".claude", "CLAUDE.md"), "user"],
   ];
@@ -207,12 +214,15 @@ export function loadClaudeMdHierarchy(root = "."): ClaudeMdEntry[] {
 }
 
 /**
- * Render loaded CLAUDE.md entries as a system-prompt block. Empty when no
- * CLAUDE.md files exist — caller should concatenate alongside `memoriesToPrompt`.
+ * Render loaded project-instruction entries as a system-prompt block. Empty
+ * when no source files exist — caller should concatenate alongside
+ * `memoriesToPrompt`. Header is generic ("Project instructions") since both
+ * CLAUDE.md and AGENTS.md feed in; the per-entry `source:` comment
+ * disambiguates which file each section came from.
  */
 export function claudeMdToPrompt(entries: ClaudeMdEntry[]): string {
   if (entries.length === 0) return "";
-  const parts: string[] = ["# Project instructions (CLAUDE.md)"];
+  const parts: string[] = ["# Project instructions"];
   for (const e of entries) {
     parts.push(`<!-- source: ${e.source} (${e.path}) -->`);
     parts.push(e.content.trim());

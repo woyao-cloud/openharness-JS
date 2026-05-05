@@ -773,6 +773,14 @@ Create `.oh/RULES.md` in any repo (or run `oh init`):
 
 Rules load automatically into every session.
 
+openHarness also reads any of the following project-instruction files if present (additive, parent-first):
+
+- `CLAUDE.md` (Anthropic convention) — and hierarchical `CLAUDE.md` from parent dirs, plus `~/.claude/CLAUDE.md` for user-global
+- `AGENTS.md` ([agents.md cross-tool standard](https://agents.md/), used by Codex / Cursor / Copilot / Cline / Aider) — same parent-first walk
+- `CLAUDE.local.md` (gitignored personal overrides)
+
+If a repo has `AGENTS.md` already configured for another agent, openHarness picks it up unchanged — no migration step needed.
+
 ## Skills & Plugins
 
 ### Skills

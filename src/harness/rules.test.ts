@@ -59,3 +59,32 @@ test("loadRules() loads .oh/rules/*.md files", () => {
   const rules = loadRules(tmp);
   assert.ok(rules.some((r) => r.includes("Extra rule content")));
 });
+
+// ── AGENTS.md support (cross-tool standard, agents.md) ──
+
+test("loadRules() picks up AGENTS.md in project root", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "oh-test-"));
+  writeFileSync(join(tmp, "AGENTS.md"), "Cross-tool guidance for any agent.");
+  const rules = loadRules(tmp);
+  assert.ok(rules.some((r) => r.includes("Cross-tool guidance")));
+});
+
+test("loadRules() loads CLAUDE.md and AGENTS.md side-by-side, CLAUDE.md first", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "oh-test-"));
+  writeFileSync(join(tmp, "CLAUDE.md"), "Anthropic-specific rule");
+  writeFileSync(join(tmp, "AGENTS.md"), "Cross-tool rule");
+  const rules = loadRules(tmp);
+  const claudeIdx = rules.findIndex((r) => r.includes("Anthropic-specific"));
+  const agentsIdx = rules.findIndex((r) => r.includes("Cross-tool"));
+  assert.ok(claudeIdx >= 0, "CLAUDE.md should be loaded");
+  assert.ok(agentsIdx >= 0, "AGENTS.md should be loaded");
+  assert.ok(claudeIdx < agentsIdx, "CLAUDE.md should appear before AGENTS.md within the same dir");
+});
+
+test("loadRules() works with AGENTS.md alone (no CLAUDE.md)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "oh-test-"));
+  writeFileSync(join(tmp, "AGENTS.md"), "AGENTS-only repo guidance.");
+  const rules = loadRules(tmp);
+  assert.equal(rules.length, 1);
+  assert.ok(rules[0]!.includes("AGENTS-only"));
+});
