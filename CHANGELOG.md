@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.39.0 (2026-05-05) — `/traces` flame-graph view
+
+Tier 3 (differentiation) item ships. The existing `/traces` command gains a `--flame` mode that renders each span as a horizontal bar positioned and sized by wall time, with a tree-depth Y axis, a time-axis X axis, and a per-span breakdown ranked by total time. Builds on v2.30's SessionTracer + OTLP HTTP shipping by filling in the **consumer-side visualizer** — `/traces` is now a self-contained terminal flame-graph at zero infrastructure cost, no Jaeger or Tempo backend needed for single-session debugging. **1601/1601 tests pass** (was 1593; +8). Typecheck and Biome clean.
+
+### Added
+- **`/traces <sessionId> --flame`** (#118) — flame-graph view alongside the existing tree view. Span name on the left (indented by tree depth), bar in the middle, ms label on the right. Bar color is a stable per-name hash from an 8-color ANSI 256 palette so the same tool keeps the same color across the trace; errored spans render in red regardless. Time ruler at the bottom adapts to canvas width (5 ticks at ≥50 columns, 3 ticks at ≥30, 2 ticks below). Last tick right-anchored to the canvas edge so it lines up with where bars end. Span breakdown section ranks by total time descending (top 10) with count + total ms + percent of trace duration. Footer shows total span count + total ms + error count. The flag accepts `--flame`, `--flamegraph`, or `--flame-graph` interchangeably and works in any position relative to the sessionId.
+
+### Internal
+- `formatFlameGraph(spans, width?, opts?)` in `src/harness/traces.ts` is a pure function — no I/O, no side effects, returns a single multi-line string. Test-friendly: pass `{ color: false }` for ANSI-free output. Layout helpers (`buildTimeRuler`, `colorForSpan`) are also pure. Survives malformed traces (parent-cycle reference, sub-millisecond durations, narrow terminals down to ~30 columns).
+- 7 new tests in `traces.test.ts` cover empty input, span rendering, parent-child indentation, breakdown ranking by total time, error count footer, ANSI on/off toggle, narrow-terminal-width fallback, malformed-trace parent-cycle survival.
+- **Why this matters strategically.** No other agent CLI ships first-class OTel rendering. OH had the infrastructure (SessionTracer + OTLP) since v2.30; this release closes the loop end-user-side. `oh evals` SWE-bench-mini is the next Tier 3 item — the headline release of the cycle.
+
 ## 2.38.0 (2026-05-05) — ParallelAgent per-task permission_mode
 
 Symmetry fix: the v2.36 single-agent `permission_mode` override now also works on individual tasks within a `ParallelAgents` batch. Useful when one task in a parallel run should stay strictly read-only (e.g., a security audit running alongside test-generation tasks). **1593/1593 tests pass** (was 1592; +1). Typecheck and Biome clean.
