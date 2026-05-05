@@ -695,6 +695,17 @@ oh --model llamacpp/my-model
 oh models                    # list available models
 ```
 
+## ACP (Agent Client Protocol)
+
+Speak [Agent Client Protocol](https://agentclientprotocol.com/) over stdin/stdout so editors that support ACP — Zed, JetBrains via the ACP plugin, Cline, OpenCode — can drive openHarness as the underlying agent. No bespoke IDE extension required:
+
+```bash
+oh acp                                          # uses provider/model from .oh/config.yaml
+oh acp --provider anthropic --model claude-sonnet-4-6
+```
+
+Configure your editor's ACP integration to launch `oh acp` as the agent command. The session-update events (text chunks, tool calls, tool results) are translated automatically from openHarness's stream protocol; permission prompts currently use openHarness's own flow rather than the ACP `requestPermission` path (filed for follow-up). The `@agentclientprotocol/sdk` package is an `optionalDependency` — if it didn't install, `oh acp` exits with a clear install hint rather than silently failing.
+
 ## Auth
 
 Provider-agnostic credential management. Local LLMs (Ollama / llama.cpp / LM Studio) need no auth — configure them via `oh init`.

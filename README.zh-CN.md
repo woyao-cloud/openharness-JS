@@ -694,6 +694,17 @@ oh --model llamacpp/my-model
 oh models                    # 列出可用模型
 ```
 
+## ACP（Agent Client Protocol）
+
+通过 stdin/stdout 讲 [Agent Client Protocol](https://agentclientprotocol.com/)，让支持 ACP 的编辑器 —— Zed、通过 ACP 插件接入的 JetBrains、Cline、OpenCode 等 —— 把 openHarness 当作底层 agent 来驱动，无需为每个 IDE 单独写扩展：
+
+```bash
+oh acp                                          # 读取 .oh/config.yaml 的 provider/model
+oh acp --provider anthropic --model claude-sonnet-4-6
+```
+
+在编辑器的 ACP 集成里把 `oh acp` 配成 agent 启动命令即可。session-update 事件（文本块、工具调用、工具结果）由 openHarness 的流式协议自动翻译过去；权限确认目前仍走 openHarness 自己的流程，没有走 ACP 的 `requestPermission`（已记入后续跟进）。`@agentclientprotocol/sdk` 是 `optionalDependency` —— 如果没装上，`oh acp` 会带着清楚的安装提示退出，不会静默失败。
+
 ## 鉴权（Auth）
 
 提供商无关的凭据管理。本地 LLM（Ollama / llama.cpp / LM Studio）无需鉴权 —— 通过 `oh init` 配置即可。

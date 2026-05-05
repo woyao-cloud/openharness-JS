@@ -1193,6 +1193,33 @@ program
     console.log();
   });
 
+// ── acp (Agent Client Protocol server) ──
+//
+// Speaks ACP (https://agentclientprotocol.com/) over stdin/stdout so editors
+// like Zed and JetBrains can drive openHarness as a coding agent. The SDK is
+// an optional dependency to keep the default install footprint small —
+// `oh acp` exits cleanly with an install hint if the SDK isn't present.
+program
+  .command("acp")
+  .description(
+    "Start an ACP (Agent Client Protocol) server over stdio. Usage: configure your editor (Zed/JetBrains/Cline) to launch `oh acp` as the agent command.",
+  )
+  .option("-m, --model <model>", "Model to use (defaults to .oh/config.yaml's model)")
+  .option("-p, --provider <provider>", "Provider name (defaults to .oh/config.yaml's provider)")
+  .action(async (opts: { model?: string; provider?: string }) => {
+    const cfg = readOhConfig();
+    const model = opts.model ?? cfg?.model;
+    const provider = opts.provider ?? cfg?.provider;
+    if (!model || !provider) {
+      process.stderr.write(
+        "ACP server needs both a model and a provider. Pass --model and --provider, or run `oh init` first.\n",
+      );
+      process.exit(1);
+    }
+    const { runAcpServer } = await import("./acp/server.js");
+    await runAcpServer({ provider, model, cwd: process.cwd() });
+  });
+
 /**
  * Run the interactive setup wizard. Used by both the `oh init` subcommand and
  * the `--init` / `--init-only` flag added to chat / run / session (audit B5).
