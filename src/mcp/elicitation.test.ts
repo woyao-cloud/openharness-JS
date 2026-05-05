@@ -200,12 +200,10 @@ describe("resolveElicitation (audit B4)", () => {
       invalidateConfigCache();
       invalidateHookCache();
       await resolveElicitation(sampleRequest);
-      // Wait for the async hook to flush — slow on Windows CI; matches the
-      // 1500ms bump in hooks-b2.test.ts.
-      await new Promise<void>((r) => setTimeout(r, 1500));
-      const { readFileSync, existsSync } = await import("node:fs");
-      assert.ok(existsSync(capturePath), "elicitationResult hook should have fired");
-      const captured = readFileSync(capturePath, "utf8");
+      const { waitForCapture } = await import("../test-helpers.js");
+      const fired = await waitForCapture(capturePath, { expectedLines: 1 });
+      assert.ok(fired.length > 0, "elicitationResult hook should have fired");
+      const captured = fired.join("\n");
       assert.match(captured, /^accept\|/);
       assert.match(captured, /value":42/);
     } finally {

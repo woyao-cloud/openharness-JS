@@ -11,13 +11,13 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { invalidateConfigCache } from "../harness/config.js";
 import type { HookEvent } from "../harness/hooks.js";
 import { invalidateHookCache } from "../harness/hooks.js";
 import type { ToolContext } from "../Tool.js";
-import { createMockTool, makeTmpDir } from "../test-helpers.js";
+import { createMockTool, makeTmpDir, waitForCapture } from "../test-helpers.js";
 import { StreamingToolExecutor } from "./StreamingToolExecutor.js";
 
 function writeHookConfig(dir: string, capturePath: string, events: HookEvent[], mode = "trust"): void {
@@ -51,10 +51,7 @@ async function withHooks<T>(
     invalidateConfigCache();
     invalidateHookCache();
     const result = await fn(capturePath, dir);
-    // Yield so fire-and-forget async hook processes can flush. Same generous
-    // budget as hooks-b2.test.ts — covers Windows CI's slow node-spawn cost.
-    await new Promise<void>((r) => setTimeout(r, 1500));
-    const fired = existsSync(capturePath) ? readFileSync(capturePath, "utf8").split("\n").filter(Boolean) : [];
+    const fired = await waitForCapture(capturePath, { expectedLines: 1 });
     return { result, fired };
   } finally {
     process.chdir(original);

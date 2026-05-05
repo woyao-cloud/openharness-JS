@@ -12,13 +12,13 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { z } from "zod";
 import { invalidateConfigCache } from "../harness/config.js";
 import { invalidateHookCache } from "../harness/hooks.js";
 import type { Tool, ToolContext, ToolResult } from "../Tool.js";
-import { makeTmpDir } from "../test-helpers.js";
+import { makeTmpDir, waitForCapture } from "../test-helpers.js";
 import { executeSingleTool } from "./tools.js";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -119,16 +119,7 @@ async function withHookCapture<T>(
     invalidateHookCache();
 
     const result = await fn();
-
-    // Yield so fire-and-forget async hook processes can write to the capture file.
-    // Windows CI takes ~1s to spawn + run a node child process; bumped from
-    // 150ms to 1500ms to match the prior fixes in hooks-b2.test.ts and
-    // disable-all-hooks.test.ts. Local runs see the file appear well under
-    // 200ms; this just budgets for the worst-case CI runner.
-    await new Promise<void>((r) => setTimeout(r, 1500));
-
-    const fired = existsSync(capturePath) ? readFileSync(capturePath, "utf8").split("\n").filter(Boolean) : [];
-
+    const fired = await waitForCapture(capturePath, { expectedLines: 1 });
     return { fired, result };
   } finally {
     process.chdir(original);
@@ -384,18 +375,9 @@ describe("tools.ts — postToolUse / postToolUseFailure mutual exclusion", () =>
       await executeSingleTool(makeToolCall("SuccessA"), [successTool], makeContext(), "trust");
       await executeSingleTool(makeToolCall("ErrorB"), [errorTool], makeContext(), "trust");
 
-      // Poll for both fire-and-forget hook processes to flush their stdout to
-      // the capture file. On slow CI runners, a fixed wait is too short.
-      const deadline = Date.now() + 5_000;
-      let fired: string[] = [];
-      while (Date.now() < deadline) {
-        fired = existsSync(capturePath) ? readFileSync(capturePath, "utf8").split("\n").filter(Boolean) : [];
-        if (fired.length >= 2) break;
-        await new Promise<void>((r) => setTimeout(r, 50));
-      }
       // Child-process write order is NOT guaranteed across the two
       // executeSingleTool calls — assert set-membership instead of array order.
-      fired = [...fired].sort();
+      const fired = (await waitForCapture(capturePath, { expectedLines: 2 })).slice().sort();
 
       // SuccessA → postToolUse fires for the success call.
       // ErrorB → postToolUseFailure fires for the failure call.

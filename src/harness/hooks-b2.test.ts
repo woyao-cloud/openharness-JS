@@ -9,12 +9,12 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { z } from "zod";
 import { executeSingleTool, executeToolCalls } from "../query/tools.js";
 import type { Tool, ToolContext, ToolResult } from "../Tool.js";
-import { makeTmpDir } from "../test-helpers.js";
+import { makeTmpDir, waitForCapture } from "../test-helpers.js";
 import { TaskCreateTool } from "../tools/TaskCreateTool/index.js";
 import { TaskUpdateTool } from "../tools/TaskUpdateTool/index.js";
 import { invalidateConfigCache } from "./config.js";
@@ -53,12 +53,7 @@ async function withHooks<T>(
     invalidateHookCache();
 
     const result = await fn(capturePath);
-    // Yield so fire-and-forget async hook processes can flush. Windows CI
-    // takes ~1s to spawn + run a node child process, so the wait is generous.
-    // Local runs see the file appear well under 300 ms; this just budgets for
-    // the worst-case CI runner.
-    await new Promise<void>((r) => setTimeout(r, 1500));
-    const fired = existsSync(capturePath) ? readFileSync(capturePath, "utf8").split("\n").filter(Boolean) : [];
+    const fired = await waitForCapture(capturePath, { expectedLines: events.length });
     return { result, fired };
   } finally {
     process.chdir(original);

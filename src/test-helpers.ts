@@ -2,7 +2,7 @@
  * Shared test helpers — mock provider, mock tools, tmpdir, mock fetch.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -160,4 +160,39 @@ export function mockFetch(handler: (url: string, init?: RequestInit) => Promise<
 
 export function mockFetchJson(data: unknown, status = 200): () => void {
   return mockFetch(async () => new Response(JSON.stringify(data), { status }));
+}
+
+// ── Hook-capture wait ──
+
+/**
+ * Poll for a hook-capture file to reach `expectedLines`. Survives Windows-CI
+ * cold node-spawn (~1-3s) without burning a fixed pessimistic budget — local
+ * runs exit in <100ms, slow runners get up to `timeoutMs` (default 5000ms).
+ *
+ * After the count is reached, a small grace period catches stragglers so
+ * tests asserting "exactly N" can still detect a buggy duplicate. Returns
+ * whatever's captured if the timeout elapses, so the test assertion provides
+ * the failure message rather than a deadlock.
+ */
+export async function waitForCapture(
+  capturePath: string,
+  opts: { expectedLines?: number; timeoutMs?: number; pollMs?: number; graceMs?: number } = {},
+): Promise<string[]> {
+  const expectedLines = opts.expectedLines ?? 1;
+  const timeoutMs = opts.timeoutMs ?? 5000;
+  const pollMs = opts.pollMs ?? 50;
+  const graceMs = opts.graceMs ?? 100;
+  const deadline = Date.now() + timeoutMs;
+  const read = (): string[] =>
+    existsSync(capturePath) ? readFileSync(capturePath, "utf8").split("\n").filter(Boolean) : [];
+  let lines: string[] = [];
+  while (Date.now() < deadline) {
+    lines = read();
+    if (lines.length >= expectedLines) {
+      await new Promise((r) => setTimeout(r, graceMs));
+      return read();
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return lines;
 }
