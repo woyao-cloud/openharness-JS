@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.38.0 (2026-05-05) — ParallelAgent per-task permission_mode
+
+Symmetry fix: the v2.36 single-agent `permission_mode` override now also works on individual tasks within a `ParallelAgents` batch. Useful when one task in a parallel run should stay strictly read-only (e.g., a security audit running alongside test-generation tasks). **1593/1593 tests pass** (was 1592; +1). Typecheck and Biome clean.
+
+### Added
+- **`ParallelAgents({ tasks: [{ permission_mode: 'plan', … }, …] })`** (#117). Each task in a parallel batch can now narrow its own permission mode independently of its siblings. The narrowing-only safety clamp from v2.36 applies per-task: each task can be same-or-stricter than the dispatcher's outer mode, never looser. `AgentTask` type gains `permissionMode?: PermissionMode`; `AgentDispatcher.runTask` clamps via `clampSubagentPermissionMode(dispatcher.permissionMode, task.permissionMode)`. The ParallelAgentTool's input task schema also exposes `allowed_tools` — the dispatcher honored it before but the tool's input schema didn't accept it. Snake_case at the tool boundary maps to the dispatcher's camelCase shape.
+
+### Internal
+- 1 wiring smoke test in `AgentDispatcher.test.ts` — the clamp itself remains exhaustively tested in `permissions.test.ts`, including the load-bearing escalation-attack scenario (parent `ask` + requested `trust` → must clamp to `ask`).
+
 ## 2.37.0 (2026-05-05) — Role-level permission defaults
 
 Polish on top of v2.36's safety-clamp. `AgentRole` gains a `permissionMode` field and 5 built-in read-only roles ship with `permissionMode: 'plan'` so they're statically read-only under any parent — no `permission_mode` needed at every Agent call site. **1592/1592 tests pass** (was 1587; +5). Typecheck and Biome clean.
