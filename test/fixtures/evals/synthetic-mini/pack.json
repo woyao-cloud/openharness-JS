@@ -1,0 +1,9 @@
+{
+  "name": "synthetic-mini",
+  "version": "1",
+  "description": "Synthetic pack for e2e tests — no Python, no real LLM",
+  "language": "javascript",
+  "runner_requirements": [],
+  "default_test_command": "true",
+  "instance_count": 3
+}

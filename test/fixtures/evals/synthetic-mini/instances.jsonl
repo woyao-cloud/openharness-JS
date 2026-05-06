@@ -1,0 +1,3 @@
+{"instance_id":"synth-pass","repo":"synth/synth","base_commit":"x","problem_statement":"pass","FAIL_TO_PASS":[],"PASS_TO_PASS":[]}
+{"instance_id":"synth-fail","repo":"synth/synth","base_commit":"x","problem_statement":"fail","FAIL_TO_PASS":[],"PASS_TO_PASS":[]}
+{"instance_id":"synth-error","repo":"synth/synth","base_commit":"x","problem_statement":"error","FAIL_TO_PASS":[],"PASS_TO_PASS":[]}

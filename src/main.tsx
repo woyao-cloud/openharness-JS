@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Command, Option } from "commander";
 import { render } from "ink";
+import { registerEvalsCommand } from "./evals/cli.js";
 import { parseSettingSources, readOhConfig } from "./harness/config.js";
 import { emitHook, setHookDecisionObserver } from "./harness/hooks.js";
 import { languageToPrompt } from "./harness/language.js";
@@ -1453,6 +1454,9 @@ program
     console.log(result.message);
     console.log();
   });
+
+// ── evals (oh evals run/list-packs/show) ──
+registerEvalsCommand(program);
 
 // ── sessions ──
 program
