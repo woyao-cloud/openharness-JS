@@ -857,19 +857,13 @@ export function registerInfoCommands(
     },
   );
 
-  register("benchmark", "Run SWE-bench benchmark suite", (args) => {
-    const task = args.trim();
-    if (!task) {
-      return {
-        output:
-          "Usage: /benchmark <task-id or 'list'>\n\nExamples:\n  /benchmark list              List available tasks\n  /benchmark django__django-1234  Run a specific task\n\nSee BENCHMARKS.md for results and methodology.",
-        handled: true,
-      };
-    }
+  register("benchmark", "Run SWE-bench benchmark suite (deprecated — use 'oh evals')", () => {
     return {
-      output: `[benchmark] ${task}`,
-      handled: false,
-      prependToPrompt: `You are running a SWE-bench benchmark task. Task: ${task}\n\nFollow the standard benchmark protocol: read the issue, understand the codebase, implement the fix, and verify with tests.`,
+      output:
+        "/benchmark is replaced by the top-level command 'oh evals run <pack>'.\n" +
+        "Run from the shell, not from inside this REPL — evals spawn isolated subprocesses.\n" +
+        "See: oh evals --help",
+      handled: true,
     };
   });
 }

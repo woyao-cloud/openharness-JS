@@ -73,6 +73,49 @@ CI runs `typecheck`, `lint`, and `test` on Ubuntu and Windows. All must pass bef
 4. Add tests at `src/tools/YourTool/index.test.ts`. Tools that hit external services should mock the HTTP client; pure tools should test against fixtures.
 5. Bump the README's `tools-N` badge and the `Tools (N)` section heading in both `README.md` and `README.zh-CN.md`.
 
+## Authoring eval packs
+
+`oh evals` supports custom eval packs at `~/.oh/evals/packs/<name>/`. A pack is:
+
+```
+<pack-name>/
+├── pack.json
+├── instances.jsonl
+└── fixtures/
+    └── <instance_id>/
+        ├── repo.tar.zst
+        ├── setup.sh
+        └── oracle.sh         # optional, replaces F2P/P2P scoring
+```
+
+`pack.json` shape:
+
+```json
+{
+  "name": "my-pack",
+  "version": "1",
+  "description": "...",
+  "language": "python",
+  "runner_requirements": ["python3>=3.9", "pip", "git", "tar", "zstd"],
+  "default_test_command": "cd repo && pytest --junit-xml=../.oh-evals-results.xml",
+  "instance_count": 10,
+  "compatible_with": "swe-bench-lite-v1"
+}
+```
+
+`instances.jsonl` — one JSON object per line, matching `EvalsTask` from `src/evals/types.ts`:
+
+```json
+{"instance_id":"foo__bar-1","repo":"foo/bar","base_commit":"deadbeef","problem_statement":"fix it","FAIL_TO_PASS":["t.test_a"],"PASS_TO_PASS":["t.test_b"]}
+```
+
+`scripts/build-evals-pack.mjs` bakes a fixture from a github.com repo at a given base_commit. Run with no args for usage.
+
+**Pass/fail contract:**
+
+- Without `oracle.sh`: pack `default_test_command` runs and produces `.oh-evals-results.xml` (junit-xml). The instance passes if every test ID in `FAIL_TO_PASS` is in success AND every test ID in `PASS_TO_PASS` is in success.
+- With `oracle.sh` (or `oracle.mjs`): exit 0 = pass; F2P/P2P arrays are ignored.
+
 ## Spec & plan workflow
 
 Non-trivial feature work uses a spec-then-plan-then-execute pattern documented in `docs/superpowers/`:

@@ -44,6 +44,7 @@ AI coding agent in your terminal. Works with any LLM -- free local models or clo
 - [Providers](#providers)
 - [Auth](#auth)
 - [Update](#update)
+- [Evals](#evals)
 - [FAQ](#faq)
 - [Install](#install)
 - [Development](#development)
@@ -858,6 +859,40 @@ Plugins are npm packages that bundle skills, hooks, and MCP servers:
 ```
 
 Save as `openharness-plugin.json` in your npm package root. Install with `npm install`, and openHarness discovers it automatically from `node_modules/`.
+
+## Evals
+
+`oh evals` runs SWE-bench-Lite-compatible evaluations against any provider, locally, with mandatory cost caps. Useful for measuring real-world bug-fix performance instead of synthetic benchmarks.
+
+```bash
+# Run a custom pack with a $5 total cap, 2 parallel agents
+oh evals run my-pack --max-cost-usd 5 --concurrency 2
+
+# Run a specific instance
+oh evals run my-pack --max-cost-usd 1 --instance django__django-11551
+
+# Random sample of 3
+oh evals run my-pack --max-cost-usd 2 --sample 3
+
+# Resume a partial run that hit its cost cap
+oh evals run my-pack --max-cost-usd 10 --resume 2026-05-05T14-30-00
+
+# List installed packs
+oh evals list-packs
+
+# Show summary of a past run
+oh evals show 2026-05-05T14-30-00
+```
+
+Output lives at `~/.oh/evals/runs/<run-id>/`:
+
+- `results.json` — full per-task data with cost, turns, duration, tests_status, error_message.
+- `predictions.json` — submittable to the SWE-bench leaderboard at https://www.swebench.com/.
+- `transcripts/<instance_id>.jsonl` — verbatim subprocess `stream-json` output per task.
+
+A pluggable pack contract (`pack.json` + `instances.jsonl` + `fixtures/<id>/`) lets you author packs against any test suite. The `scripts/build-evals-pack.mjs` helper bakes a SWE-bench-Lite-compatible repo at a given base_commit into a fixture; see [CONTRIBUTING.md](CONTRIBUTING.md#authoring-eval-packs).
+
+A bundled `swe-bench-lite-mini` pack (10 cherry-picked instances, ready to run out-of-the-box) is shipping in v2.40.1.
 
 ## How It Works
 

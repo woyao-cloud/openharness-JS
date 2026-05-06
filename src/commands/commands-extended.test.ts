@@ -68,22 +68,21 @@ test("/token-count with text shows char/token estimate", async () => {
   assert.ok(result.output.includes("tokens"));
 });
 
-// ── /benchmark ──
+// ── /benchmark (deprecated; points to `oh evals`) ──
 
-test("/benchmark with no args shows usage", async () => {
+test("/benchmark redirects to oh evals", async () => {
   const result = await processSlashCommand("/benchmark", makeCtx());
   assert.ok(result);
   assert.equal(result.handled, true);
-  assert.ok(result.output.includes("Usage"));
-  assert.ok(result.output.includes("BENCHMARKS"));
+  assert.ok(result.output.includes("oh evals"));
 });
 
-test("/benchmark with task-id returns prependToPrompt", async () => {
+test("/benchmark with task-id still redirects (no prompt prepend)", async () => {
   const result = await processSlashCommand("/benchmark django__django-1234", makeCtx());
   assert.ok(result);
-  assert.equal(result.handled, false);
-  assert.ok(result.prependToPrompt?.includes("SWE-bench"));
-  assert.ok(result.prependToPrompt?.includes("django__django-1234"));
+  assert.equal(result.handled, true);
+  assert.ok(result.output.includes("oh evals"));
+  assert.equal(result.prependToPrompt, undefined);
 });
 
 // ── /vim ──

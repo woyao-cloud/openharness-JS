@@ -44,6 +44,7 @@
 - [模型提供商](#模型提供商)
 - [鉴权（Auth）](#鉴权auth)
 - [自动更新（Update）](#自动更新update)
+- [评测（Evals）](#评测evals)
 - [常见问题](#常见问题)
 - [安装](#安装)
 - [开发](#开发)
@@ -857,6 +858,40 @@ Run the deploy script with health checks...
 ```
 
 把它命名为 `openharness-plugin.json` 放在 npm 包根目录。安装时 `npm install`，openHarness 会自动从 `node_modules/` 中发现它。
+
+## 评测（Evals）
+
+`oh evals` 在本地针对任意 Provider 运行 SWE-bench-Lite 兼容的评测，并强制要求成本上限。用于衡量真实 Bug 修复表现，比合成基准更具参考价值。
+
+```bash
+# 用 5 美元总上限、2 路并发跑一个自定义 pack
+oh evals run my-pack --max-cost-usd 5 --concurrency 2
+
+# 只跑指定 instance
+oh evals run my-pack --max-cost-usd 1 --instance django__django-11551
+
+# 随机抽取 3 个
+oh evals run my-pack --max-cost-usd 2 --sample 3
+
+# 续跑因成本上限中断的运行
+oh evals run my-pack --max-cost-usd 10 --resume 2026-05-05T14-30-00
+
+# 列出已安装的 pack
+oh evals list-packs
+
+# 查看历史运行的汇总
+oh evals show 2026-05-05T14-30-00
+```
+
+输出位于 `~/.oh/evals/runs/<run-id>/`：
+
+- `results.json` — 每个任务的完整数据：成本、轮次、耗时、tests_status、错误信息。
+- `predictions.json` — 可直接提交到 SWE-bench 排行榜 https://www.swebench.com/。
+- `transcripts/<instance_id>.jsonl` — 每个任务子进程的原始 `stream-json` 输出。
+
+可插拔的 pack 协议（`pack.json` + `instances.jsonl` + `fixtures/<id>/`）允许你针对任意测试套件编写 pack。`scripts/build-evals-pack.mjs` 工具可将 SWE-bench-Lite 兼容仓库在指定 base_commit 处烘焙为 fixture，详见 [CONTRIBUTING.md](CONTRIBUTING.md#authoring-eval-packs)。
+
+内置的 `swe-bench-lite-mini` pack（10 个精选 instance，开箱即跑）将在 v2.40.1 版本发布。
 
 ## 工作原理
 

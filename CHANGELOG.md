@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.40.0 (2026-05-06) — `oh evals`
+
+The headline feature of the cycle: a first-class CLI command for running SWE-bench-Lite-compatible evals locally, with mandatory cost caps, parallel subprocess agents, and SWE-bench-leaderboard-submittable output. **1639/1639 tests pass** (was 1601; +38, of which 4 skip on Windows). Typecheck and Biome clean.
+
+### Added
+- **`oh evals run [pack]`** (#119/#120/#121) — run an eval pack against the agent. **Required** `--max-cost-usd <amount>` total cap (no implicit budget), plus optional `--max-task-cost-usd`, `--max-task-turns 50`, `--task-timeout 600`, `--concurrency 1`, `--model`, `--fallback-model`, `--instance`, `--sample`, `--filter`, `--resume`, `--json`, `--output-dir`. Per-task cap auto-derived as `total / num_tasks` when `--max-task-cost-usd` is omitted. SIGINT/SIGTERM cleanly cancel running subprocesses then finalize a partial run.
+- **`oh evals list-packs`** — list bundled and user-installed packs (`~/.oh/evals/packs/<name>/`).
+- **`oh evals show <run-id>`** — re-render any past run's `results.json` from `~/.oh/evals/runs/<run-id>/`.
+- **Pluggable pack contract** — `pack.json` + `instances.jsonl` + `fixtures/<id>/{repo.tar.zst, setup.sh, oracle.sh?}`. SWE-bench Lite instances drop in unmodified.
+- **F2P / P2P scoring** matching SWE-bench's contract — every test ID in `FAIL_TO_PASS` and `PASS_TO_PASS` must end up in `success` for the instance to count as resolved. Junit-xml parsed inline (no XML library dep). Optional `oracle.{sh,mjs}` exit-0 escape hatch when junit-xml isn't available.
+- **Subprocess-isolated agents** — each task spawns its own `oh run --bare --output-format stream-json` with `--max-budget-usd <per-task-cap>` and `--max-turns`. No in-process state pollution, transcripts tee'd to `transcripts/<instance_id>.jsonl`.
+- **Dual output** — `predictions.json` (SWE-bench leaderboard format: `[{instance_id, model_patch, model_name_or_path}]`, rewritten atomically on each task) + `results.json` (enriched superset with cost, turns, duration, tests_status, error_message).
+- **Resumable runs** via `--resume <run-id>` — replays `results.jsonl` to skip already-completed instances. Crash-safe: results.jsonl is valid up to the last successful append.
+- **`scripts/build-evals-pack.mjs`** (#122) — reusable helper that bakes a github.com repo at a given base_commit into a fixture (clone → tar+zstd → setup.sh). Requires `git`, `bash`, `tar`, `zstd` on PATH.
+- **`renderResultsTable`** — ANSI-friendly summary table matching the project's `/traces` output style.
+
+### Changed
+- **`/benchmark` slash command** now points users at `oh evals` instead of prepending an in-REPL benchmark prompt. Evals spawn isolated subprocesses, so the slash command never made sense.
+
+### Removed
+- **`scripts/swe-bench.mjs`** — the old heuristic harness that grepped subprocess output for code-block markers. Subsumed entirely by `oh evals` with real junit-xml-validated scoring.
+
+### Coming in v2.40.1
+- Bundled `swe-bench-lite-mini` pack with 10 cherry-picked SWE-bench Lite instances pre-baked. The harness ships now; the bundled fixtures need their own real-LLM smoke-test cycle and will land in the next point release. v2.40.0 users can build their own packs with `scripts/build-evals-pack.mjs` against any SWE-bench-compatible instance set.
+
+### Internal
+- New `src/evals/` module: `types.ts` + `pack-loader.ts` + `scorer.ts` + `run-writer.ts` + `orchestrator.ts` + `cli.ts` + `index.ts` re-exports. ~1100 LOC, 7 source files.
+- `src/main.tsx` mounts the `evals` Commander group alongside the existing `project` and `auth` groups.
+- Two test stubs at `test/fixtures/evals/`: `fake-oh-run.mjs` (subprocess stream-json emitter for orchestrator tests) and `synthetic-mini/` (3-instance pack with pass/fail/error oracles for end-to-end tests).
+- Race fix in B.5b: await `transcriptStream.end()` before `rmSyncIfExists(worktreePath)` so Windows file handles flush before cleanup. Surfaced under `tsx --test` default parallelism.
+- 38 new tests: 9 pack-loader + 11 scorer (2 oracle.sh skipped on Windows) + 5 run-writer + 6 orchestrator + 5 cli + 2 e2e (skipped on Windows). Windows code path remains covered by the orchestrator + run-writer unit tests.
+
+### Why this matters strategically
+This closes the highest-leverage Tier 3 (differentiation) item. No other agent CLI ships first-class SWE-bench-Lite execution out of the box: Aider runs Exercism-style benchmarks, Claude Code has none, Cline/Roo are demoware. OH now has a credible answer to "how good is your agent on real bug fixes?" — the predictions.json output is leaderboard-submittable, and the cost cap means a $5 run on the bundled mini-pack (once v2.40.1 ships) is a 30-minute correctness check, not a multi-hour Docker dance.
+
 ## 2.39.0 (2026-05-05) — `/traces` flame-graph view
 
 Tier 3 (differentiation) item ships. The existing `/traces` command gains a `--flame` mode that renders each span as a horizontal bar positioned and sized by wall time, with a tree-depth Y axis, a time-axis X axis, and a per-span breakdown ranked by total time. Builds on v2.30's SessionTracer + OTLP HTTP shipping by filling in the **consumer-side visualizer** — `/traces` is now a self-contained terminal flame-graph at zero infrastructure cost, no Jaeger or Tempo backend needed for single-session debugging. **1601/1601 tests pass** (was 1593; +8). Typecheck and Biome clean.
