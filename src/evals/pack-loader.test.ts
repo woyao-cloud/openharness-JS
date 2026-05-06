@@ -103,6 +103,42 @@ test("validatePack accepts valid pack with one instance + fixture dir", () => {
   }
 });
 
+test("validatePack accepts repo.tar.gz (preferred format since v2.40.1)", () => {
+  const dir = makePackDir();
+  try {
+    writeFileSync(
+      join(dir, "pack.json"),
+      JSON.stringify({
+        name: "p",
+        version: "1",
+        description: "",
+        language: "python",
+        runner_requirements: [],
+        default_test_command: "pytest",
+        instance_count: 1,
+      }),
+    );
+    writeFileSync(
+      join(dir, "instances.jsonl"),
+      `${JSON.stringify({
+        instance_id: "x__y-1",
+        repo: "x/y",
+        base_commit: "deadbeef",
+        problem_statement: "fix it",
+        FAIL_TO_PASS: ["t.test_a"],
+        PASS_TO_PASS: ["t.test_b"],
+      })}\n`,
+    );
+    mkdirSync(join(dir, "fixtures", "x__y-1"), { recursive: true });
+    writeFileSync(join(dir, "fixtures", "x__y-1", "repo.tar.gz"), "");
+    writeFileSync(join(dir, "fixtures", "x__y-1", "setup.sh"), "#!/bin/sh\n");
+    const r = validatePack(dir);
+    assert.equal(r.ok, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("loadPack returns pack manifest + parsed tasks", () => {
   const dir = makePackDir();
   try {

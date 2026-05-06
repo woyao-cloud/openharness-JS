@@ -891,7 +891,7 @@ oh evals show 2026-05-05T14-30-00
 
 可插拔的 pack 协议（`pack.json` + `instances.jsonl` + `fixtures/<id>/`）允许你针对任意测试套件编写 pack。`scripts/build-evals-pack.mjs` 工具可将 SWE-bench-Lite 兼容仓库在指定 base_commit 处烘焙为 fixture，详见 [CONTRIBUTING.md](CONTRIBUTING.md#authoring-eval-packs)。
 
-内置的 `swe-bench-lite-mini` pack（10 个精选 instance，开箱即跑）将在 v2.40.1 版本发布。
+内置的 `swe-bench-lite-mini` pack（10 个精选 instance，开箱即跑）将在 v2.40.2 版本发布。
 
 ## 工作原理
 

@@ -83,7 +83,7 @@ CI runs `typecheck`, `lint`, and `test` on Ubuntu and Windows. All must pass bef
 ├── instances.jsonl
 └── fixtures/
     └── <instance_id>/
-        ├── repo.tar.zst
+        ├── repo.tar.gz       # or legacy repo.tar.zst (still supported)
         ├── setup.sh
         └── oracle.sh         # optional, replaces F2P/P2P scoring
 ```
@@ -96,7 +96,7 @@ CI runs `typecheck`, `lint`, and `test` on Ubuntu and Windows. All must pass bef
   "version": "1",
   "description": "...",
   "language": "python",
-  "runner_requirements": ["python3>=3.9", "pip", "git", "tar", "zstd"],
+  "runner_requirements": ["python3>=3.9", "pip", "git", "tar"],
   "default_test_command": "cd repo && pytest --junit-xml=../.oh-evals-results.xml",
   "instance_count": 10,
   "compatible_with": "swe-bench-lite-v1"

@@ -892,7 +892,7 @@ Output lives at `~/.oh/evals/runs/<run-id>/`:
 
 A pluggable pack contract (`pack.json` + `instances.jsonl` + `fixtures/<id>/`) lets you author packs against any test suite. The `scripts/build-evals-pack.mjs` helper bakes a SWE-bench-Lite-compatible repo at a given base_commit into a fixture; see [CONTRIBUTING.md](CONTRIBUTING.md#authoring-eval-packs).
 
-A bundled `swe-bench-lite-mini` pack (10 cherry-picked instances, ready to run out-of-the-box) is shipping in v2.40.1.
+A bundled `swe-bench-lite-mini` pack (10 cherry-picked instances, ready to run out-of-the-box) is shipping in v2.40.2.
 
 ## How It Works
 

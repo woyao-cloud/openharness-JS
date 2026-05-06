@@ -93,8 +93,8 @@ export function validatePack(packDir: string): { ok: true } | { ok: false; error
       if (!existsSync(fixtureDir)) {
         errors.push(`fixture dir missing for ${instanceId} at ${fixtureDir}`);
       } else {
-        if (!existsSync(join(fixtureDir, "repo.tar.zst"))) {
-          errors.push(`fixture missing repo.tar.zst for ${instanceId}`);
+        if (!existsSync(join(fixtureDir, "repo.tar.gz")) && !existsSync(join(fixtureDir, "repo.tar.zst"))) {
+          errors.push(`fixture missing repo.tar.gz (or legacy repo.tar.zst) for ${instanceId}`);
         }
         if (!existsSync(join(fixtureDir, "setup.sh"))) {
           errors.push(`fixture missing setup.sh for ${instanceId}`);

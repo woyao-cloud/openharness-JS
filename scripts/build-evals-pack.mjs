@@ -7,7 +7,7 @@
  *
  *   1. Clone the upstream repo at base_commit into a temp dir.
  *   2. Apply pinned-dep manifest (.oh-evals-pinned-deps.txt) to constrain installs.
- *   3. tar | zstd → fixtures/<instance_id>/repo.tar.zst.
+ *   3. tar -czf → fixtures/<instance_id>/repo.tar.gz (gzip — built into tar everywhere).
  *   4. Drop a setup.sh that creates a venv, installs pinned deps, makes a base commit.
  *
  * Usage:
@@ -25,7 +25,7 @@
  * stdout so you can review and paste it manually. With --append it writes
  * the line directly.
  *
- * Requires on PATH: git, bash, tar, zstd. Setup.sh additionally needs python3 + pip.
+ * Requires on PATH: git, tar. Setup.sh additionally needs python3 + pip + bash at run time.
  */
 
 import {
@@ -89,13 +89,10 @@ try {
     writeFileSync(join(tmp, "repo", ".oh-evals-pinned-deps.txt"), "pytest\n");
   }
 
-  console.log(`Building repo.tar.zst ...`);
+  console.log(`Building repo.tar.gz ...`);
   execFileSync(
-    "bash",
-    [
-      "-c",
-      `tar -cf - -C "${tmp}" repo | zstd -19 -o "${join(fixtureDir, "repo.tar.zst")}"`,
-    ],
+    "tar",
+    ["-czf", join(fixtureDir, "repo.tar.gz"), "-C", tmp, "repo"],
     { stdio: "inherit" },
   );
 

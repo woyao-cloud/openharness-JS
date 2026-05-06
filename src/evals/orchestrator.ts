@@ -403,17 +403,30 @@ function captureGitDiff(worktreeDir: string): string {
 }
 
 async function extractFixture(packDir: string, instanceId: string, dest: string): Promise<void> {
-  const tarPath = join(packDir, "fixtures", instanceId, "repo.tar.zst");
-  if (!existsSync(tarPath) || readFileSync(tarPath).length === 0) {
-    // Empty tarball = test mode (synthetic pack). Caller's setup.sh
-    // handles initialization; we just ensure the dest dir exists.
+  const fxDir = join(packDir, "fixtures", instanceId);
+  // Prefer .tar.gz (bundled by gzip — universally available); fall back to
+  // .tar.zst for older packs that were built before v2.40.1.
+  const candidates: Array<{ path: string; flag: string }> = [
+    { path: join(fxDir, "repo.tar.gz"), flag: "-xzf" },
+    { path: join(fxDir, "repo.tar.zst"), flag: "" },
+  ];
+  for (const c of candidates) {
+    if (!existsSync(c.path)) continue;
+    if (readFileSync(c.path).length === 0) {
+      // Empty tarball = test mode (synthetic pack). Caller's setup.sh
+      // handles initialization; we just ensure the dest dir exists.
+      return;
+    }
+    if (c.flag === "-xzf") {
+      execFileSync("tar", ["-xzf", c.path, "-C", dest], { stdio: ["ignore", "pipe", "pipe"] });
+    } else {
+      // Legacy .tar.zst path: requires the system `zstd` binary on PATH.
+      execFileSync("tar", ["--use-compress-program=zstd -d", "-xf", c.path, "-C", dest], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    }
     return;
   }
-  // Extract via system `tar` (Linux/macOS/Win10+ all ship one).
-  // -I/--use-compress-program zstd is available on tar 1.31+.
-  execFileSync("tar", ["--use-compress-program=zstd -d", "-xf", tarPath, "-C", dest], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
 }
 
 async function runSetupScript(

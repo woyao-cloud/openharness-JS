@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.40.1 (2026-05-07) — `oh evals` portability fix
+
+Drops the external `zstd` runtime dependency so eval packs work on stock Windows installs (which don't ship a `zstd` binary). Pack format is now `repo.tar.gz` by default — built-in to every `tar`. Legacy `repo.tar.zst` packs continue to load and extract for backwards compatibility. **1640/1640 tests pass** (1639 prior + 1 new for the gzip validation path; 4 skipped on Windows for POSIX oracle.sh, unchanged). Typecheck and Biome clean.
+
+### Changed
+- **Pack format default** — `scripts/build-evals-pack.mjs` now emits `repo.tar.gz` via `tar -czf` instead of `repo.tar.zst` via `tar | zstd`. No external compressor required.
+- **Pack-loader validation** accepts either `repo.tar.gz` or `repo.tar.zst`. The error message lists the new format first; legacy is parenthesized.
+- **Orchestrator `extractFixture`** prefers `.tar.gz` (extracted via `tar -xzf`) and falls back to `.tar.zst` only when no `.tar.gz` is present (still requires the system `zstd` binary in that legacy path).
+- **CONTRIBUTING.md `runner_requirements` example** drops `zstd`.
+
+### Coming in v2.40.2
+- Bundled `swe-bench-lite-mini` pack with cherry-picked SWE-bench Lite instances. Deferred from v2.40.1 because shipping fixtures and shipping the format swap are independent and unbundled releases ship cleaner.
+
 ## 2.40.0 (2026-05-06) — `oh evals`
 
 The headline feature of the cycle: a first-class CLI command for running SWE-bench-Lite-compatible evals locally, with mandatory cost caps, parallel subprocess agents, and SWE-bench-leaderboard-submittable output. **1639/1639 tests pass** (was 1601; +38, of which 4 skip on Windows). Typecheck and Biome clean.
