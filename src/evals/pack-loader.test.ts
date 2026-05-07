@@ -84,14 +84,14 @@ test("validatePack accepts valid pack with one instance + fixture dir", () => {
     );
     writeFileSync(
       join(dir, "instances.jsonl"),
-      JSON.stringify({
+      `${JSON.stringify({
         instance_id: "x__y-1",
         repo: "x/y",
         base_commit: "deadbeef",
         problem_statement: "fix it",
         FAIL_TO_PASS: ["t.test_a"],
         PASS_TO_PASS: ["t.test_b"],
-      }) + "\n",
+      })}\n`,
     );
     mkdirSync(join(dir, "fixtures", "x__y-1"), { recursive: true });
     writeFileSync(join(dir, "fixtures", "x__y-1", "repo.tar.zst"), "");
