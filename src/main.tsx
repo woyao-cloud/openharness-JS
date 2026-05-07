@@ -431,7 +431,7 @@ program
       console.log(JSON.stringify({ type: "turnStart", turnNumber: 0 }));
     }
 
-    for await (const event of query(prompt, config, priorMessages)) {
+    for await (const event of query(prompt, { ...config, sessionId }, priorMessages)) {
       if (event.type === "text_delta") {
         fullOutput += event.content;
         if (outputFormat === "text") process.stdout.write(event.content);
@@ -730,7 +730,7 @@ program
       });
       console.log(JSON.stringify({ id, type: "turnStart", turnNumber: turnIdx }));
 
-      for await (const event of query(prompt, config, conversation)) {
+      for await (const event of query(prompt, { ...config, sessionId }, conversation)) {
         if (event.type === "text_delta") {
           assistantText += event.content;
           console.log(JSON.stringify({ id, type: "text", content: event.content }));

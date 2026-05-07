@@ -21,6 +21,8 @@ const BLOCKED_PATTERNS = [
   /^DOCKER_.*TOKEN$/i,
   /^SSH_.*KEY$/i,
   /^OH_CREDENTIAL/i,
+  // Prevent subprocesses from inheriting the CLI's own OTLP endpoint.
+  /^OTEL_/i,
 ];
 
 /**

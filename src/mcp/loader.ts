@@ -48,6 +48,7 @@ export function parseMcpConfigFile(path: string): McpServerConfig[] {
 }
 
 const connectedClients: McpClient[] = [];
+const serverToolCount = new Map<string, number>();
 
 let exitHandlerInstalled = false;
 
@@ -126,6 +127,7 @@ export async function loadMcpTools(opts: LoadMcpOptions = {}): Promise<Tool[]> {
     }
     const { client, defs, server } = result.value;
     connectedClients.push(client);
+    serverToolCount.set(server.name, defs.length);
     debug("mcp", "connected", { server: server.name, tools: defs.length, deferred: defs.length > DEFERRED_THRESHOLD });
 
     if (defs.length > DEFERRED_THRESHOLD) {
@@ -152,11 +154,17 @@ export function disconnectMcpClients(): void {
     }
   }
   connectedClients.length = 0;
+  serverToolCount.clear();
 }
 
 /** Names of connected MCP servers */
 export function connectedMcpServers(): string[] {
   return connectedClients.map((c) => c.name);
+}
+
+/** Tool count for a connected MCP server, or undefined if not connected. */
+export function mcpServerToolCount(name: string): number | undefined {
+  return serverToolCount.get(name);
 }
 
 export type McpPromptHandle = {

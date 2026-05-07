@@ -78,6 +78,7 @@ export async function* query(
     gitCommitPerTool: config.gitCommitPerTool,
     tracer: config.tracer,
     parentSpanId: querySpanId,
+    sessionId: config.sessionId,
   };
   const estimateTokens = makeTokenEstimator(config.provider);
   const contextManager = new ContextManager(undefined, config.model);

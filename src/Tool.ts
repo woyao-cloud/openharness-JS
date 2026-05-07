@@ -36,6 +36,8 @@ export type ToolContext = {
   tracer?: import("./harness/traces.js").SessionTracer;
   /** Optional parent span ID for the current tool execution (set by query loop). */
   parentSpanId?: string;
+  /** Session ID for the current query — injected into Bash subprocess env. */
+  sessionId?: string;
 };
 
 export type Tool<Input extends z.ZodType = z.ZodType> = {

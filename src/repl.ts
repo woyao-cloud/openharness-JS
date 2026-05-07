@@ -963,6 +963,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
       model: currentModel || undefined,
       abortSignal: abortController.signal,
       tracer,
+      sessionId: session.id,
     };
 
     try {

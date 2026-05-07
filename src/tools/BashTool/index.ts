@@ -61,7 +61,7 @@ export const BashTool: Tool<typeof inputSchema> = {
       const bgId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const proc = spawn(shell, shellArgs, {
         cwd: context.workingDir,
-        env: safeEnv(),
+        env: safeEnv(context.sessionId ? { OH_SESSION_ID: context.sessionId } : undefined),
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
         ...extraSpawnOpts,
@@ -115,7 +115,7 @@ export const BashTool: Tool<typeof inputSchema> = {
 
       const proc = spawn(shell, shellArgs, {
         cwd: context.workingDir,
-        env: safeEnv(),
+        env: safeEnv(context.sessionId ? { OH_SESSION_ID: context.sessionId } : undefined),
         stdio: ["ignore", "pipe", "pipe"],
         ...extraSpawnOpts,
       });

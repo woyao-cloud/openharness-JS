@@ -14,7 +14,7 @@ import { discoverPlugins, discoverSkills } from "../harness/plugins.js";
 import { formatFlameGraph, formatTrace, listTracedSessions, loadTrace } from "../harness/traces.js";
 import { getVerificationConfig, invalidateVerificationCache } from "../harness/verification.js";
 import { normalizeMcpConfig } from "../mcp/config-normalize.js";
-import { connectedMcpServers, disconnectMcpClients, loadMcpTools } from "../mcp/loader.js";
+import { connectedMcpServers, disconnectMcpClients, loadMcpTools, mcpServerToolCount } from "../mcp/loader.js";
 import { getAuthStatus } from "../mcp/oauth.js";
 import { formatRegistry, generateConfigBlock, MCP_REGISTRY, searchRegistry } from "../mcp/registry.js";
 import { getRouteSelection } from "../providers/router.js";
@@ -488,6 +488,8 @@ export function registerInfoCommands(
         continue;
       }
       const kind = normalized.cfg.type;
+      const toolCount = mcpServerToolCount(name);
+      const toolsLabel = toolCount !== undefined ? `${toolCount} tool${toolCount === 1 ? "" : "s"}` : "";
       const status = await getAuthStatus(normalized.cfg, storageDir);
       let statusText: string;
       switch (status) {
@@ -504,7 +506,8 @@ export function registerInfoCommands(
           statusText = "expired (re-authenticate with /mcp-login)";
           break;
       }
-      lines.push(`  ${name.padEnd(20)}  ${kind.padEnd(6)}  ${statusText}`);
+      const toolsPart = toolsLabel ? `  ${toolsLabel.padEnd(9)}` : "             ";
+      lines.push(`  ${name.padEnd(20)}  ${kind.padEnd(6)}${toolsPart}  ${statusText}`);
     }
     lines.push("");
     lines.push("Run /mcp-registry to browse and add more servers.");

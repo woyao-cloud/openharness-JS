@@ -37,6 +37,8 @@ export type QueryConfig = {
   permissionPromptTool?: string;
   /** Optional session tracer. When set, query() emits `query` and `tool:<Name>` spans. */
   tracer?: SessionTracer;
+  /** Session ID injected into Bash subprocess env as OH_SESSION_ID. */
+  sessionId?: string;
 };
 
 export type TransitionReason = "next_turn" | "retry_network" | "retry_prompt_too_long" | "retry_max_output_tokens";
