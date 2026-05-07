@@ -17,7 +17,15 @@
  */
 
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, rmSync as nodeRmSync, readFileSync } from "node:fs";
+import {
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  rmSync as nodeRmSync,
+  readFileSync,
+  unlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { isGitRepo, removeWorktree } from "../git/index.js";
 import { RunWriter } from "./run-writer.js";
@@ -418,13 +426,25 @@ async function extractFixture(packDir: string, instanceId: string, dest: string)
       // handles initialization; we just ensure the dest dir exists.
       return;
     }
-    if (c.flag === "-xzf") {
-      execFileSync("tar", ["-xzf", c.path, "-C", dest], { stdio: ["ignore", "pipe", "pipe"] });
-    } else {
-      // Legacy .tar.zst path: requires the system `zstd` binary on PATH.
-      execFileSync("tar", ["--use-compress-program=zstd -d", "-xf", c.path, "-C", dest], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+    // Use cwd + relative archive name to avoid GNU tar treating Windows drive
+    // letters (e.g. "E:") as remote hostnames when passed as absolute paths.
+    const archiveName = c.flag === "-xzf" ? "_repo.tar.gz" : "_repo.tar.zst";
+    copyFileSync(c.path, join(dest, archiveName));
+    try {
+      if (c.flag === "-xzf") {
+        execFileSync("tar", ["-xzf", archiveName], { cwd: dest, stdio: ["ignore", "pipe", "pipe"] });
+      } else {
+        execFileSync("tar", ["--use-compress-program=zstd -d", "-xf", archiveName], {
+          cwd: dest,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      }
+    } finally {
+      try {
+        unlinkSync(join(dest, archiveName));
+      } catch {
+        /* best-effort */
+      }
     }
     return;
   }
