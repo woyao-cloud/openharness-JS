@@ -16,7 +16,7 @@
  *     --model <model> "<problem_statement>"
  */
 
-import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, execFileSync, type SpawnSyncReturns, spawn, spawnSync } from "node:child_process";
 import {
   copyFileSync,
   createWriteStream,
@@ -25,6 +25,7 @@ import {
   rmSync as nodeRmSync,
   readFileSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { isGitRepo, removeWorktree } from "../git/index.js";
@@ -457,17 +458,65 @@ async function runSetupScript(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const setupPath = join(packDir, "fixtures", instanceId, "setup.sh");
   if (!existsSync(setupPath)) return { ok: true }; // No setup needed.
-  // Invoke sh explicitly so the script runs without the execute bit (files created
-  // programmatically via writeFileSync have no execute bit on Linux). On Windows,
-  // fall through to shell:true so cmd.exe handles the POSIX-style content.
-  const r =
-    process.platform === "win32"
-      ? spawnSync(setupPath, [], { cwd: worktreeDir, shell: true, encoding: "utf-8" })
-      : spawnSync("/bin/sh", [setupPath], { cwd: worktreeDir, encoding: "utf-8" });
+  // Invoke sh/bash explicitly so the script runs without the execute bit.
+  // On Windows, use bash (Git Bash) and define python3 as a shell function
+  // that delegates to `python` — Python 3 on Windows ships as python.exe only.
+  let r: SpawnSyncReturns<string>;
+  if (process.platform === "win32") {
+    // Python 3 on Windows installs as python.exe only, and the WindowsApps stub
+    // for both `python` and `python3` appears first on Git Bash's PATH. We find
+    // the real interpreter via where.exe and use its absolute POSIX path directly.
+    const realPython = windowsRealPythonPosix();
+    // On Windows, `python3 -m venv` creates .venv/Scripts/activate, not .venv/bin/activate.
+    // Patch setup.sh to use the Windows path so sourcing works in Git Bash.
+    const original = readFileSync(setupPath, "utf-8");
+    const patched = original
+      .replace(/\bsource\s+\.venv\/bin\/activate\b/g, "source .venv/Scripts/activate")
+      .replace(/\. \.venv\/bin\/activate\b/g, ". .venv/Scripts/activate");
+    const tmpSetup = `${setupPath}.win.sh`;
+    try {
+      unlinkSync(tmpSetup);
+    } catch {
+      /* ok */
+    }
+    writeFileSync(tmpSetup, patched, "utf-8");
+    const posixTmp = tmpSetup.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`);
+    // Only define python3 — pip must NOT be overridden because after venv activation
+    // the venv's pip.exe is on PATH and must be used (not system Python's pip).
+    const pyFn = realPython ? `python3() { "${realPython}" "$@"; }` : "";
+    r = spawnSync("bash", ["-c", `${pyFn}${pyFn ? "; " : ""}. "${posixTmp}"`], {
+      cwd: worktreeDir,
+      encoding: "utf-8",
+    });
+    try {
+      unlinkSync(tmpSetup);
+    } catch {
+      /* best-effort */
+    }
+  } else {
+    r = spawnSync("/bin/sh", [setupPath], { cwd: worktreeDir, encoding: "utf-8" });
+  }
   if (r.status !== 0) {
-    return { ok: false, error: (r.stderr ?? "").slice(-500) };
+    return { ok: false, error: String(r.stderr ?? "").slice(-500) };
   }
   return { ok: true };
+}
+
+/** Returns the POSIX path to the real Python interpreter on Windows,
+ *  skipping the WindowsApps stub which is a dead-end redirect. */
+function windowsRealPythonPosix(): string {
+  try {
+    const out = spawnSync("where.exe", ["python"], { encoding: "utf-8" }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) {
+      const p = line.trim();
+      if (p && !p.includes("WindowsApps")) {
+        return p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`);
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  return "";
 }
 
 function defaultOhEntry(): string {

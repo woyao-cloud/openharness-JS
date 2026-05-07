@@ -117,9 +117,16 @@ export async function scoreTask(args: {
   }
 
   // (2) Default test command.
-  const r = spawnSync(packDefaultTestCommand, {
+  // Run via bash so the venv (created by setup.sh) is activated and pytest/python
+  // resolve to the venv's copies. The venv activate script prepends .venv/Scripts
+  // (Windows) or .venv/bin (Linux) to PATH, making the venv's python and pytest
+  // the active executables for the test command.
+  const venvActivate =
+    process.platform === "win32"
+      ? "[ -f .venv/Scripts/activate ] && source .venv/Scripts/activate"
+      : "[ -f .venv/bin/activate ] && source .venv/bin/activate";
+  const r = spawnSync("bash", ["-c", `${venvActivate}; ${packDefaultTestCommand}`], {
     cwd: worktreeDir,
-    shell: true,
     timeout: testTimeoutMs,
   });
 
