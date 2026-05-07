@@ -5,10 +5,14 @@
  * Reusable helper to bake a SWE-bench Lite (or any compatible) instance into
  * a fixture for an `oh evals` pack. Workflow:
  *
- *   1. Clone the upstream repo at base_commit into a temp dir.
+ *   1. Download working-tree archive from GitHub (no git history → small tarball).
  *   2. Apply pinned-dep manifest (.oh-evals-pinned-deps.txt) to constrain installs.
  *   3. tar -czf → fixtures/<instance_id>/repo.tar.gz (gzip — built into tar everywhere).
  *   4. Drop a setup.sh that creates a venv, installs pinned deps, makes a base commit.
+ *
+ * Using the GitHub archive API (working-tree only) keeps fixtures ~10× smaller than
+ * a full git clone. All tar operations use relative paths + cwd to avoid GNU tar
+ * treating Windows drive letters (C:) as remote hostnames.
  *
  * Usage:
  *   node scripts/build-evals-pack.mjs \
@@ -25,18 +29,23 @@
  * stdout so you can review and paste it manually. With --append it writes
  * the line directly.
  *
- * Requires on PATH: git, tar. Setup.sh additionally needs python3 + pip + bash at run time.
+ * Requires on PATH: tar. Setup.sh additionally needs python3 + pip + bash at run time.
  */
 
 import {
   appendFileSync,
+  copyFileSync,
+  createWriteStream,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { get as httpsGet } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -68,14 +77,35 @@ mkdirSync(fixtureDir, { recursive: true });
 
 const tmp = mkdtempSync(join(tmpdir(), "oh-pack-build-"));
 try {
-  console.log(`Cloning ${repo} @ ${baseCommit} into ${tmp}/repo ...`);
-  execFileSync("git", ["clone", `https://github.com/${repo}.git`, "repo"], {
-    cwd: tmp,
-    stdio: "inherit",
+  // Download working-tree archive from GitHub (no git history → much smaller)
+  const archiveUrl = `https://github.com/${repo}/archive/${baseCommit}.tar.gz`;
+  const archivePath = join(tmp, "archive.tar.gz");
+  console.log(`Downloading ${archiveUrl} ...`);
+  await new Promise((resolve, reject) => {
+    function follow(url, depth = 0) {
+      if (depth > 5) return reject(new Error("too many redirects"));
+      httpsGet(url, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          follow(res.headers.location, depth + 1);
+        } else if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode} from ${url}`));
+        } else {
+          const out = createWriteStream(archivePath);
+          res.pipe(out);
+          out.on("finish", resolve);
+          out.on("error", reject);
+        }
+      }).on("error", reject);
+    }
+    follow(archiveUrl);
   });
-  execFileSync("git", ["-C", join(tmp, "repo"), "checkout", baseCommit], {
-    stdio: "inherit",
-  });
+
+  // GitHub names the top-level dir {repo_slug}-{sha}, rename to "repo".
+  // Use cwd instead of -C flag to avoid GNU tar misreading "C:" as a hostname on Windows.
+  execFileSync("tar", ["-xzf", "archive.tar.gz"], { cwd: tmp, stdio: "inherit" });
+  const entries = readdirSync(tmp).filter((e) => e !== "archive.tar.gz");
+  if (entries.length !== 1) throw new Error(`unexpected extract contents: ${entries}`);
+  renameSync(join(tmp, entries[0]), join(tmp, "repo"));
 
   // Optional pinned-deps file: if the pack already has one for this instance, copy it
   // into the cloned repo. Otherwise drop a default that just installs pytest.
@@ -90,11 +120,11 @@ try {
   }
 
   console.log(`Building repo.tar.gz ...`);
-  execFileSync(
-    "tar",
-    ["-czf", join(fixtureDir, "repo.tar.gz"), "-C", tmp, "repo"],
-    { stdio: "inherit" },
-  );
+  // Write to tmp first (relative path only) to avoid GNU tar treating "C:" as a hostname
+  // on Windows when passed absolute paths. Then move with Node's renameSync.
+  execFileSync("tar", ["-czf", "repo.tar.gz", "repo"], { cwd: tmp, stdio: "inherit" });
+  // renameSync fails cross-device (e.g. C:\Temp → E:\project); use copy+delete instead.
+  copyFileSync(join(tmp, "repo.tar.gz"), join(fixtureDir, "repo.tar.gz"));
 
   writeFileSync(
     join(fixtureDir, "setup.sh"),
@@ -105,6 +135,9 @@ source .venv/bin/activate
 pip install -e ./repo --quiet --no-deps
 pip install -r ./repo/.oh-evals-pinned-deps.txt --quiet
 cd repo
+# Archive-sourced fixtures have no .git dir; initialise one so the orchestrator
+# can create the "evals base" commit against which patches are applied.
+git init -q
 git -c user.email=evals@oh -c user.name=evals add -A
 git -c user.email=evals@oh -c user.name=evals commit -q -m "evals base" --allow-empty
 `,

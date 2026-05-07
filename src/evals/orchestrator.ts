@@ -84,6 +84,7 @@ export class RunOrchestrator {
       for (const r of prior) {
         this.skipIds.add(r.instance_id);
         this.totalCost += r.cost_usd;
+        this.writer.preloadResult(r);
       }
     }
   }
@@ -436,11 +437,13 @@ async function runSetupScript(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const setupPath = join(packDir, "fixtures", instanceId, "setup.sh");
   if (!existsSync(setupPath)) return { ok: true }; // No setup needed.
-  const r = spawnSync(setupPath, [], {
-    cwd: worktreeDir,
-    shell: true, // works for both .sh on POSIX and bash-as-shell on Windows
-    encoding: "utf-8",
-  });
+  // Invoke sh explicitly so the script runs without the execute bit (files created
+  // programmatically via writeFileSync have no execute bit on Linux). On Windows,
+  // fall through to shell:true so cmd.exe handles the POSIX-style content.
+  const r =
+    process.platform === "win32"
+      ? spawnSync(setupPath, [], { cwd: worktreeDir, shell: true, encoding: "utf-8" })
+      : spawnSync("/bin/sh", [setupPath], { cwd: worktreeDir, encoding: "utf-8" });
   if (r.status !== 0) {
     return { ok: false, error: (r.stderr ?? "").slice(-500) };
   }

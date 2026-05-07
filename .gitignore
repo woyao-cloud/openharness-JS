@@ -39,3 +39,6 @@ Thumbs.db
 .claude/
 .worktrees/
 coverage/
+
+# SWE-bench source parquet (build artifact — fixtures are in data/)
+_swebench-lite.parquet

@@ -61,6 +61,12 @@ export class RunWriter {
     renameSync(tmp, join(this.runDir, "predictions.json"));
   }
 
+  /** Load a result that was written in a prior run into the in-memory array without
+   *  re-writing it to disk (used by the resume path so finalize() includes all results). */
+  preloadResult(result: EvalsResult): void {
+    this.results.push(result);
+  }
+
   loadExistingResults(): EvalsResult[] {
     const path = join(this.runDir, "results.jsonl");
     if (!existsSync(path)) return [];

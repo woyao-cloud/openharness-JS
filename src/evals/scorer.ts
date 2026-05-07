@@ -72,22 +72,29 @@ export async function scoreTask(args: {
   const oracleSh = join(fixtureDir, "oracle.sh");
   const oracleMjs = join(fixtureDir, "oracle.mjs");
   if (existsSync(oracleSh)) {
-    const r = spawnSync(oracleSh, [], {
-      cwd: worktreeDir,
-      env: {
-        ...process.env,
-        INSTANCE_ID: task.instance_id,
-        WORKTREE_DIR: worktreeDir,
-        FIXTURE_DIR: fixtureDir,
-      },
-      timeout: testTimeoutMs,
-      shell: process.platform === "win32",
-    });
+    // Invoke /bin/sh explicitly so oracle.sh runs without the execute bit.
+    // Files committed from Windows or via writeFileSync default to mode 100644.
+    const r =
+      process.platform === "win32"
+        ? spawnSync(oracleSh, [], {
+            cwd: worktreeDir,
+            env: { ...process.env, INSTANCE_ID: task.instance_id, WORKTREE_DIR: worktreeDir, FIXTURE_DIR: fixtureDir },
+            timeout: testTimeoutMs,
+            shell: true,
+          })
+        : spawnSync("/bin/sh", [oracleSh], {
+            cwd: worktreeDir,
+            env: { ...process.env, INSTANCE_ID: task.instance_id, WORKTREE_DIR: worktreeDir, FIXTURE_DIR: fixtureDir },
+            timeout: testTimeoutMs,
+          });
+    // Oracle exit code is the pass/fail signal — do NOT set error_message for a clean
+    // non-zero exit (that means "test failed", not "scoring errored"). Only flag when
+    // the process itself failed to run (killed, spawn error, etc.).
     return {
       resolved: r.status === 0,
       tests_status: EMPTY_TESTS_STATUS,
       oracle_used: true,
-      error_message: r.status === 0 ? undefined : (r.stderr?.toString().slice(-500) ?? ""),
+      error_message: r.status === null ? `oracle.sh did not exit cleanly: signal=${r.signal}` : undefined,
     };
   }
   if (existsSync(oracleMjs)) {
@@ -105,7 +112,7 @@ export async function scoreTask(args: {
       resolved: r.status === 0,
       tests_status: EMPTY_TESTS_STATUS,
       oracle_used: true,
-      error_message: r.status === 0 ? undefined : (r.stderr?.toString().slice(-500) ?? ""),
+      error_message: r.status === null ? `oracle.mjs did not exit cleanly: signal=${r.signal}` : undefined,
     };
   }
 
