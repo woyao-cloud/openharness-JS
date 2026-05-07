@@ -22,7 +22,7 @@ import { emitHook, setHookDecisionObserver } from "./harness/hooks.js";
 import { languageToPrompt } from "./harness/language.js";
 import { loadActiveMemories, memoriesToPrompt, userProfileToPrompt } from "./harness/memory.js";
 import { detectProject, projectContextToPrompt } from "./harness/onboarding.js";
-import { discoverSkills, skillsToPrompt } from "./harness/plugins.js";
+import { addExtraPluginDir, discoverSkills, skillsToPrompt } from "./harness/plugins.js";
 import { createRulesFile, loadRules, loadRulesAsPrompt } from "./harness/rules.js";
 import { listSessions } from "./harness/session.js";
 import {
@@ -184,7 +184,7 @@ function buildSystemPrompt(model?: string, opts: { bare?: boolean } = {}): strin
 
   // Available skills (Level 0 — names + descriptions only)
   const skills = discoverSkills();
-  const skillsPrompt = skillsToPrompt(skills);
+  const skillsPrompt = skillsToPrompt(skills, cfg?.skillOverrides);
   if (skillsPrompt) parts.push(skillsPrompt);
 
   // MCP server instructions (sandboxed — treat as untrusted)
@@ -1683,6 +1683,80 @@ program
     }, intervalMs);
     process.stderr.write(`[schedule] Running every ${opts.interval} minutes. Ctrl+C to stop.\n`);
   });
+
+// ── --plugin-dir / --plugin-url (session-scoped extra plugins) ──
+// Added as global options so they work with any subcommand (run, session, REPL).
+program
+  .option("--plugin-dir <path>", "Load a plugin from a local directory for this session (not persisted)")
+  .option("--plugin-url <url>", "Download a plugin .zip or .tar.gz from a URL and load it for this session");
+
+program.hook("preAction", async () => {
+  const opts = program.opts<{ pluginDir?: string; pluginUrl?: string }>();
+
+  if (opts.pluginDir) {
+    addExtraPluginDir(opts.pluginDir);
+  }
+
+  if (opts.pluginUrl) {
+    const { get: httpsGet } = await import("node:https");
+    const { createWriteStream, mkdirSync: fsMkdir, readdirSync: fsReaddir } = await import("node:fs");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { execFileSync: execFile } = await import("node:child_process");
+
+    const url = opts.pluginUrl;
+    const tmp = mkdtempSync(join(tmpdir(), "oh-plugin-"));
+    const isZip = url.endsWith(".zip");
+    const archiveName = isZip ? "plugin.zip" : "plugin.tar.gz";
+    const archivePath = join(tmp, archiveName);
+
+    await new Promise<void>((resolve, reject) => {
+      function follow(u: string, depth = 0): undefined {
+        if (depth > 5) {
+          reject(new Error("too many redirects"));
+          return;
+        }
+        httpsGet(u, (res) => {
+          if (res.statusCode === 301 || res.statusCode === 302) {
+            follow(res.headers.location ?? u, depth + 1);
+          } else if (res.statusCode !== 200) {
+            reject(new Error(`HTTP ${res.statusCode} fetching plugin from ${u}`));
+          } else {
+            const out = createWriteStream(archivePath);
+            res.pipe(out);
+            out.on("finish", resolve);
+            out.on("error", reject);
+          }
+        }).on("error", reject);
+      }
+      follow(url);
+    });
+
+    const extractDir = join(tmp, "plugin");
+    fsMkdir(extractDir, { recursive: true });
+    if (isZip) {
+      execFile("unzip", ["-q", archivePath, "-d", extractDir]);
+    } else {
+      execFile("tar", ["-xzf", archivePath], { cwd: extractDir });
+    }
+
+    // If the archive produced a single top-level dir, step into it (common convention).
+    const { statSync: fsStat } = await import("node:fs");
+    const entries = fsReaddir(extractDir);
+    const singleDir =
+      entries.length === 1 &&
+      (() => {
+        try {
+          return fsStat(join(extractDir, entries[0])).isDirectory();
+        } catch {
+          return false;
+        }
+      })();
+    const pluginRoot = singleDir ? join(extractDir, entries[0]) : extractDir;
+
+    addExtraPluginDir(pluginRoot);
+  }
+});
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : String(err));

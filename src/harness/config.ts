@@ -263,6 +263,15 @@ export type OhConfig = {
    * call-site that already uses `safeEnv()` picks this up automatically.
    */
   env?: Record<string, string>;
+  /**
+   * Per-skill visibility overrides. Keys are skill names (e.g. "my-skill" or
+   * "plugin:skill-name"). Values:
+   *   "off"                 — hidden from model AND from the slash picker
+   *   "user-invocable-only" — hidden from model, still shows in /skills + slash picker
+   *   "name-only"           — shown to model but description collapsed to name only
+   * Mirrors Claude Code's `skillOverrides` setting.
+   */
+  skillOverrides?: Record<string, "off" | "user-invocable-only" | "name-only">;
 };
 
 function yamlScalar(value: string): string {

@@ -4,34 +4,40 @@
 
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { readOhConfig } from "../harness/config.js";
 import { discoverSkills, findSkill } from "../harness/plugins.js";
 import type { CommandHandler } from "./types.js";
 
 export function registerSkillCommands(register: (name: string, description: string, handler: CommandHandler) => void) {
   register("skills", "List all available skills", () => {
     const skills = discoverSkills();
-    if (skills.length === 0) {
+    const overrides = readOhConfig()?.skillOverrides ?? {};
+    // "off" skills are fully hidden from the user
+    const visible = skills.filter((s) => overrides[s.name] !== "off");
+    if (visible.length === 0) {
       return {
         output: "No skills found. Create .oh/skills/*.md to add one, or run /skill-search to browse the registry.",
         handled: true,
       };
     }
-    // Group by source for readability
     const lines: string[] = ["Available skills:"];
     const sourceLabel: Record<string, string> = {
       project: "[project]",
       global: "[global]",
       plugin: "[plugin]",
     };
-    // Sort: bundled-style (project, no path under .oh) first, then by source then name
-    const sorted = [...skills].sort((a, b) => {
+    const sorted = [...visible].sort((a, b) => {
       if (a.source !== b.source) return a.source.localeCompare(b.source);
       return a.name.localeCompare(b.name);
     });
     for (const s of sorted) {
       const tag = sourceLabel[s.source] ?? `[${s.source}]`;
-      const desc = s.description ? `: ${s.description}` : "";
-      lines.push(`  - ${s.name} ${tag}${desc}`);
+      const ov = overrides[s.name];
+      // "user-invocable-only": show name but mark as not available to model
+      // "name-only": suppress description (mirrors model-side behaviour)
+      const descText = ov === "name-only" || !s.description ? "" : `: ${s.description}`;
+      const hint = ov === "user-invocable-only" ? " [user-only]" : "";
+      lines.push(`  - ${s.name} ${tag}${descText}${hint}`);
     }
     return { output: lines.join("\n"), handled: true };
   });

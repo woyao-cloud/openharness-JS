@@ -60,6 +60,14 @@ export type AgentTeamConfig = {
   }>;
 };
 
+/** Session-scoped extra plugin directories registered via --plugin-dir / --plugin-url. */
+const extraPluginDirs: string[] = [];
+
+/** Register an extra plugin directory for this session (not persisted). */
+export function addExtraPluginDir(dir: string): void {
+  if (!extraPluginDirs.includes(dir)) extraPluginDirs.push(dir);
+}
+
 const PROJECT_SKILLS_DIR = join(".oh", "skills");
 const GLOBAL_SKILLS_DIR = join(homedir(), ".oh", "skills");
 // Claude Code ecosystem mirror paths (Anthropic convention)
@@ -239,6 +247,18 @@ export function discoverSkills(): SkillMetadata[] {
     /* marketplace module may not be loaded yet */
   }
 
+  // Session-scoped extra plugin dirs (--plugin-dir / --plugin-url)
+  for (const dir of extraPluginDirs) {
+    const pluginSkillsDir = join(dir, "skills");
+    const pluginSkills = loadSkillsFromDir(pluginSkillsDir, "plugin");
+    const manifest = loadPluginManifest(dir);
+    const pluginName = manifest?.name ?? dir.split(/[/\\]/).pop() ?? "extra";
+    for (const skill of pluginSkills) {
+      skill.name = `${pluginName}:${skill.name}`;
+    }
+    skills.push(...pluginSkills);
+  }
+
   // De-duplicate by name+filePath: if same skill appears in multiple paths (e.g. CC mirror), keep first.
   const seen = new Set<string>();
   return skills.filter((s) => {
@@ -332,12 +352,21 @@ export function discoverPlugins(): PluginManifest[] {
 }
 
 /** Build a prompt listing available skills for the LLM */
-export function skillsToPrompt(skills: SkillMetadata[]): string {
-  // Only include skills with invokeModel !== false (hidden skills excluded from prompt)
-  const visible = skills.filter((s) => s.invokeModel !== false);
+export function skillsToPrompt(
+  skills: SkillMetadata[],
+  overrides?: Record<string, "off" | "user-invocable-only" | "name-only">,
+): string {
+  // invokeModel:false hides from model; "off" and "user-invocable-only" overrides also hide from model.
+  const visible = skills.filter((s) => {
+    if (s.invokeModel === false) return false;
+    const ov = overrides?.[s.name];
+    return ov !== "off" && ov !== "user-invocable-only";
+  });
   if (visible.length === 0) return "";
-  const lines = visible.map(
-    (s) => `- ${s.name}: ${s.description}${s.trigger ? ` (auto-trigger: "${s.trigger}")` : ""}`,
-  );
+  const lines = visible.map((s) => {
+    const desc = overrides?.[s.name] === "name-only" ? "" : `: ${s.description}`;
+    const trigger = overrides?.[s.name] === "name-only" ? "" : s.trigger ? ` (auto-trigger: "${s.trigger}")` : "";
+    return `- ${s.name}${desc}${trigger}`;
+  });
   return `# Available Skills\nUse the Skill tool to invoke these:\n${lines.join("\n")}`;
 }
