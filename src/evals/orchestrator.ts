@@ -189,7 +189,7 @@ export class RunOrchestrator {
               maxTurns: this.opts.maxTaskTurns,
               model: this.opts.model,
               fallbackModel: this.opts.fallbackModel,
-              prompt: task.problem_statement,
+              prompt: buildEvalPrompt(task.problem_statement),
             }),
           };
 
@@ -318,7 +318,8 @@ export class RunOrchestrator {
       });
     } finally {
       // Clean up worktree (best-effort; swallow errors so a leak doesn't stop a run).
-      if (worktreePath && existsSync(worktreePath)) {
+      // Set OH_EVALS_KEEP_WORKTREES=1 to skip cleanup for post-run debugging.
+      if (worktreePath && existsSync(worktreePath) && !process.env.OH_EVALS_KEEP_WORKTREES) {
         try {
           if (usedGitWorktree) removeWorktree(worktreePath);
           // Also remove the temp dir tree under runDir/worktrees/<id> regardless.
@@ -405,11 +406,18 @@ function parseStreamJsonResult(stdout: string): ParsedStream {
 }
 
 function captureGitDiff(worktreeDir: string): string {
-  try {
-    return execFileSync("git", ["-C", worktreeDir, "diff", "HEAD"], { encoding: "utf-8" });
-  } catch {
-    return "";
+  // setup.sh initialises the git repo at worktreeDir/repo/.git, so diff from
+  // that subdirectory. Fall back to worktreeDir for legacy fixtures that put
+  // .git at the worktree root.
+  for (const dir of [join(worktreeDir, "repo"), worktreeDir]) {
+    try {
+      const out = execFileSync("git", ["-C", dir, "diff", "HEAD"], { encoding: "utf-8" });
+      if (out) return out;
+    } catch {
+      /* try next */
+    }
   }
+  return "";
 }
 
 async function extractFixture(packDir: string, instanceId: string, dest: string): Promise<void> {
@@ -521,6 +529,33 @@ function windowsRealPythonPosix(): string {
 
 function defaultOhEntry(): string {
   return join(process.cwd(), "dist", "main.js");
+}
+
+/** Wrap a SWE-bench problem statement with SWE-bench-style instructions:
+ *  the working tree is in ./repo, only that subtree is committed/diffed,
+ *  edit source files in place, don't create documentation/scratch files. */
+function buildEvalPrompt(problemStatement: string): string {
+  return [
+    "You are an autonomous software engineer fixing a bug in an open-source Python project.",
+    "",
+    "WORKING DIRECTORY",
+    "- The repository source is in `./repo/` (relative to your current directory).",
+    "- A `.venv` next to it has the project installed editably; do NOT recreate it.",
+    "- Run all bash commands with `cd repo && …` or use absolute paths under `./repo/`.",
+    "",
+    "WHAT TO DO",
+    "- Read the problem statement below, locate the relevant source files in `./repo/`, and edit them in place to fix the bug.",
+    "- Use the existing test suite to verify (run with `cd repo && python -m pytest <file_or_pattern>`).",
+    "- Only changes inside `./repo/` are scored; the orchestrator runs `git diff HEAD` from `./repo/` to extract your patch.",
+    "",
+    "WHAT NOT TO DO",
+    "- Do NOT create README/SUMMARY/GUIDE/PATCH/SOLUTION/COMPLETION files. Edit the source.",
+    "- Do NOT write standalone scratch scripts at the worktree root — only edit files under `./repo/`.",
+    "- Do NOT modify `.venv/`, generated `_version.py` files, or anything outside `./repo/`.",
+    "",
+    "PROBLEM STATEMENT",
+    problemStatement,
+  ].join("\n");
 }
 
 function defaultRunArgs(opts: {

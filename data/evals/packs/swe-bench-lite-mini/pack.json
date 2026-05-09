@@ -4,6 +4,6 @@
   "description": "10-instance subset of SWE-bench Lite for fast local evals. Covers flask (3), requests (3), pylint (2), pytest (2).",
   "language": "python",
   "runner_requirements": ["python3", "pip", "git"],
-  "default_test_command": "python -m pytest --tb=no -q --junit-xml=.oh-evals-results.xml",
+  "default_test_command": "python -m pytest --tb=no -q --junit-xml=.oh-evals-results.xml -W ignore::DeprecationWarning -W ignore::PendingDeprecationWarning",
   "instance_count": 10
 }

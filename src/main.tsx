@@ -431,6 +431,11 @@ program
       console.log(JSON.stringify({ type: "turnStart", turnNumber: 0 }));
     }
 
+    // Track cumulative cost + turn count so stream-json mode can emit a final
+    // `result` event (consumed by `oh evals` and SDK callers).
+    let cumulativeCost = 0;
+    let turnsCompleted = 0;
+    let lastTurnReason = "ok";
     for await (const event of query(prompt, { ...config, sessionId }, priorMessages)) {
       if (event.type === "text_delta") {
         fullOutput += event.content;
@@ -467,6 +472,7 @@ program
           console.log(JSON.stringify({ type: "error", message: event.message }));
         }
       } else if (event.type === "cost_update") {
+        cumulativeCost += event.cost;
         if (outputFormat === "stream-json") {
           console.log(
             JSON.stringify({
@@ -479,6 +485,8 @@ program
           );
         }
       } else if (event.type === "turn_complete") {
+        turnsCompleted += 1;
+        lastTurnReason = event.reason;
         if (outputFormat === "stream-json") {
           console.log(JSON.stringify({ type: "turn_complete", reason: event.reason }));
         }
@@ -490,6 +498,18 @@ program
           process.exitCode = 1;
         }
       }
+    }
+
+    if (outputFormat === "stream-json") {
+      console.log(
+        JSON.stringify({
+          type: "result",
+          subtype: lastTurnReason,
+          total_cost_usd: cumulativeCost,
+          num_turns: turnsCompleted,
+          result: fullOutput,
+        }),
+      );
     }
 
     if (outputFormat === "json") {

@@ -115,8 +115,14 @@ function zodToJsonSchema(schema: z.ZodType): unknown {
   if (def?.typeName === "ZodNumber") return { type: "number" };
   if (def?.typeName === "ZodBoolean") return { type: "boolean" };
   if (def?.typeName === "ZodArray") return { type: "array", items: zodToJsonSchema(def.type) };
+  // ZodRecord (used by DeferredTool's permissive schema) → permissive object.
+  // Anthropic's tool-use API requires `type: "object"` for tool input_schema.
+  if (def?.typeName === "ZodRecord") return { type: "object", additionalProperties: {} };
+  if (def?.typeName === "ZodUnknown" || def?.typeName === "ZodAny") return {};
 
-  return { type: "string" }; // fallback
+  // Fallback: return permissive object so tool-use APIs that require object
+  // input schemas (Anthropic) don't reject the request.
+  return { type: "object", additionalProperties: {} };
 }
 
 /**

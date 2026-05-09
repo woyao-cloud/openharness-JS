@@ -100,10 +100,11 @@ export class AnthropicProvider implements Provider {
     // Anthropic caches matching prefixes — 90% cost reduction on repeat turns.
     const systemBlocks = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
 
-    // Scale max_tokens and thinking budget based on model
+    // Scale max_tokens and thinking budget based on model.
+    // Anthropic requires max_tokens > thinking.budget_tokens.
     const isOpus = m.includes("opus");
-    const maxTokens = isOpus ? 16384 : 8192;
-    const thinkingBudget = isOpus ? 32000 : 10000;
+    const maxTokens = isOpus ? 32768 : 16384;
+    const thinkingBudget = isOpus ? 24576 : 8192;
 
     const body: Record<string, unknown> = {
       model: m,
@@ -318,7 +319,16 @@ export class AnthropicProvider implements Provider {
   }
 
   getModelInfo(id: string): ModelInfo | undefined {
-    return this.listModels().find((m) => m.id === id);
+    // Exact match first; otherwise prefix-match so dated model IDs like
+    // "claude-haiku-4-5-20251001" resolve to "claude-haiku-4-5".
+    const models = this.listModels();
+    const exact = models.find((m) => m.id === id);
+    if (exact) return exact;
+    let best: ModelInfo | undefined;
+    for (const m of models) {
+      if (id.startsWith(m.id) && (!best || m.id.length > best.id.length)) best = m;
+    }
+    return best;
   }
 
   listModels(): ModelInfo[] {

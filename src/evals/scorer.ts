@@ -17,6 +17,32 @@ import type { EvalsTask, TestsStatus } from "./types.js";
 
 export type TestOutcome = "pass" | "fail" | "skip";
 
+/** Convert pytest junit-xml classname/name (+ optional file= attr) into the
+ *  pytest-style id that SWE-bench uses: `path/to/file.py::[Class::]test_name`.
+ *  Returns null if a sensible id can't be built. */
+function pytestStyleId(cn: string, name: string, file: string | undefined): string | null {
+  let fileNorm: string;
+  let classTail: string;
+  if (file) {
+    fileNorm = file.replace(/\\/g, "/");
+    const moduleFromFile = fileNorm.replace(/\.py$/, "").replace(/\//g, ".");
+    classTail = cn.startsWith(`${moduleFromFile}.`) ? cn.slice(moduleFromFile.length + 1) : "";
+  } else {
+    // No `file=` attribute (older pytest / minimal junit-xml). Derive the
+    // path from classname: trailing PascalCase segments are class names,
+    // the rest is the dotted module path → file is module/path.py.
+    const parts = cn.split(".");
+    const classParts: string[] = [];
+    while (parts.length > 0 && /^[A-Z]/.test(parts[parts.length - 1] ?? "")) {
+      classParts.unshift(parts.pop()!);
+    }
+    if (parts.length === 0) return null;
+    fileNorm = `${parts.join("/")}.py`;
+    classTail = classParts.join("::");
+  }
+  return classTail ? `${fileNorm}::${classTail}::${name}` : `${fileNorm}::${name}`;
+}
+
 /**
  * Minimal junit-xml parser. Returns a map of "<classname>.<name>" → outcome.
  *
@@ -32,15 +58,16 @@ export function parseJunitXml(xml: string): Record<string, TestOutcome> {
     const inner = match[2] ?? "";
     const cn = /classname="([^"]*)"/.exec(attrs)?.[1];
     const name = /\bname="([^"]*)"/.exec(attrs)?.[1];
+    const file = /\bfile="([^"]*)"/.exec(attrs)?.[1];
     if (cn && name) {
-      const id = `${cn}.${name}`;
-      if (/<failure\b/.test(inner) || /<error\b/.test(inner)) {
-        out[id] = "fail";
-      } else if (/<skipped\b/.test(inner)) {
-        out[id] = "skip";
-      } else {
-        out[id] = "pass";
-      }
+      let outcome: TestOutcome = "pass";
+      if (/<failure\b/.test(inner) || /<error\b/.test(inner)) outcome = "fail";
+      else if (/<skipped\b/.test(inner)) outcome = "skip";
+      // Emit BOTH a dotted classname.name id (legacy) and pytest-style
+      // file::[Class::]name ids so SWE-bench-format expected IDs match.
+      out[`${cn}.${name}`] = outcome;
+      const ptid = pytestStyleId(cn, name, file);
+      if (ptid) out[ptid] = outcome;
     }
     match = testcaseRe.exec(xml);
   }
@@ -117,20 +144,25 @@ export async function scoreTask(args: {
   }
 
   // (2) Default test command.
-  // Run via bash so the venv (created by setup.sh) is activated and pytest/python
-  // resolve to the venv's copies. The venv activate script prepends .venv/Scripts
-  // (Windows) or .venv/bin (Linux) to PATH, making the venv's python and pytest
-  // the active executables for the test command.
+  // Run via bash so the venv is activated; cd into ./repo first if it exists
+  // (real SWE-bench packs put project source there). For synthetic packs
+  // without a repo/ subdir, run from the worktree root.
+  const hasRepo = existsSync(join(worktreeDir, "repo"));
   const venvActivate =
     process.platform === "win32"
       ? "[ -f .venv/Scripts/activate ] && source .venv/Scripts/activate"
       : "[ -f .venv/bin/activate ] && source .venv/bin/activate";
-  const r = spawnSync("bash", ["-c", `${venvActivate}; ${packDefaultTestCommand}`], {
+  const cdRepo = hasRepo ? "cd repo && " : "";
+  const r = spawnSync("bash", ["-c", `${venvActivate}; ${cdRepo}${packDefaultTestCommand}`], {
     cwd: worktreeDir,
     timeout: testTimeoutMs,
   });
 
-  const xmlPath = join(worktreeDir, ".oh-evals-results.xml");
+  // Test command writes junit-xml relative to its CWD. Prefer repo/ when it
+  // exists; fall back to worktree root for synthetic/legacy packs.
+  const xmlPathRepo = join(worktreeDir, "repo", ".oh-evals-results.xml");
+  const xmlPathRoot = join(worktreeDir, ".oh-evals-results.xml");
+  const xmlPath = existsSync(xmlPathRepo) ? xmlPathRepo : xmlPathRoot;
   if (!existsSync(xmlPath)) {
     return {
       resolved: false,

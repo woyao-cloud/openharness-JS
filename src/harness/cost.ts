@@ -89,7 +89,16 @@ export const MODEL_PRICING: Record<string, [number, number]> = {
 };
 
 export function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = MODEL_PRICING[model];
+  // Exact match first; otherwise prefix-match so dated model IDs like
+  // "claude-haiku-4-5-20251001" resolve to "claude-haiku-4-5".
+  let pricing = MODEL_PRICING[model];
+  if (!pricing) {
+    let bestKey = "";
+    for (const key of Object.keys(MODEL_PRICING)) {
+      if (model.startsWith(key) && key.length > bestKey.length) bestKey = key;
+    }
+    if (bestKey) pricing = MODEL_PRICING[bestKey];
+  }
   if (!pricing) return 0;
   return (inputTokens / 1_000_000) * pricing[0] + (outputTokens / 1_000_000) * pricing[1];
 }
