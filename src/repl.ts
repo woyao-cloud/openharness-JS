@@ -49,6 +49,7 @@ export type REPLConfig = {
   resumeSessionId?: string;
   theme?: "dark" | "light";
   welcomeText?: string;
+  effort?: import("./providers/base.js").EffortLevel;
 };
 
 export async function startREPL(config: REPLConfig): Promise<void> {
@@ -964,6 +965,7 @@ export async function startREPL(config: REPLConfig): Promise<void> {
       abortSignal: abortController.signal,
       tracer,
       sessionId: session.id,
+      ...(config.effort ? { effort: config.effort } : {}),
     };
 
     try {

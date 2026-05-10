@@ -364,6 +364,7 @@ program
       permissionMode,
       maxTurns: parseInt(opts.maxTurns as string, 10),
       model,
+      ...(savedConfig?.effortLevel ? { effort: savedConfig.effortLevel } : {}),
       ...(opts.maxBudgetUsd !== undefined ? { maxCost: parseMaxBudgetUsdOrExit(opts.maxBudgetUsd as string) } : {}),
       ...(opts.permissionPromptTool ? { permissionPromptTool: opts.permissionPromptTool as string } : {}),
     };
@@ -660,6 +661,7 @@ program
       permissionMode,
       maxTurns: parseInt(opts.maxTurns as string, 10),
       model,
+      ...(savedConfig?.effortLevel ? { effort: savedConfig.effortLevel } : {}),
       ...(opts.maxBudgetUsd !== undefined ? { maxCost: parseMaxBudgetUsdOrExit(opts.maxBudgetUsd as string) } : {}),
       ...(opts.permissionPromptTool ? { permissionPromptTool: opts.permissionPromptTool as string } : {}),
     };
@@ -1036,6 +1038,7 @@ program
         permissionMode: effectivePermMode,
         maxTurns: 20,
         model: resolvedModel,
+        ...(savedConfig?.effortLevel ? { effort: savedConfig.effortLevel } : {}),
       };
       const outputFormat = (opts.outputFormat as string) ?? "text";
       // When --json-schema is set, suppress all streaming output — we emit
@@ -1124,6 +1127,7 @@ program
       initialMessages,
       theme: opts.light ? "light" : (savedConfig?.theme ?? "dark"),
       welcomeText,
+      ...(savedConfig?.effortLevel ? { effort: savedConfig.effortLevel } : {}),
     });
   });
 
@@ -1674,6 +1678,7 @@ program
         permissionMode: "trust" as PermissionMode,
         maxTurns: 20,
         model,
+        ...(savedConfig?.effortLevel ? { effort: savedConfig.effortLevel } : {}),
       };
 
       let output = "";

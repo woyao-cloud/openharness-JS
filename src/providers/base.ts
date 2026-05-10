@@ -5,6 +5,12 @@
 import type { StreamEvent } from "../types/events.js";
 import type { Message } from "../types/message.js";
 
+/**
+ * Reasoning depth knob (CC parity, mirrors Anthropic's `output_config.effort`).
+ * Providers that don't expose this just ignore it.
+ */
+export type EffortLevel = "low" | "medium" | "high" | "max";
+
 export type ModelInfo = {
   id: string;
   provider: string;
@@ -37,10 +43,17 @@ export interface Provider {
     systemPrompt: string,
     tools?: APIToolDef[],
     model?: string,
+    effort?: EffortLevel,
   ): AsyncGenerator<StreamEvent, void>;
 
   /** Non-streaming completion (convenience wrapper). */
-  complete(messages: Message[], systemPrompt: string, tools?: APIToolDef[], model?: string): Promise<Message>;
+  complete(
+    messages: Message[],
+    systemPrompt: string,
+    tools?: APIToolDef[],
+    model?: string,
+    effort?: EffortLevel,
+  ): Promise<Message>;
 
   /** List available models. */
   listModels(): ModelInfo[];

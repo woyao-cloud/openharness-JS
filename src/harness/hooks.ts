@@ -114,6 +114,9 @@ export type HookContext = {
   rulesCount?: string;
   /** For instructionsLoaded: total character length of the loaded rules */
   rulesChars?: string;
+  /** Active reasoning effort level (CC parity). JSON shape: `effort.level`;
+   *  env shape: `OH_EFFORT`. Set when QueryConfig.effort is configured. */
+  effort?: { level: "low" | "medium" | "high" | "max" };
 };
 
 let cachedHooks: HooksConfig | null | undefined;
@@ -129,6 +132,29 @@ export function getHooks(): HooksConfig | null {
 export function invalidateHookCache(): void {
   cachedHooks = undefined;
   cachedDisableAllHooks = undefined;
+  cachedEffortLevel = undefined;
+}
+
+let cachedEffortLevel: "low" | "medium" | "high" | "max" | null | undefined;
+
+/**
+ * Effort level from `oh config` (`effortLevel` field). Read once and cached
+ * so every hook emit is a cheap synchronous lookup. Automatically merged
+ * into hook env (`OH_EFFORT`) and JSON payload (`effort.level`) so callers
+ * don't need to thread it through every emitHook site.
+ */
+function getEffortLevel(): "low" | "medium" | "high" | "max" | null {
+  if (cachedEffortLevel === undefined) {
+    cachedEffortLevel = readOhConfig()?.effortLevel ?? null;
+  }
+  return cachedEffortLevel;
+}
+
+/** Build the JSON IO payload for a hook invocation. Adds ambient `effort.level`
+ *  alongside the per-emit ctx so hooks see live state regardless of caller. */
+export function buildHookJsonBody(event: HookEvent, ctx: HookContext): string {
+  const effort = ctx.effort ?? (getEffortLevel() ? { level: getEffortLevel()! } : undefined);
+  return JSON.stringify(effort ? { event, ...ctx, effort } : { event, ...ctx });
 }
 
 let cachedDisableAllHooks: boolean | undefined;
@@ -181,6 +207,9 @@ function buildEnv(event: HookEvent, ctx: HookContext): Record<string, string> {
   if (ctx.elicitationSchema !== undefined) env.OH_ELICITATION_SCHEMA = ctx.elicitationSchema;
   if (ctx.elicitationAction !== undefined) env.OH_ELICITATION_ACTION = ctx.elicitationAction;
   if (ctx.elicitationContent !== undefined) env.OH_ELICITATION_CONTENT = ctx.elicitationContent;
+  // Effort level flows through ctx if explicitly set; falls back to cached config.
+  const effortLevel = ctx.effort?.level ?? getEffortLevel();
+  if (effortLevel) env.OH_EFFORT = effortLevel;
   return env;
 }
 
@@ -313,7 +342,7 @@ function runJsonIoHookCaptureStdout(
     // Write the event + context JSON envelope to stdin then close it so the
     // hook knows there's no more input coming.
     try {
-      const payload = JSON.stringify({ event, ...ctx });
+      const payload = buildHookJsonBody(event, ctx);
       proc.stdin?.end(payload);
     } catch {
       /* stdin already closed — ignore */
@@ -387,7 +416,7 @@ async function runJsonIoHookAsync(
 /** Run an HTTP hook. POSTs context as JSON, expects { allowed: true/false }. */
 async function runHttpHook(url: string, event: HookEvent, ctx: HookContext, timeoutMs = 10_000): Promise<boolean> {
   try {
-    const body = JSON.stringify({ event, ...ctx });
+    const body = buildHookJsonBody(event, ctx);
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -421,7 +450,7 @@ async function runHttpHookDetailed(
   timeoutMs = 10_000,
 ): Promise<ParsedJsonIoResponse> {
   try {
-    const body = JSON.stringify({ event, ...ctx });
+    const body = buildHookJsonBody(event, ctx);
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -580,7 +609,7 @@ export function emitHook(event: HookEvent, ctx: HookContext = {}): boolean {
       if ((def.command || def.http) && enforceTrust) continue;
 
       if (def.command) {
-        const input = def.jsonIO ? JSON.stringify({ event, ...ctx }) : undefined;
+        const input = def.jsonIO ? buildHookJsonBody(event, ctx) : undefined;
         const result = spawnSync(def.command, {
           shell: true,
           timeout: def.timeout ?? 10_000,

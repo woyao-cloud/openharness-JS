@@ -39,6 +39,9 @@ export type QueryConfig = {
   tracer?: SessionTracer;
   /** Session ID injected into Bash subprocess env as OH_SESSION_ID. */
   sessionId?: string;
+  /** Reasoning depth (CC parity). Forwarded to provider's request body and
+   *  exposed to hooks/Bash as `OH_EFFORT` + JSON `effort.level`. */
+  effort?: import("../providers/base.js").EffortLevel;
 };
 
 export type TransitionReason = "next_turn" | "retry_network" | "retry_prompt_too_long" | "retry_max_output_tokens";

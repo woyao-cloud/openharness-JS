@@ -852,3 +852,61 @@ describe("HTTP hook detailed response shape", () => {
     });
   });
 });
+
+// ── OH_EFFORT env var (CC parity: effort.level / $CLAUDE_EFFORT) ──
+
+describe("effort hook plumbing", () => {
+  it("OH_EFFORT env var is set when effortLevel is configured", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const outPath = `${dir.replace(/\\/g, "/")}/out.txt`;
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        `require('fs').writeFileSync(${JSON.stringify(outPath)}, process.env.OH_EFFORT || '<unset>');\n`,
+      );
+      // Write config that includes effortLevel + a turnStart hook
+      mkdirSync(`${dir}/.oh`, { recursive: true });
+      writeFileSync(
+        `${dir}/.oh/config.yaml`,
+        [
+          "provider: mock",
+          "model: mock",
+          "permissionMode: ask",
+          "effortLevel: high",
+          "hooks:",
+          "  turnStart:",
+          `    - command: ${JSON.stringify(`node ${scriptPath}`)}`,
+          "",
+        ].join("\n"),
+      );
+      invalidateConfigCache();
+      invalidateHookCache();
+      emitHook("turnStart", { turnNumber: "0" });
+      const deadline = Date.now() + 5000;
+      while (!existsSync(outPath) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      assert.ok(existsSync(outPath), "hook did not fire within 5s");
+      assert.equal(readFileSync(outPath, "utf8"), "high");
+    });
+  });
+
+  it("OH_EFFORT not set when effortLevel absent from config", async () => {
+    await withTmpCwdAsync(async (dir) => {
+      const outPath = `${dir.replace(/\\/g, "/")}/out.txt`;
+      const scriptPath = `${dir}/hook.cjs`;
+      writeFileSync(
+        scriptPath,
+        `require('fs').writeFileSync(${JSON.stringify(outPath)}, process.env.OH_EFFORT || '<unset>');\n`,
+      );
+      writeHookConfigForEvent(dir, "turnStart", { command: `node ${JSON.stringify(scriptPath)}` });
+      emitHook("turnStart", { turnNumber: "0" });
+      const deadline = Date.now() + 5000;
+      while (!existsSync(outPath) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      assert.ok(existsSync(outPath), "hook did not fire within 5s");
+      assert.equal(readFileSync(outPath, "utf8"), "<unset>");
+    });
+  });
+});

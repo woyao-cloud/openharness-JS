@@ -6,7 +6,20 @@ import { IMAGE_PREFIX } from "../tools/ImageReadTool/index.js";
 import type { StreamEvent, ToolCallComplete } from "../types/events.js";
 import type { Message, ToolCall } from "../types/message.js";
 import { createAssistantMessage } from "../types/message.js";
-import type { APIToolDef, ModelInfo, Provider, ProviderConfig } from "./base.js";
+import type { APIToolDef, EffortLevel, ModelInfo, Provider, ProviderConfig } from "./base.js";
+
+/**
+ * Anthropic effort gating. Per platform.claude.com:
+ *   - effort works on Opus 4.5+/4.6/4.7 and Sonnet 4.6 (errors on Sonnet 4.5/Haiku 4.5)
+ *   - "max" is Opus-tier only — Sonnet must downgrade to "high"
+ * Returns the effort value to send, or undefined to omit the field.
+ */
+function effortForModel(model: string, level: EffortLevel | undefined): EffortLevel | undefined {
+  if (!level) return undefined;
+  if (model.includes("haiku")) return undefined;
+  if (level === "max" && !model.includes("opus")) return "high";
+  return level;
+}
 
 export class AnthropicProvider implements Provider {
   readonly name = "anthropic";
@@ -113,6 +126,7 @@ export class AnthropicProvider implements Provider {
     systemPrompt: string,
     tools?: APIToolDef[],
     model?: string,
+    effort?: EffortLevel,
   ): AsyncGenerator<StreamEvent, void> {
     const m = model ?? this.defaultModel;
     // Prompt caching: send system prompt as content blocks with cache_control.
@@ -143,6 +157,8 @@ export class AnthropicProvider implements Provider {
       }
       body.tools = anthropicTools;
     }
+    const e = effortForModel(m, effort);
+    if (e) body.output_config = { effort: e };
 
     // Throw HTTP/network errors so query/index.ts can catch them and run
     // its 429/overload retry path. Yielding `{type: "error"}` here would
@@ -299,7 +315,13 @@ export class AnthropicProvider implements Provider {
     }
   }
 
-  async complete(messages: Message[], systemPrompt: string, tools?: APIToolDef[], model?: string): Promise<Message> {
+  async complete(
+    messages: Message[],
+    systemPrompt: string,
+    tools?: APIToolDef[],
+    model?: string,
+    effort?: EffortLevel,
+  ): Promise<Message> {
     const m = model ?? this.defaultModel;
     const body: Record<string, unknown> = {
       model: m,
@@ -309,6 +331,8 @@ export class AnthropicProvider implements Provider {
     };
     const anthropicTools = this.convertTools(tools);
     if (anthropicTools) body.tools = anthropicTools;
+    const e = effortForModel(m, effort);
+    if (e) body.output_config = { effort: e };
 
     const res = await fetch(`${this.baseUrl}/v1/messages`, {
       method: "POST",

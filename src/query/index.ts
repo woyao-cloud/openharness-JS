@@ -79,6 +79,7 @@ export async function* query(
     tracer: config.tracer,
     parentSpanId: querySpanId,
     sessionId: config.sessionId,
+    effort: config.effort,
   };
   const estimateTokens = makeTokenEstimator(config.provider);
   const contextManager = new ContextManager(undefined, config.model);
@@ -243,7 +244,13 @@ export async function* query(
           isFinalResponse: (state.lastTurnHadTools === false || state.lastTurnHadTools === undefined) && state.turn > 1,
           role: config.role,
         });
-        for await (const event of config.provider.stream(state.messages, turnPrompt, apiTools, selection.model)) {
+        for await (const event of config.provider.stream(
+          state.messages,
+          turnPrompt,
+          apiTools,
+          selection.model,
+          config.effort,
+        )) {
           if (config.abortSignal?.aborted) break;
 
           switch (event.type) {

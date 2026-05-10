@@ -2,8 +2,16 @@ import { type SpawnOptions, spawn } from "node:child_process";
 import { z } from "zod";
 import { readOhConfig } from "../../harness/config.js";
 import { wrapForSandbox } from "../../harness/sandbox-runtime.js";
-import type { Tool, ToolResult } from "../../Tool.js";
+import type { Tool, ToolContext, ToolResult } from "../../Tool.js";
 import { safeEnv } from "../../utils/safe-env.js";
+
+/** Subprocess env injections — OH_SESSION_ID + OH_EFFORT (CC parity). */
+function buildBashEnv(context: ToolContext): Record<string, string> | undefined {
+  const overlay: Record<string, string> = {};
+  if (context.sessionId) overlay.OH_SESSION_ID = context.sessionId;
+  if (context.effort) overlay.OH_EFFORT = context.effort;
+  return Object.keys(overlay).length ? overlay : undefined;
+}
 
 const inputSchema = z.object({
   command: z.string(),
@@ -61,7 +69,7 @@ export const BashTool: Tool<typeof inputSchema> = {
       const bgId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const proc = spawn(shell, shellArgs, {
         cwd: context.workingDir,
-        env: safeEnv(context.sessionId ? { OH_SESSION_ID: context.sessionId } : undefined),
+        env: safeEnv(buildBashEnv(context)),
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
         ...extraSpawnOpts,
@@ -115,7 +123,7 @@ export const BashTool: Tool<typeof inputSchema> = {
 
       const proc = spawn(shell, shellArgs, {
         cwd: context.workingDir,
-        env: safeEnv(context.sessionId ? { OH_SESSION_ID: context.sessionId } : undefined),
+        env: safeEnv(buildBashEnv(context)),
         stdio: ["ignore", "pipe", "pipe"],
         ...extraSpawnOpts,
       });

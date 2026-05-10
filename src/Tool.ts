@@ -38,6 +38,8 @@ export type ToolContext = {
   parentSpanId?: string;
   /** Session ID for the current query — injected into Bash subprocess env. */
   sessionId?: string;
+  /** Effort level (CC parity) — injected into Bash subprocess env as OH_EFFORT. */
+  effort?: import("./providers/base.js").EffortLevel;
 };
 
 export type Tool<Input extends z.ZodType = z.ZodType> = {
