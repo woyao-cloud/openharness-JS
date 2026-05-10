@@ -176,7 +176,7 @@ describe("Anthropic stream parsing", () => {
     assert.equal((thinking[0] as any).content, "Let me think...");
   });
 
-  it("yields error on HTTP failure", async () => {
+  it("throws on HTTP failure so query layer can retry rate limits", async () => {
     globalThis.fetch = (async () => ({
       ok: false,
       status: 500,
@@ -186,10 +186,7 @@ describe("Anthropic stream parsing", () => {
       globalThis.fetch = originalFetch;
     };
     const provider = new AnthropicProvider({ name: "anthropic", apiKey: "test" });
-    const events = await collectEvents(provider.stream([createUserMessage("hi")], "system"));
-    const errors = events.filter((e) => e.type === "error");
-    assert.ok(errors.length > 0);
-    assert.ok((errors[0] as any).message.includes("500"));
+    await assert.rejects(() => collectEvents(provider.stream([createUserMessage("hi")], "system")), /500/);
   });
 });
 

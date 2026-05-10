@@ -96,6 +96,33 @@ test("convertTools() converts tool definitions", () => {
   assert.equal((result![0] as any).description, "Run a command");
 });
 
+// ── addMessageCacheBreakpoint ──
+
+const addBreakpoint = (provider as any).addMessageCacheBreakpoint.bind(provider);
+
+test("addMessageCacheBreakpoint() promotes string content and marks last block", () => {
+  const msgs = [{ role: "user", content: "hello" }];
+  addBreakpoint(msgs);
+  const content = (msgs[0] as any).content;
+  assert.ok(Array.isArray(content));
+  assert.equal(content[0].type, "text");
+  assert.equal(content[0].text, "hello");
+  assert.deepEqual(content[0].cache_control, { type: "ephemeral" });
+});
+
+test("addMessageCacheBreakpoint() marks last block when content is array", () => {
+  const msgs = [{ role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "out" }] }];
+  addBreakpoint(msgs);
+  const block = (msgs[0] as any).content[0];
+  assert.deepEqual(block.cache_control, { type: "ephemeral" });
+});
+
+test("addMessageCacheBreakpoint() is a no-op on empty array", () => {
+  const msgs: unknown[] = [];
+  addBreakpoint(msgs);
+  assert.equal(msgs.length, 0);
+});
+
 // ── healthCheck ──
 
 test("Anthropic healthCheck true with key, false without", async () => {

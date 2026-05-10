@@ -80,6 +80,25 @@ export class AnthropicProvider implements Provider {
     return out;
   }
 
+  /**
+   * Mark the last content block of the last message with cache_control so the
+   * conversation prefix stays cached across turns. Big win for multi-turn
+   * evals where each tool round-trip otherwise re-bills the full history.
+   * Promotes string content to a [{type: "text", ...}] block when needed.
+   */
+  private addMessageCacheBreakpoint(msgs: unknown[]): void {
+    if (msgs.length === 0) return;
+    const last = msgs[msgs.length - 1] as { content: unknown };
+    if (typeof last.content === "string") {
+      last.content = [{ type: "text", text: last.content, cache_control: { type: "ephemeral" } }];
+      return;
+    }
+    if (Array.isArray(last.content) && last.content.length > 0) {
+      const block = last.content[last.content.length - 1] as Record<string, unknown>;
+      block.cache_control = { type: "ephemeral" };
+    }
+  }
+
   private convertTools(tools?: APIToolDef[]): unknown[] | undefined {
     if (!tools?.length) return undefined;
     return tools.map((t) => ({
@@ -106,11 +125,13 @@ export class AnthropicProvider implements Provider {
     const maxTokens = isOpus ? 32768 : 16384;
     const thinkingBudget = isOpus ? 24576 : 8192;
 
+    const convertedMessages = this.convertMessages(messages);
+    this.addMessageCacheBreakpoint(convertedMessages);
     const body: Record<string, unknown> = {
       model: m,
       max_tokens: maxTokens,
       system: systemBlocks,
-      messages: this.convertMessages(messages),
+      messages: convertedMessages,
       stream: true,
       thinking: { type: "enabled", budget_tokens: thinkingBudget },
     };
@@ -123,21 +144,17 @@ export class AnthropicProvider implements Provider {
       body.tools = anthropicTools;
     }
 
-    let res: Response;
-    try {
-      res = await fetch(`${this.baseUrl}/v1/messages`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(body),
-      });
-    } catch (err) {
-      yield { type: "error", message: `Anthropic request failed: ${err}` };
-      return;
-    }
+    // Throw HTTP/network errors so query/index.ts can catch them and run
+    // its 429/overload retry path. Yielding `{type: "error"}` here would
+    // bypass that retry logic entirely.
+    const res = await fetch(`${this.baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(body),
+    });
 
     if (!res.ok) {
-      yield { type: "error", message: `Anthropic HTTP ${res.status}: ${await res.text()}` };
-      return;
+      throw new Error(`Anthropic HTTP ${res.status}: ${await res.text()}`);
     }
 
     const reader = res.body?.getReader();
@@ -259,11 +276,15 @@ export class AnthropicProvider implements Provider {
             const usage = data.message?.usage;
             if (usage) {
               const inputTokens = usage.input_tokens ?? 0;
+              const cacheCreate = usage.cache_creation_input_tokens ?? 0;
+              const cacheRead = usage.cache_read_input_tokens ?? 0;
               const info = this.getModelInfo(m);
-              const cost = (inputTokens * (info?.inputCostPerMtok ?? 0)) / 1_000_000;
+              const inRate = info?.inputCostPerMtok ?? 0;
+              // Anthropic cache pricing: writes 1.25× input rate, reads 0.1×.
+              const cost = (inputTokens * inRate + cacheCreate * inRate * 1.25 + cacheRead * inRate * 0.1) / 1_000_000;
               yield {
                 type: "cost_update",
-                inputTokens,
+                inputTokens: inputTokens + cacheCreate + cacheRead,
                 outputTokens: 0,
                 cost,
                 model: m,
