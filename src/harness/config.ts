@@ -213,6 +213,13 @@ export type OhConfig = {
   gitCommitPerTool?: boolean;
   /** Effort level for LLM reasoning depth */
   effortLevel?: "low" | "medium" | "high" | "max";
+  /** Worktree creation policy (CC parity: `worktree.baseRef`). `head` (default)
+   *  branches from local HEAD; `fresh` branches from `origin/<default-branch>`
+   *  so worktrees start clean against upstream regardless of local state.
+   *  No auto-fetch — caller is responsible for `git fetch` if they need it. */
+  worktree?: {
+    baseRef?: "fresh" | "head";
+  };
   /** Opt-in telemetry (default: off) */
   telemetry?: {
     enabled?: boolean; // default false

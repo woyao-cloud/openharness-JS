@@ -174,17 +174,40 @@ export function gitLog(count: number = 5, cwd?: string): string {
 }
 
 /**
+ * Resolve the default branch on `origin` (e.g. `origin/main`). Reads from the
+ * already-fetched remote state — does not perform a `git fetch`. Returns null
+ * if origin/HEAD isn't set or symbolic-ref resolution fails.
+ */
+export function originDefaultRef(cwd?: string): string | null {
+  try {
+    const out = execSync("git symbolic-ref refs/remotes/origin/HEAD", { cwd, stdio: "pipe" }).toString().trim();
+    return out.replace(/^refs\/remotes\//, "") || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Create an isolated git worktree for a sub-agent.
  * Returns the worktree path, or null if not in a git repo.
+ *
+ * `baseRef` (CC parity: `worktree.baseRef`):
+ *   - "head" (default): branch from local HEAD (preserves prior behavior).
+ *   - "fresh": branch from `origin/<default-branch>` so the worktree starts
+ *     clean against upstream regardless of local state. Falls back silently
+ *     to HEAD if origin/HEAD can't be resolved.
  */
-export function createWorktree(cwd?: string): string | null {
+export function createWorktree(cwd?: string, baseRef: "fresh" | "head" = "head"): string | null {
   if (!isGitRepo(cwd)) return null;
   try {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const worktreePath = join(cwd ?? process.cwd(), "..", `.oh-worktree-${id}`);
     const _branch = `oh-agent-${id}`;
-    // Create a detached worktree from HEAD
-    execSync(`git worktree add --detach "${worktreePath}"`, { cwd, stdio: "pipe" });
+    const ref = baseRef === "fresh" ? originDefaultRef(cwd) : null;
+    const cmd = ref
+      ? `git worktree add --detach "${worktreePath}" "${ref}"`
+      : `git worktree add --detach "${worktreePath}"`;
+    execSync(cmd, { cwd, stdio: "pipe" });
     return worktreePath;
   } catch {
     return null;

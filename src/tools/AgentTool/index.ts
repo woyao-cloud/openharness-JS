@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createWorktree, hasWorktreeChanges, isGitRepo, removeWorktree } from "../../git/index.js";
+import { readOhConfig } from "../../harness/config.js";
 import { emitHook } from "../../harness/hooks.js";
 import { getMessageBus } from "../../services/agent-messaging.js";
 import type { Tool, ToolContext, ToolResult } from "../../Tool.js";
@@ -82,7 +83,7 @@ export const AgentTool: Tool<typeof inputSchema> = {
     let agentWorkingDir = context.workingDir;
 
     if (useWorktree) {
-      worktreePath = createWorktree(context.workingDir);
+      worktreePath = createWorktree(context.workingDir, readOhConfig()?.worktree?.baseRef ?? "head");
       if (worktreePath) {
         agentWorkingDir = worktreePath;
       }

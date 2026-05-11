@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   autoCommitAIEdits,
+  createWorktree,
   gitBranch,
   gitCommit,
   gitLog,
@@ -14,6 +15,8 @@ import {
   hasUncommittedChanges,
   hasWorktreeChanges,
   isGitRepo,
+  originDefaultRef,
+  removeWorktree,
 } from "./index.js";
 
 function makeRepo(): string {
@@ -176,4 +179,41 @@ test("autoCommitAIEdits() includes Co-Authored-By trailer", () => {
   autoCommitAIEdits("Edit", ["edit.ts"], dir);
   const fullMsg = execSync("git log -1 --pretty=%B", { cwd: dir, stdio: "pipe" }).toString();
   assert.ok(fullMsg.includes("Co-Authored-By"));
+});
+
+// ── originDefaultRef / createWorktree(baseRef) ──
+
+test("originDefaultRef() returns null when no origin/HEAD is set", () => {
+  const dir = makeRepo();
+  initialCommit(dir);
+  assert.equal(originDefaultRef(dir), null);
+});
+
+test("createWorktree(head) creates worktree from local HEAD", () => {
+  const dir = makeRepo();
+  initialCommit(dir);
+  const wt = createWorktree(dir, "head");
+  assert.ok(wt?.includes(".oh-worktree-"));
+  // Sanity: worktree contains the file we committed.
+  const log = execSync("git log --oneline", { cwd: wt!, stdio: "pipe" }).toString();
+  assert.ok(log.includes("init"));
+  removeWorktree(wt!, dir);
+});
+
+test("createWorktree(fresh) falls back to HEAD when origin/HEAD is unset", () => {
+  // Plain local repo with no origin — "fresh" can't resolve a remote ref,
+  // so we expect a silent fallback to HEAD (worktree still created).
+  const dir = makeRepo();
+  initialCommit(dir);
+  const wt = createWorktree(dir, "fresh");
+  assert.ok(wt?.includes(".oh-worktree-"));
+  removeWorktree(wt!, dir);
+});
+
+test("createWorktree() defaults baseRef to 'head' (backwards compatibility)", () => {
+  const dir = makeRepo();
+  initialCommit(dir);
+  const wt = createWorktree(dir);
+  assert.ok(wt);
+  removeWorktree(wt!, dir);
 });

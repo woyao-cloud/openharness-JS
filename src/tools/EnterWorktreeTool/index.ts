@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createWorktree, isGitRepo } from "../../git/index.js";
+import { readOhConfig } from "../../harness/config.js";
 import { emitHook } from "../../harness/hooks.js";
 import type { Tool, ToolContext, ToolResult } from "../../Tool.js";
 
@@ -24,7 +25,8 @@ export const EnterWorktreeTool: Tool<typeof inputSchema> = {
     if (!isGitRepo(context.workingDir)) {
       return { output: "Not a git repository — worktrees require git.", isError: true };
     }
-    const path = createWorktree(context.workingDir);
+    const baseRef = readOhConfig()?.worktree?.baseRef ?? "head";
+    const path = createWorktree(context.workingDir, baseRef);
     if (!path) {
       return { output: "Failed to create worktree.", isError: true };
     }

@@ -7,6 +7,7 @@
  */
 
 import { createWorktree, isGitRepo, removeWorktree } from "../git/index.js";
+import { readOhConfig } from "../harness/config.js";
 import type { Provider } from "../providers/base.js";
 import type { Tools } from "../Tool.js";
 import type { StreamEvent, ToolCallComplete, ToolCallEnd, ToolCallStart, ToolOutputDelta } from "../types/events.js";
@@ -192,7 +193,7 @@ export class AgentDispatcher {
     }
 
     if (useWorktree) {
-      worktreePath = createWorktree(cwd);
+      worktreePath = createWorktree(cwd, readOhConfig()?.worktree?.baseRef ?? "head");
     }
 
     try {
